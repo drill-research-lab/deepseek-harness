@@ -1,6 +1,7 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# Language-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. All languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/simplification/2026-08-11-remove-empty-experimental-package-group.md
 2026-08-11-remove-empty-experimental-package-group.md: e5e81e3e3763f216921b3f3b74709b64be3dee37
 2026-08-11-remove-empty-experimental-package-group.zh.md: d44d0daaf346a5fea317f8c8c6a23f26eaa3cec0
+2026-08-11-remove-empty-experimental-package-group.zh-tw.md: 7dcde0b04b39bda2c3b3bea122a4f08451b16688

@@ -8,8 +8,8 @@
 
 | 占位符 | 填入内容 | 来源 |
 |---|---|---|
-| `{{source_lang}}` | 源语言名（`English` / `Chinese`） | 由改动侧文件推断：`.zh.md` 被改则为 `Chinese` |
-| `{{target_lang}}` | 目标语言名（`Chinese` / `English`） | 与 `{{source_lang}}` 相对 |
+| `{{source_lang}}` | 源语言名（`English` / `Chinese` / `Chinese-TW`） | 由改动侧文件推断：`.zh.md` 被改则为 `Chinese`，`.zh-tw.md` 被改则为 `Chinese-TW` |
+| `{{target_lang}}` | 目标语言名（`Chinese` / `Chinese-TW` / `English`） | 与 `{{source_lang}}` 相对；`.zh-tw.md` 文件名表示语言为 `Chinese-TW` |
 | `{{terminology}}` | [terminology.md](terminology.md) 的完整表格（Markdown 原文） | 渲染时读取仓库当前版本，不缓存 |
 
 流水线只识别上表中的占位符，并且一次翻译整篇文档。它不支持 `{{to}}`、`{{title_prompt}}`、`{{summary_prompt}}`、`{{terms_prompt}}`、`{{imt_style_guide}}`、`{{translation_rules}}` 或 `%%` 分段协议；输出采用模板正文规定的三段 XML，流水线解析取 `<final>` 段。
@@ -25,6 +25,8 @@
 - `docs/i18n/README.md` ↔ `docs/i18n/README.zh.md`
 - `docs/i18n/translation-rules.md` ↔ `docs/i18n/translation-rules.zh.md`
 - `.agents/notes/implemented/process/2026-07-02-bilingual-docs-and-pairing-gate.md` ↔ 对应 `.zh.md`
+
+以上 few-shot 用于 en↔zh 翻译；zh→zh-TW 转写由独立的机械转换与人工复核流水线处理。
 
 注入方式：在系统消息（本模板）之后、待译文档之前，每组作为一轮示例对话——user 消息为源文档全文，assistant 消息为定稿译文全文（裸文本，不带三段 XML 包装；只有真实请求要求三段输出）。上下文不足时按上列顺序从后往前删减组数。这 5 组也是评审校准锚点（见 [style-samples.md](style-samples.md)），改动任何一组即改变流水线行为。
 
@@ -57,7 +59,7 @@ A lower-priority rule may refine but never override a higher-priority requiremen
 - Fenced code blocks must be byte-identical to the source, including info strings, whitespace, and ALL comments inside them. Do NOT translate or reformat any content inside code blocks. This is a hard rule with no exceptions.
 - Inline code spans must be kept verbatim. This includes commands, flags, paths, identifiers, API and event names, config keys, protocol values, version numbers, and other machine-readable tokens. Never translate or reformat them.
 - Every relative link must point to the same target as in the source. Translate link text; do not change link targets.
-- Language switcher line: when an English source contains `English | [中文](source-filename.zh.md)`, write `[English](source-filename.md) | 中文`. When a Chinese source contains `[English](source-filename.md) | 中文`, write `English | [中文](source-filename.zh.md)`. Do NOT copy the source switcher unchanged. If the source has no switcher, do not invent a filename or switcher; the pipeline inserts the canonical target switcher after parsing `<final>`.
+- Language switcher line: an English source links to both Chinese sides as `English | [中文](source-filename.zh.md) | [繁體中文](source-filename.zh-tw.md)`. The Simplified Chinese side links back as `[English](source-filename.md) | 中文`; the Taiwan Traditional Chinese side links back as `[English](source-filename.md) | 繁體中文`. Do NOT copy the source switcher unchanged. If the source has no switcher, do not invent a filename or switcher; the pipeline inserts the canonical target switcher after parsing `<final>`.
 - Preserve emphasis marker types and the semantic spans they cover. Do not add, remove, move, or change bold and italic markers.
 
 ### Faithfulness

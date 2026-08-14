@@ -14,12 +14,16 @@ import { existsSync, globSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve, sep } from 'node:path'
 import { gitBlobHash, readGitIndexBlob, storeGitBlob } from './translation-pairing-git.ts'
 import {
+  PAIRED_LANGUAGES,
   parseTranslationPairingRecord,
   renderTranslationPairingRecord,
   translationPairPaths,
+  type PairedLanguage,
+  type TranslationPairLanguages,
 } from './translation-pairing-record.ts'
 import {
   languageSwitcherTargets,
+  languageSwitcherTargetsForAll,
   linksTo,
   parseTranslationMarkdown,
   parseTranslationPairingCliArgs,
@@ -86,18 +90,18 @@ function isExcluded(file: string): boolean {
 }
 
 // Enumerate the scope once: the whole corpus, or exactly the named pairs'
-// three files (a named pair whose files are absent is caught by the same
+// files (a named pair whose files are absent is caught by the same
 // completeness rules that cover discovered remnants).
 const files = new Set<string>()
 if (request.scope === 'pairs') {
   for (const anchor of request.anchors) {
-    const { source, zh, meta } = translationPairPaths(anchor)
-    for (const file of [source, zh, meta]) {
+    const paths = translationPairPaths(anchor)
+    for (const file of [paths.source, ...Object.values(paths.languages), paths.meta]) {
       if (repositoryFileExists(file)) files.add(file)
     }
     // A named worktree anchor with no files still enters the source list so
     // an interactive check reports it. An index check accepts a complete
-    // three-file deletion and still rejects every partial deletion below.
+    // pair deletion and still rejects every partial deletion below.
     if (!indexMode && !repositoryFileExists(anchor)) files.add(anchor)
   }
 } else {
@@ -108,28 +112,30 @@ if (request.scope === 'pairs') {
     }
   }
 }
-const translations = [...files].filter(f => f.endsWith('.zh.md')).sort()
+const languageSuffixes = PAIRED_LANGUAGES.filter(language => language !== 'en')
+const isLanguageSide = (file: string) => languageSuffixes.some(language => file.endsWith(`${language === 'zh-TW' ? '.zh-tw' : '.zh'}.md`))
+const translations = [...files].filter(isLanguageSide).sort()
 const metas = [...files].filter(f => f.endsWith('.i18n.yaml')).sort()
-const sources = [...files].filter(f => f.endsWith('.md') && !f.endsWith('.zh.md')).sort()
+const sources = [...files].filter(f => f.endsWith('.md') && !isLanguageSide(f)).sort()
 
 if (request.scope === 'pairs') {
   const rejected = request.anchors.filter(anchor => !isTranslationScopeFile(anchor) || isExcluded(anchor))
   const absent = request.anchors.filter((anchor) => {
-    const { source, zh, meta } = translationPairPaths(anchor)
-    return ![source, zh, meta].some(repositoryFileExists)
+    const paths = translationPairPaths(anchor)
+    return ![paths.source, ...Object.values(paths.languages), paths.meta].some(repositoryFileExists)
   })
   if (rejected.length > 0 || (!indexMode && absent.length > 0)) {
     for (const anchor of rejected) {
       console.error(`verify-translation-pairing: ${anchor} is not an in-scope pair (excluded or outside the documentation corpus; see docs/i18n/README.md)`)
     }
     for (const anchor of absent) {
-      console.error(`verify-translation-pairing: ${anchor} names no pair on disk (none of its three files exist)`)
+      console.error(`verify-translation-pairing: ${anchor} names no pair on disk (none of its files exist)`)
     }
     process.exit(2)
   }
 }
 
-// --write: (re)record both hashes for the requested complete pairs, creating
+// --write: (re)record hashes for the requested complete pairs, creating
 // missing records. A named pair that cannot be recorded (missing counterpart)
 // fails loud; corpus scope (--all) skips pairless sources as before.
 if (writeMode) {
@@ -137,24 +143,35 @@ if (writeMode) {
   for (const source of sources) {
     if (isExcluded(source)) continue
     const paths = translationPairPaths(source)
-    const { zh, meta } = paths
-    if (!repositoryFileExists(source) || !repositoryFileExists(zh)) {
+    const { meta } = paths
+    const present = PAIRED_LANGUAGES.every(language => repositoryFileExists(paths.languages[language]))
+    if (!present) {
       if (request.scope === 'pairs') {
-        console.error(`verify-translation-pairing: cannot record ${source}: missing ${repositoryFileExists(source) ? zh : source}`)
+        const missing = PAIRED_LANGUAGES
+          .filter(language => !repositoryFileExists(paths.languages[language]))
+          .map(language => paths.languages[language])
+        console.error(`verify-translation-pairing: cannot record ${source}: missing ${missing.join(', ')}`)
         process.exit(2)
       }
       continue
     }
-    const sourceContent = readRepositoryFile(source)
-    const zhContent = readRepositoryFile(zh)
-    if (sourceContent === undefined || zhContent === undefined) throw new Error(`${source}: complete pair became unreadable`)
+    const contents = {} as Record<PairedLanguage, Buffer | undefined>
+    for (const language of PAIRED_LANGUAGES) {
+      contents[language] = readRepositoryFile(paths.languages[language])
+    }
+    if (PAIRED_LANGUAGES.some(language => contents[language] === undefined)) {
+      throw new Error(`${source}: complete pair became unreadable`)
+    }
+    const read = contents as Record<PairedLanguage, Buffer>
     // A consistency record is also a recovery pointer for the briefing
-    // generator. Persist both snapshots even when the sidecar text is already
+    // generator. Persist every snapshot even when the sidecar text is already
     // current, because the bytes may exist only in this working tree.
     const record = renderTranslationPairingRecord(paths, {
-      sourceHash: storeGitBlob(root, sourceContent),
-      zhHash: storeGitBlob(root, zhContent),
-    })
+      ...Object.fromEntries(PAIRED_LANGUAGES.map(language => [
+        language,
+        storeGitBlob(root, read[language]),
+      ])),
+    } as Record<PairedLanguage, string>)
     if (existsSync(join(root, meta)) && readFileSync(join(root, meta), 'utf8') === record) continue
     writeFileSync(join(root, meta), record)
     console.log(`verify-translation-pairing: recorded ${meta}`)
@@ -167,61 +184,80 @@ if (writeMode) {
 const errors: string[] = []
 const state = new Map<string, 'ok' | 'out-of-sync' | 'missing'>()
 
-// 1. Every discovered, non-excluded source merges bilingual.
+/** All non-English sides of one pair. */
+function languageSides(paths: ReturnType<typeof translationPairPaths>): TranslationPairLanguages {
+  return Object.fromEntries(PAIRED_LANGUAGES
+    .filter(language => language !== 'en')
+    .map(language => [language, paths.languages[language]])) as TranslationPairLanguages
+}
+
+// 1. Every discovered, non-excluded source merges in every language.
 for (const source of sources) {
   if (isExcluded(source)) continue
-  const { zh } = translationPairPaths(source)
-  if (!repositoryFileExists(zh)) {
-    errors.push(`${source}: in-scope documentation must merge bilingual (docs/i18n/README.md); add the counterpart and record the pair`)
+  const { languages } = translationPairPaths(source)
+  const missing = PAIRED_LANGUAGES
+    .filter(language => language !== 'en' && !repositoryFileExists(languages[language]))
+    .map(language => languages[language])
+  if (missing.length > 0) {
+    errors.push(`${source}: in-scope documentation must merge in every language (docs/i18n/README.md); add the missing counterpart(s) and record the pair`)
     state.set(source, 'missing')
   }
 }
 
 // 2. Every pair that exists at all is complete and consistent. Anchor on the
-// union of .zh.md files and .i18n.yaml records so a half-deleted pair is
-// caught from either remnant.
+// union of language-side files and .i18n.yaml records so a half-deleted pair
+// is caught from either remnant.
 const pairAnchors = new Set<string>()
-for (const zh of translations) pairAnchors.add(zh.replace(/\.zh\.md$/, '.md'))
+for (const translation of translations) pairAnchors.add(translation.replace(/\.zh(?:-tw)?\.md$/, '.md'))
 for (const meta of metas) pairAnchors.add(meta.replace(/\.i18n\.yaml$/, '.md'))
 
 for (const source of [...pairAnchors].sort()) {
   const paths = translationPairPaths(source)
-  const { zh, meta } = paths
+  const { meta } = paths
+  const sides = languageSides(paths)
   const have = {
     source: repositoryFileExists(source),
-    zh: repositoryFileExists(zh),
+    ...Object.fromEntries(PAIRED_LANGUAGES.filter(language => language !== 'en')
+      .map(language => [language, repositoryFileExists(paths.languages[language])])),
     meta: repositoryFileExists(meta),
-  }
+  } as Record<'source' | PairedLanguage | 'meta', boolean>
 
   if (isExcluded(source)) {
-    if (have.zh) errors.push(`${zh}: ${source} is excluded from pairing (generated or bilingual-by-construction); this translation must not exist`)
+    for (const language of PAIRED_LANGUAGES) {
+      if (language !== 'en' && have[language]) {
+        errors.push(`${paths.languages[language]}: ${source} is excluded from pairing (generated or bilingual-by-construction); this translation must not exist`)
+      }
+    }
     if (have.meta) errors.push(`${meta}: ${source} is excluded from pairing; this consistency record must not exist`)
     continue
   }
-  const missing = Object.entries(have).filter(([, ok]) => !ok).map(([k]) => (k === 'source' ? source : k === 'zh' ? zh : meta))
+  const fileOf = (key: string) => key === 'source' ? source : key === 'meta' ? meta : sides[key as PairedLanguage]
+  const missing = Object.entries(have).filter(([, ok]) => !ok).map(([k]) => fileOf(k))
   if (missing.length > 0) {
-    errors.push(`${source}: incomplete pair — missing ${missing.join(', ')} (pairs merge whole: both languages plus the .i18n.yaml record)`)
+    errors.push(`${source}: incomplete pair — missing ${missing.join(', ')} (pairs merge whole: every language plus the .i18n.yaml record)`)
     continue
   }
 
-  const sourceContent = readRepositoryFile(source)
-  const zhContent = readRepositoryFile(zh)
+  const contents = {} as Record<PairedLanguage, Buffer | undefined>
+  for (const language of PAIRED_LANGUAGES) {
+    contents[language] = readRepositoryFile(paths.languages[language])
+  }
   const metaContent = readRepositoryFile(meta)
-  if (sourceContent === undefined || zhContent === undefined || metaContent === undefined) {
+  if (PAIRED_LANGUAGES.some(language => contents[language] === undefined) || metaContent === undefined) {
     throw new Error(`${source}: complete pair became unreadable`)
   }
+  const read = contents as Record<PairedLanguage, Buffer>
   const record = parseTranslationPairingRecord(metaContent.toString('utf8'), paths)
   if (record === undefined) {
-    errors.push(`${meta}: malformed consistency record (expected exactly \`${basename(source)}: <40-hex>\` and \`${basename(zh)}: <40-hex>\`)`)
+    errors.push(`${meta}: malformed consistency record (expected one \`<basename>.md: <40-hex>\` line per language)`)
     continue
   }
 
   let consistent = true
-  for (const [file, content] of [[source, sourceContent], [zh, zhContent]] as const) {
-    const current = gitBlobHash(content)
-    const recorded = file === source ? record.sourceHash : record.zhHash
-    if (recorded !== current) {
-      errors.push(`${file}: out of sync — content no longer matches the pair's last confirmed-consistent state in ${meta} (bring the other side along, then re-record with --write)`)
+  for (const language of PAIRED_LANGUAGES) {
+    const current = gitBlobHash(read[language])
+    if (record[language] !== current) {
+      errors.push(`${paths.languages[language]}: out of sync — content no longer matches the pair's last confirmed-consistent state in ${meta} (bring the other side along, then re-record with --write)`)
       consistent = false
     }
   }
@@ -231,41 +267,59 @@ for (const source of [...pairAnchors].sort()) {
   }
 
   // Generated regions are language-invariant: the exact same generator output
-  // (markers included) must appear in both sides, in the same order. The
+  // (markers included) must appear in every side, in the same order. The
   // structural signature below compares the region content again as part of
   // the whole document; this dedicated check exists to name the divergence
-  // precisely and to reject a region grammar violation on either side.
-  let sourceRegions: { regions: string[]; stripped: string }
-  let zhRegions: { regions: string[]; stripped: string }
+  // precisely and to reject a region grammar violation on any side.
+  let regionParsed: Record<PairedLanguage, { regions: string[]; stripped: string }>
   try {
-    sourceRegions = partitionGeneratedRegions(sourceContent.toString('utf8'))
-    zhRegions = partitionGeneratedRegions(zhContent.toString('utf8'))
+    regionParsed = Object.fromEntries(PAIRED_LANGUAGES.map(language => [
+      language,
+      partitionGeneratedRegions(read[language].toString('utf8')),
+    ])) as Record<PairedLanguage, { regions: string[]; stripped: string }>
   } catch (error) {
-    errors.push(`${source} ↔ ${zh}: ${error instanceof Error ? error.message : String(error)}`)
+    errors.push(`${source}: ${error instanceof Error ? error.message : String(error)}`)
     state.set(source, 'out-of-sync')
     continue
   }
-  if (sourceRegions.regions.length !== zhRegions.regions.length
-    || sourceRegions.regions.some((region, index) => region !== zhRegions.regions[index])) {
-    errors.push(`${source} ↔ ${zh}: generated regions differ between the pair — regenerate (the generator writes both sides byte-identically)`)
+  const sourceRegions = regionParsed.en.regions
+  const regionMismatch = PAIRED_LANGUAGES
+    .filter(language => language !== 'en')
+    .find(language => regionParsed[language].regions.length !== sourceRegions.length
+      || regionParsed[language].regions.some((region, index) => region !== sourceRegions[index]))
+  if (regionMismatch !== undefined) {
+    errors.push(`${source} ↔ ${paths.languages[regionMismatch]}: generated regions differ between the pair — regenerate (the generator writes every side byte-identically)`)
     state.set(source, 'out-of-sync')
   }
 
-  const sourceTree = parseTranslationMarkdown(sourceContent.toString('utf8'))
-  const zhTree = parseTranslationMarkdown(zhContent.toString('utf8'))
+  const trees = Object.fromEntries(PAIRED_LANGUAGES.map(language => [
+    language,
+    parseTranslationMarkdown(read[language].toString('utf8')),
+  ])) as Record<PairedLanguage, ReturnType<typeof parseTranslationMarkdown>>
   const sourceSwitcherTargets = languageSwitcherTargets(source)
-  const zhSwitcherTargets = languageSwitcherTargets(zh)
-  if (!linksTo(zhTree, sourceSwitcherTargets)) {
-    errors.push(`${zh}: missing language switcher — no link to ${basename(source)}`)
+  const counterpartTargets = languageSwitcherTargetsForAll(
+    PAIRED_LANGUAGES.filter(language => language !== 'en').map(language => paths.languages[language]),
+  )
+  for (const language of PAIRED_LANGUAGES) {
+    if (language === 'en') continue
+    const side = paths.languages[language]
+    if (!linksTo(trees[language], sourceSwitcherTargets)) {
+      errors.push(`${side}: missing language switcher — no link to ${basename(source)}`)
+    }
   }
-  if (requiresSourceLanguageSwitcher(source) && !linksTo(sourceTree, zhSwitcherTargets)) {
-    errors.push(`${source}: missing language switcher — no link back to ${basename(zh)}`)
+  if (requiresSourceLanguageSwitcher(source) && !linksTo(trees.en, counterpartTargets)) {
+    errors.push(`${source}: missing language switcher — no link back to any counterpart`)
   }
-  for (const divergence of translationStructureDiff(
-    translationStructureSignature(sourceTree, zhSwitcherTargets),
-    translationStructureSignature(zhTree, sourceSwitcherTargets),
-  )) {
-    errors.push(`${source} ↔ ${zh}: ${divergence}`)
+  const sourceSignature = translationStructureSignature(trees.en, counterpartTargets)
+  for (const language of PAIRED_LANGUAGES) {
+    if (language === 'en') continue
+    const side = paths.languages[language]
+    for (const divergence of translationStructureDiff(
+      sourceSignature,
+      translationStructureSignature(trees[language], sourceSwitcherTargets),
+    )) {
+      errors.push(`${source} ↔ ${side}: ${divergence}`)
+    }
   }
   if (!state.has(source)) state.set(source, 'ok')
 }
