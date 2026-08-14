@@ -172,9 +172,15 @@ function sourceMap(pages: DocsPage[]): Map<string, Map<DocsLocale, DocsPage>> {
 }
 
 function counterpartSource(source: string): string {
-  return source.endsWith('.zh.md')
-    ? source.replace(/\.zh\.md$/, '.md')
-    : source.replace(/\.md$/, '.zh.md')
+  if (source.endsWith('.zh-tw.md')) return source.replace(/\.zh-tw\.md$/, '.md')
+  if (source.endsWith('.zh.md')) return source.replace(/\.zh\.md$/, '.md')
+  return source.replace(/\.md$/, '.zh.md')
+}
+
+function sourceLocale(source: string): DocsLocale {
+  if (source.endsWith('.zh-tw.md')) return 'zh-TW'
+  if (source.endsWith('.zh.md')) return 'root'
+  return 'en'
 }
 
 function resolveRepositoryTarget(sourceAbs: string, rawPath: string, repoRoot: string): { absPath: string; line?: number } {
@@ -236,7 +242,7 @@ export function rewriteMarkdown(source: string, options: RewriteMarkdownOptions)
     const targetPath = repoPath(absPath, options.repoRoot)
     const isLanguageSwitcher = targetPath === counterpartSource(options.sourcePath)
     const targetLocale: DocsLocale = isLanguageSwitcher
-      ? options.locale === 'root' ? 'en' : 'root'
+      ? sourceLocale(targetPath)
       : options.locale
     const page = published.get(targetPath)?.get(targetLocale)
     const nextUrl = page !== undefined
@@ -293,7 +299,7 @@ export function addProjectionFrontmatter(markdown: string, page: Pick<DocsPage, 
 }
 
 /** The switcher line a canonical page carries so its GitHub reader can reach the other language. */
-const LANGUAGE_SWITCHER = /^(?:English \| \[中文\]\([^)]*\)|\[English\]\([^)]*\) \| 中文)$/
+const LANGUAGE_SWITCHER = /^(?:English \| \[(?:中文|繁體中文)\]\([^)]*\)|\[English\]\([^)]*\) \| (?:中文|繁體中文))$/
 
 /** The repository badge a canonical page carries for its GitHub reader. */
 const REPOSITORY_BADGE = /^\[!\[[^\]]*\]\(https:\/\/img\.shields\.io\/[^)]*\)\]\([^)]*\)$/

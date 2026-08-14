@@ -1,29 +1,26 @@
 /**
  * Convert Simplified Chinese (zh-CN) Markdown into Traditional Chinese
  * (zh-TW). The pipeline protects code spans and link targets from conversion,
- * applies OpenCC `s2twp` for character and phrase conversion, then applies the
- * repo's [terminology-zh-tw.md](../docs/i18n/terminology-zh-tw.md) correction
- * table for terms OpenCC mis-converts (e.g. 权限 → 許可權 is wrong; 權限 is
- * correct) and for repo-specific renderings.
+ * applies the zhtw-js converter for character and vocabulary conversion, and
+ * feeds the repo's [terminology-zh-tw.md](../docs/i18n/terminology-zh-tw.md)
+ * replacement table as a custom dictionary so technical-context renderings
+ * override the general converter (e.g. 打包 stays 打包 in a packaging sense,
+ * not 外帶).
  */
 
 import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
+import { createConverter } from 'zhtw-js'
 import * as OpenCC from 'opencc-js'
+import { protectSpans, restoreSpans } from './zh-tw-spans.ts'
+
+/** Simplified → standard-Traditional glyph fallback for chars zhtw-js leaves behind. */
+const simplifiedToStandard = OpenCC.Converter({ from: 'cn', to: 't' })
 
 /** A parsed simplified-to-traditional correction entry. */
 export type ZhTwCorrections = Map<string, string>
 
-/** Pre-conversion (simplified keys) and post-conversion (OpenCC-output keys) corrections. */
-export interface ZhTwCorrectionSets {
-  /** Applied before OpenCC: replacement-table rows keyed on simplified Chinese. */
-  pre: ZhTwCorrections
-  /** Applied after OpenCC: mechanical-trap rows keyed on OpenCC's wrong output. */
-  post: ZhTwCorrections
-}
-
 const CORRECTION_LINE = /^\|\s*([^|\s][^|]*?)\s*\|\s*([^|\s][^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|$/
-const TRAP_LINE = /^\|\s*([^|\s][^|]*?)\s*\|\s*([^|\s][^|]*?)\s*\|\s*([^|\s][^|]*?)\s*\|\s*([^|]*?)\s*\|$/
 
 /** Sort a correction map longest-key-first so multi-character terms win. */
 function sorted(map: Map<string, string>): Map<string, string> {
@@ -31,99 +28,35 @@ function sorted(map: Map<string, string>): Map<string, string> {
 }
 
 /**
- * Parse the `docs/i18n/terminology-zh-tw.md` tables into pre- and
- * post-conversion correction sets. The replacement table (simplified keys,
- * applied before OpenCC) keeps only rows whose columns differ; same-form rows
- * (同形词) are skipped because OpenCC already leaves them unchanged. The
- * mechanical-trap table maps OpenCC's wrong output (e.g. 許可權) back to the
- * correct form (權限), applied after the converter runs.
- *
- * Rows whose traditional form contains the key as a substring are dropped
- * from both tables: a second application would compound the replacement
- * (工作流 → 工作流程 → 工作流程程). Such renderings belong to the review
- * pass, not to mechanical correction.
+ * Parse the `docs/i18n/terminology-zh-tw.md` replacement table into
+ * simplified → traditional pairs. Same-form rows (同形词) are kept so the
+ * custom dictionary can pin a rendering zhtw-js would otherwise mis-convert
+ * (e.g. 打包 stays 打包 in a packaging sense, not 外帶). Rows whose
+ * traditional form contains the key as a substring are dropped — the custom
+ * dictionary would otherwise compound the replacement (工作流 → 工作流程 → 工作流程程).
  *
  * @param table - Full Markdown of the terminology-zh-tw table.
- * @returns Pre- and post-conversion correction sets, longest-key-first.
+ * @returns The correction map, longest-key-first so multi-character terms win.
  */
-export function loadZhTwCorrections(table: string): ZhTwCorrectionSets {
-  const pre = new Map<string, string>()
-  const post = new Map<string, string>()
+export function loadZhTwCorrections(table: string): ZhTwCorrections {
+  const corrections = new Map<string, string>()
   let inReplacementTable = false
-  let inTrapTable = false
   for (const line of table.split('\n')) {
     if (line.startsWith('## ')) {
       inReplacementTable = line.includes('需要替换的词条')
-      inTrapTable = line.includes('机械转换陷阱')
       continue
     }
-    if (inReplacementTable) {
-      const match = CORRECTION_LINE.exec(line)
-      if (!match?.[1] || !match[2]) continue
-      const simplified = match[1].trim()
-      const traditional = match[2].trim()
-      if (simplified !== traditional && !traditional.includes(simplified)) pre.set(simplified, traditional)
-    } else if (inTrapTable) {
-      // Column 2 is OpenCC's wrong output; column 3 is the correct form.
-      const match = TRAP_LINE.exec(line)
-      if (!match?.[2] || !match[3]) continue
-      const wrongOutput = match[2].trim()
-      const correctForm = match[3].trim()
-      if (wrongOutput !== correctForm && !correctForm.includes(wrongOutput)) post.set(wrongOutput, correctForm)
-    }
+    if (!inReplacementTable) continue
+    const match = CORRECTION_LINE.exec(line)
+    if (!match?.[1] || !match[2]) continue
+    const simplified = match[1].trim()
+    const traditional = match[2].trim()
+    // Keep same-form rows (打包→打包) so the dictionary pins a rendering the
+    // converter would mis-convert, but drop rows whose value contains the key
+    // as a proper longer substring (工作流→工作流程 would compound).
+    if (!(simplified !== traditional && traditional.includes(simplified))) corrections.set(simplified, traditional)
   }
-  return { pre: sorted(pre), post: sorted(post) }
-}
-
-/** Apply the correction table longest-first to one text span. */
-function applyCorrections(text: string, corrections: ZhTwCorrections): string {
-  let out = text
-  for (const [simplified, traditional] of corrections) {
-    out = out.split(simplified).join(traditional)
-  }
-  return out
-}
-
-/** A protected span kept verbatim through conversion. */
-interface ProtectedSpan {
-  token: string
-  content: string
-}
-
-const TOKEN_PREFIX = '\u0000ZH_TW\u0000'
-
-/** Extract code spans, fenced blocks, and link targets into protected tokens. */
-function protectSpans(markdown: string): { text: string; spans: ProtectedSpan[] } {
-  const spans: ProtectedSpan[] = []
-  let index = 0
-  const replace = (content: string): string => {
-    const token = `${TOKEN_PREFIX}${index++}`
-    spans.push({ token, content })
-    return token
-  }
-  // Fenced code blocks first (their content may contain inline-backtick text).
-  const withFences = markdown.replace(
-    /(```[^\n]*\n[\s\S]*?```)/g,
-    (_match, block: string) => replace(block),
-  )
-  // Inline code spans.
-  const withInline = withFences.replace(/`[^`\n]+`/g, match => replace(match))
-  // Link targets — convert only the visible text, never the destination.
-  const withLinks = withInline.replace(
-    /\[([^\]]*)\]\(([^)\s]+)(?:\s+([^)]*))?\)/g,
-    (_match, text: string, target: string, rest: string | undefined) => {
-      const protectedTarget = replace(target)
-      const protectedRest = rest === undefined ? '' : replace(rest)
-      return `[${text}](${protectedTarget}${rest === undefined ? '' : ` ${protectedRest}`})`
-    },
-  )
-  return { text: withLinks, spans }
-}
-
-/** Restore protected tokens to their original content in one pass. */
-function restoreSpans(text: string, spans: ProtectedSpan[]): string {
-  const byToken = new Map(spans.map(span => [span.token, span.content]))
-  return text.replace(/\u0000ZH_TW\u0000\d+/g, token => byToken.get(token) ?? token)
+  return sorted(corrections)
 }
 
 /** Fix the language-switcher line for the Traditional Chinese side. */
@@ -134,23 +67,24 @@ function fixSwitcher(markdown: string): string {
 /**
  * Convert one zh-CN Markdown document into zh-TW.
  *
- * The replacement table (simplified → traditional repo terms) runs BEFORE
- * OpenCC so its simplified keys still exist; the mechanical-trap table (OpenCC
- * wrong output → correct form) runs AFTER OpenCC. Code spans and link targets
- * stay protected throughout.
+ * The zhtw-js converter handles character and vocabulary conversion; the repo
+ * replacement table overrides vocabulary where the general converter would
+ * mis-render a technical context (e.g. 打包 → 打包 in a packaging sense, not
+ * 外帶); OpenCC s2t finishes any Simplified characters zhtw-js leaves behind
+ * (循环 → 循環, 准 → 準, 面包 → 麵包). Code spans and link targets stay
+ * protected throughout.
  *
  * @param markdown - Simplified Chinese Markdown source.
- * @param corrections - Pre/post correction sets; defaults to the repo table.
+ * @param corrections - Pre-conversion correction set; defaults to the repo table.
  * @returns The converted Traditional Chinese Markdown.
  */
-export function convertChineseMarkdown(markdown: string, corrections?: ZhTwCorrectionSets): string {
+export function convertChineseMarkdown(markdown: string, corrections?: ZhTwCorrections): string {
   const table = corrections ?? loadZhTwCorrections(
     readFileSync(resolve(import.meta.dirname, '../docs/i18n/terminology-zh-tw.md'), 'utf8'),
   )
   const { text, spans } = protectSpans(markdown)
-  const converter = OpenCC.Converter({ from: 'cn', to: 'twp' })
-  const preCorrected = applyCorrections(text, table.pre)
-  const converted = applyCorrections(converter(preCorrected), table.post)
+  const converter = createConverter({ customDict: Object.fromEntries(table) })
+  const converted = simplifiedToStandard(converter.convert(text))
   const restored = restoreSpans(converted, spans)
   return fixSwitcher(restored)
 }

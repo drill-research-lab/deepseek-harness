@@ -126,6 +126,9 @@ importers:
       vitest:
         specifier: ^4.1.8
         version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.8)(jsdom@29.1.1)(vite@8.0.16(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+      zhtw-js:
+        specifier: ^4.4.5
+        version: 4.4.5
 
   apps/cli:
     dependencies:
@@ -14236,6 +14239,10 @@ packages:
     resolution: {integrity: sha512-CzhO+pFNo8ajLM2d2IW/R93ipy99LWjtwblvC1RsoSUMZgyLbYFr221TnSNT7GjGdYui6P459mw9JH/g/zW2ug==}
     engines: {node: '>=18'}
 
+  zhtw-js@4.4.5:
+    resolution: {integrity: sha512-vOPM8yDgqSVAwmzVN04s2+irk/kekv9zUHRVuSTPnTxvMbX2hdSMsY3xNYTXVZ7ZW8weNi4gyYpDwKAhe9giPg==}
+    engines: {node: '>=20'}
+
   zod-to-json-schema@3.25.2:
     resolution: {integrity: sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==}
     peerDependencies:
@@ -19798,6 +19805,8 @@ snapshots:
   yocto-queue@0.1.0: {}
 
   yoctocolors@2.1.2: {}
+
+  zhtw-js@4.4.5: {}
 
   zod-to-json-schema@3.25.2(zod@4.4.3):
     dependencies:

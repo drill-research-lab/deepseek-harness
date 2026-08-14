@@ -118,6 +118,7 @@
 | 持久化 | 持久化 | persistence | 同形词 |
 | 流水线 | 管線 | pipeline | 台湾惯用「管線」，不用「流水线」 |
 | 插件 | 外掛程式 | plugin | 台湾惯用「外掛程式」 |
+| 打包 | 打包 | bundle/packaging | 同形词固定：zhtw-js 会误转成「外帶」，技术文件打包为 bundle/packaging 语境，保持原样 |
 | 事故复盘 | 事後檢討 | postmortem | 「复盘」为对岸棋类术语；台湾惯用「事後檢討」；首次出现写 `事故复盘（postmortem）` 时换成 `事後檢討（postmortem）` |
 | 提示词 | 提示詞 | prompt | 同形词 |
 | 提供方 | 提供方 | provider | 同形词（仓库命名角色，保留「提供方」） |
