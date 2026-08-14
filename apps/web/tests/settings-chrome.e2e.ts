@@ -399,7 +399,7 @@ describe('web e2e: settings modal and General preferences', () => {
     const zhDialog = page.getByRole('dialog', { name: '设置' })
     await zhDialog.waitFor({ timeout: 10_000 })
     // The Language selector pill shows the active locale's own name.
-    const selector = zhDialog.getByRole('button', { name: '中文' })
+    const selector = zhDialog.getByRole('button', { name: '簡體中文' })
     expect(await selector.getAttribute('aria-haspopup')).toBe('menu')
     await selector.click()
     await page.getByRole('menuitem', { name: 'English' }).click()
@@ -444,7 +444,7 @@ describe('web e2e: settings modal and General preferences', () => {
 
     await enTrigger.click()
     await page.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: 'English' }).click()
-    await page.getByRole('menuitem', { name: '中文' }).click()
+    await page.getByRole('menuitem', { name: '簡體中文' }).click()
     await page.getByRole('dialog', { name: '设置' }).waitFor({ timeout: 10_000 })
     expect(await page.evaluate(() => localStorage.getItem('dsh.locale'))).toBeNull()
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })

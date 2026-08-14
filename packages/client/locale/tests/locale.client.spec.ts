@@ -239,7 +239,7 @@ describe('LocaleRuntime', () => {
   it('exposes the three shipped locales with self-described labels', () => {
     const { svc } = make()
     expect(svc.getLocale().locales).toEqual([
-      { id: 'zh', label: '中文' },
+      { id: 'zh', label: '簡體中文' },
       { id: 'zh-TW', label: '繁體中文' },
       { id: 'en', label: 'English' },
     ])
