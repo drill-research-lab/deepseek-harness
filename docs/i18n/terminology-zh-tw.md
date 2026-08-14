@@ -1,6 +1,6 @@
 # Terminology（zh-TW）
 
-本表约定简体中文（zh-CN）译文转换为台湾繁体中文（zh-TW）时的术语取捨。简体侧的中英锚点、首次出现与「不要译作」以 [terminology.md](terminology.md) 为准；本表只记录 zh-TW 与 zh-CN 不同的用词，以及 OpenCC 机械转换会转错、需要人工校正的词条。英文术语在 zh-TW 与 zh-CN 同样保留英文，不列入本表。
+本表约定简体中文（zh-CN）译文转换为繁体中文（zh-TW）时的术语取捨。简体侧的中英锚点、首次出现与「不要译作」以 [terminology.md](terminology.md) 为准；本表只记录 zh-TW 与 zh-CN 不同的用词，以及 OpenCC 机械转换会转错、需要人工校正的词条。英文术语在 zh-TW 与 zh-CN 同样保留英文，不列入本表。
 
 **通用规则：**
 - 「繁體中文」列为 zh-TW 正文的默认用词。若该列为英文，则 zh-TW 正文中保留英文不翻译（与 zh-CN 一致）。
@@ -50,7 +50,6 @@
 | 解析器 | 解析器 | resolver | 同形词 |
 | 存储 | 儲存 | store | 字形转换 |
 | 后台任务 | 背景工作 | background job | 台湾惯用「背景工作／背景作業」 |
-| 块 | 區塊 | block | 台湾惯用「區塊」 |
 | 构建目标 | 建置目標 | build target | 「构建」→「建置」 |
 | 取消 | 取消 | cancel | 同形词 |
 | canary 测试 | canary 測試 | canary test | 字形转换 |
@@ -112,7 +111,6 @@
 | opt-out 比例 | opt-out 比例 | opt-out ratio | 保留英文 |
 | 遗留 | 殘留 | orphan | 台湾惯用「殘留」；指英文源已不存在的译文 |
 | 孤立分支 | 孤立分支 | orphan branch | 同形词 |
-| 包 | 套件 | package | 台湾惯用「套件」；`wheel 包` → `wheel 套件` |
 | 配对 | 配對 | pairing | 同形词 |
 | 父级子集授权 | 父層子集授權 | parent-subset grants | 「级」→「層」 |
 | 对等依赖 | 對等相依性 | peer dependency | 首次出现写 `对等依赖（peer dependency）` 时换成 `對等相依性（peer dependency）` |
@@ -125,6 +123,7 @@
 | 提供方 | 提供方 | provider | 同形词（仓库命名角色，保留「提供方」） |
 | 提供方无关 | 提供方無關 | provider-neutral | 同形词 |
 | 质量门禁 | 品質閘門 | quality gate | 「质量」→「品質」 |
+| 门禁 | 閘門 | gate | 台湾惯用「閘門」，不用「门禁」 |
 | 完全停稳 | 完全靜止 | quiescence | 台湾惯用「完全靜止」 |
 | 推理 | 推理 | reasoning | 与 inference 区分：reasoning → 推理 |
 | 思考内容 | 思考內容 | reasoning_content | 同形词 |
@@ -147,7 +146,6 @@
 | 主干 | 主幹 | spine | 同形词 |
 | 陈旧 | 過時 | stale | 台湾惯用「過時」 |
 | 步骤 | 步驟 | step | 同形词 |
-| 流 | 串流 | stream | 台湾惯用「串流」 |
 | 结构签名 | 結構簽章 | structural signature | 台湾惯用「簽章」，不用「签名」 |
 | 概述 | 概述 | Summary | 同形词 |
 | 系统提示词 | 系統提示詞 | system prompt | 同形词 |
@@ -182,16 +180,13 @@
 | 超时 | 超時 | 逾時 | timeout |
 | 触发器 | 觸發器 | 觸發程序 | trigger |
 | 弹窗 | 彈窗 | 彈出視窗 | popup |
-| 端口 | 埠 | 連接埠 | port |
 | 断点 | 斷點 | 中斷點 | breakpoint |
-| 堆 | 堆 | 堆積 | heap |
 | 负载均衡 | 負載均衡 | 負載平衡 | load balancing |
 | 高可用 | 高可用 | 高可用性 | high availability |
 | 构建 | 構建 | 建置 | build |
 | 归档 | 歸檔 | 封存 | archive |
 | 滚动 | 滾動 | 捲動 | scroll |
 | 过程 | 過程 | 程序 | process（操作系统语境）；「过程」→「程序」仅限 process 语境 |
-| 宏 | 宏 | 巨集 | macro |
 | 恢复 | 恢復 | 復原 | restore |
 | 回调 | 回撥 | 回呼 | callback |
 | 回归 | 迴歸 | 回歸 | regression（同形） |
@@ -202,7 +197,6 @@
 | 扩展 | 擴充套件 | 擴充 | extension |
 | 垃圾回收 | 垃圾回收 | 記憶體回收 | garbage collection |
 | 垃圾回收器 | 垃圾回收器 | 記憶體回收器 | garbage collector |
-| 类 | 類 | 類別 | class |
 | 连接池 | 連線池 | 連線集區 | connection pool |
 | 令牌 | 令牌 | 權杖 | token（资安语境） |
 | 命名空间 | 名稱空間 | 命名空間 | namespace（同形） |
@@ -222,7 +216,6 @@
 | 元数据 | 後設資料 | 中繼資料 | metadata |
 | 云计算 | 雲端計算 | 雲端運算 | cloud computing |
 | 占位符 | 佔位符 | 預留位置 | placeholder |
-| 栈 | 棧 | 堆疊 | stack |
 | 栈帧 | 棧幀 | 堆疊框架 | stack frame |
 | 重启 | 重啟 | 重新啟動 | restart |
 | 注释 | 註釋 | 註解 | comment |

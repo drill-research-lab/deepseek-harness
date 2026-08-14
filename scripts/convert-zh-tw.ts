@@ -1,5 +1,5 @@
 /**
- * Convert Simplified Chinese (zh-CN) Markdown into Taiwan Traditional Chinese
+ * Convert Simplified Chinese (zh-CN) Markdown into Traditional Chinese
  * (zh-TW). The pipeline protects code spans and link targets from conversion,
  * applies OpenCC `s2twp` for character and phrase conversion, then applies the
  * repo's [terminology-zh-tw.md](../docs/i18n/terminology-zh-tw.md) correction
@@ -14,22 +14,41 @@ import * as OpenCC from 'opencc-js'
 /** A parsed simplified-to-traditional correction entry. */
 export type ZhTwCorrections = Map<string, string>
 
+/** Pre-conversion (simplified keys) and post-conversion (OpenCC-output keys) corrections. */
+export interface ZhTwCorrectionSets {
+  /** Applied before OpenCC: replacement-table rows keyed on simplified Chinese. */
+  pre: ZhTwCorrections
+  /** Applied after OpenCC: mechanical-trap rows keyed on OpenCC's wrong output. */
+  post: ZhTwCorrections
+}
+
 const CORRECTION_LINE = /^\|\s*([^|\s][^|]*?)\s*\|\s*([^|\s][^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|$/
 const TRAP_LINE = /^\|\s*([^|\s][^|]*?)\s*\|\s*([^|\s][^|]*?)\s*\|\s*([^|\s][^|]*?)\s*\|\s*([^|]*?)\s*\|$/
 
+/** Sort a correction map longest-key-first so multi-character terms win. */
+function sorted(map: Map<string, string>): Map<string, string> {
+  return new Map([...map].sort(([left], [right]) => right.length - left.length))
+}
+
 /**
- * Parse the `docs/i18n/terminology-zh-tw.md` replacement table into
- * simplified → traditional pairs. Only rows whose simplified and traditional
- * columns differ are kept; same-form rows (同形词) are skipped because OpenCC
- * already leaves them unchanged. The mechanical-trap table maps OpenCC's wrong
- * output (e.g. 許可權) back to the correct form (權限), applied after the
- * converter runs.
+ * Parse the `docs/i18n/terminology-zh-tw.md` tables into pre- and
+ * post-conversion correction sets. The replacement table (simplified keys,
+ * applied before OpenCC) keeps only rows whose columns differ; same-form rows
+ * (同形词) are skipped because OpenCC already leaves them unchanged. The
+ * mechanical-trap table maps OpenCC's wrong output (e.g. 許可權) back to the
+ * correct form (權限), applied after the converter runs.
+ *
+ * Rows whose traditional form contains the key as a substring are dropped
+ * from both tables: a second application would compound the replacement
+ * (工作流 → 工作流程 → 工作流程程). Such renderings belong to the review
+ * pass, not to mechanical correction.
  *
  * @param table - Full Markdown of the terminology-zh-tw table.
- * @returns The correction map, longest-key-first so multi-character terms win.
+ * @returns Pre- and post-conversion correction sets, longest-key-first.
  */
-export function loadZhTwCorrections(table: string): ZhTwCorrections {
-  const corrections = new Map<string, string>()
+export function loadZhTwCorrections(table: string): ZhTwCorrectionSets {
+  const pre = new Map<string, string>()
+  const post = new Map<string, string>()
   let inReplacementTable = false
   let inTrapTable = false
   for (const line of table.split('\n')) {
@@ -43,17 +62,17 @@ export function loadZhTwCorrections(table: string): ZhTwCorrections {
       if (!match?.[1] || !match[2]) continue
       const simplified = match[1].trim()
       const traditional = match[2].trim()
-      if (simplified !== traditional) corrections.set(simplified, traditional)
+      if (simplified !== traditional && !traditional.includes(simplified)) pre.set(simplified, traditional)
     } else if (inTrapTable) {
       // Column 2 is OpenCC's wrong output; column 3 is the correct form.
       const match = TRAP_LINE.exec(line)
       if (!match?.[2] || !match[3]) continue
       const wrongOutput = match[2].trim()
       const correctForm = match[3].trim()
-      if (wrongOutput !== correctForm) corrections.set(wrongOutput, correctForm)
+      if (wrongOutput !== correctForm && !correctForm.includes(wrongOutput)) post.set(wrongOutput, correctForm)
     }
   }
-  return new Map([...corrections].sort(([left], [right]) => right.length - left.length))
+  return { pre: sorted(pre), post: sorted(post) }
 }
 
 /** Apply the correction table longest-first to one text span. */
@@ -121,17 +140,17 @@ function fixSwitcher(markdown: string): string {
  * stay protected throughout.
  *
  * @param markdown - Simplified Chinese Markdown source.
- * @param corrections - Terminology corrections; defaults to the repo table.
+ * @param corrections - Pre/post correction sets; defaults to the repo table.
  * @returns The converted Traditional Chinese Markdown.
  */
-export function convertChineseMarkdown(markdown: string, corrections?: ZhTwCorrections): string {
+export function convertChineseMarkdown(markdown: string, corrections?: ZhTwCorrectionSets): string {
   const table = corrections ?? loadZhTwCorrections(
     readFileSync(resolve(import.meta.dirname, '../docs/i18n/terminology-zh-tw.md'), 'utf8'),
   )
   const { text, spans } = protectSpans(markdown)
   const converter = OpenCC.Converter({ from: 'cn', to: 'twp' })
-  const preCorrected = applyCorrections(text, table)
-  const converted = applyCorrections(converter(preCorrected), table)
+  const preCorrected = applyCorrections(text, table.pre)
+  const converted = applyCorrections(converter(preCorrected), table.post)
   const restored = restoreSpans(converted, spans)
   return fixSwitcher(restored)
 }

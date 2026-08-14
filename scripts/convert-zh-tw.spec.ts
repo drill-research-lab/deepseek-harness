@@ -11,19 +11,27 @@ import {
 const root = resolve(import.meta.dirname, '..')
 
 describe('zh-TW conversion corrections', () => {
-  it('loads the terminology table into simplified-to-traditional pairs', () => {
+  it('loads the terminology tables into pre/post correction pairs', () => {
     const table = readFileSync(join(root, 'docs/i18n/terminology-zh-tw.md'), 'utf8')
     const corrections = loadZhTwCorrections(table)
-    expect(corrections.get('智能体')).toBe('代理')
-    expect(corrections.get('权限')).toBe('權限')
-    expect(corrections.get('配置')).toBe('設定')
-    expect(corrections.get('插件')).toBe('外掛程式')
-    expect(corrections.size).toBeGreaterThan(50)
+    expect(corrections.pre.get('智能体')).toBe('代理')
+    expect(corrections.pre.get('配置')).toBe('設定')
+    expect(corrections.pre.get('插件')).toBe('外掛程式')
+    // The mechanical-trap table maps OpenCC's wrong output back to the correct form.
+    expect(corrections.post.get('許可權')).toBe('權限')
+    expect(corrections.pre.size).toBeGreaterThan(50)
   })
 
   it('skips rows with identical or absent translations', () => {
     const corrections = loadZhTwCorrections('| 简体中文 | 繁體中文 | English 錨點 | 備註 |\n|---|---|---|---|\n| 子代理 | 子代理 | subagent | 同形词 |\n| 事件 | 事件 | event | 同形词 |\n')
-    expect(corrections.size).toBe(0)
+    expect(corrections.pre.size).toBe(0)
+    expect(corrections.post.size).toBe(0)
+  })
+
+  it('drops rows whose translation contains the key, which would compound on re-application', () => {
+    const corrections = loadZhTwCorrections('| 简体中文 | 繁體中文 | English 錨點 | 備註 |\n|---|---|---|---|\n| 工作流 | 工作流程 | workflow | |\n| 高可用 | 高可用性 | high availability | |\n')
+    expect(corrections.pre.has('工作流')).toBe(false)
+    expect(corrections.pre.has('高可用')).toBe(false)
   })
 })
 
