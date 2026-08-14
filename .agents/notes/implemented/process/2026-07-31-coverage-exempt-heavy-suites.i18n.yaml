@@ -1,6 +1,7 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# Language-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. All languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-07-31-coverage-exempt-heavy-suites.md
 2026-07-31-coverage-exempt-heavy-suites.md: 7235a5193554947ecf71f62d522d09f4e21cb1da
 2026-07-31-coverage-exempt-heavy-suites.zh.md: e3d6e335ecb069dadeebb06d760cf70c9b0c1fd4
+2026-07-31-coverage-exempt-heavy-suites.zh-tw.md: a06b24f9f7e21db4d154da9e759354b9104083fa

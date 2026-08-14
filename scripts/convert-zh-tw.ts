@@ -123,8 +123,11 @@ export function main(argv: string[]): void {
         if (entry.name === 'node_modules' || entry.name === 'lib' || entry.name === '.git' || entry.name === 'vendor') continue
         const full = join(dir, entry.name)
         const rel = full.slice(root.length + 1).split(sep).join('/')
-        if (entry.isDirectory()) walk(full)
-        else if (entry.name.endsWith('.zh.md') && !excluded.some(prefix => rel === prefix || rel.startsWith(`${prefix}/`))) {
+        if (entry.isDirectory()) {
+          // Frozen archived triplets never gain a zh-TW side.
+          if (rel === '.agents/notes/archived' || rel.startsWith('.agents/notes/archived/')) continue
+          walk(full)
+        } else if (entry.name.endsWith('.zh.md') && !excluded.some(prefix => rel === prefix || rel.startsWith(`${prefix}/`))) {
           targets.push(rel)
         }
       }
