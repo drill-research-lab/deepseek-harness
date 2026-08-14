@@ -21,9 +21,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
   LOCALE_PREFERENCE_FIELD, LOCALE_SETTINGS_NAMESPACE, type LocaleId, type LocaleSettings,
 } from '../locale-settings.ts'
-import { en, zh, type CommonKey } from '../locales/index.ts'
+import { en, zh, zhTw, type CommonKey } from '../locales/index.ts'
 import {
-  en as settingsEn, zh as settingsZh, type SettingsLocaleKey,
+  en as settingsEn, zh as settingsZh, zhTw as settingsZhTw, type SettingsLocaleKey,
 } from '../locales/settings.ts'
 import type { LanguageRowInjected } from './LanguageRow.tsx'
 import { LanguageRow } from './LanguageRow.tsx'
@@ -95,9 +95,10 @@ export const COMMON_NS = 'common'
 /** Namespace owning this feature's settings-row copy. */
 export const SETTINGS_NS = 'settings.locale'
 
-/** The two shipped locales. */
+/** The three shipped locales. */
 const LOCALES: readonly LocaleDefinition[] = Object.freeze([
   { id: 'zh', label: '中文' },
+  { id: 'zh-TW', label: '繁體中文' },
   { id: 'en', label: 'English' },
 ])
 
@@ -321,13 +322,15 @@ function resolveInitialLocale(): LocaleId {
 }
 
 /**
- * The first shipped locale the browser asks for, matched on the primary
- * subtag so every regional variant lands on its language (`zh-Hans-CN` -> zh,
- * `en-GB` -> en). `window` is the browser test, not `navigator`: Node exposes
- * a global `navigator` reporting the machine's own language, which would
- * otherwise decide the locale for non-browser runs (node e2e booting the
- * client tree). `navigator.language` trails the ordered `languages` list and
- * covers its absence on hosts that expose only the single tag.
+ * The first shipped locale the browser asks for. A script subtag decides
+ * before the primary subtag so the two Chinese locales separate cleanly:
+ * `zh-Hant-TW` and `zh-TW` land on `zh-TW`, `zh-Hans-CN` and `zh-CN` land on
+ * `zh`; every other primary subtag falls back to `en`. `window` is the
+ * browser test, not `navigator`: Node exposes a global `navigator` reporting
+ * the machine's own language, which would otherwise decide the locale for
+ * non-browser runs (node e2e booting the client tree). `navigator.language`
+ * trails the ordered `languages` list and covers its absence on hosts that
+ * expose only the single tag.
  */
 function detectBrowserLocale(): LocaleId | undefined {
   if (typeof window === 'undefined') return undefined
@@ -336,8 +339,15 @@ function detectBrowserLocale(): LocaleId | undefined {
    * WebViews ship a Navigator without it, and spreading undefined would
    * throw at boot. */
   for (const tag of [...(navigator.languages ?? []), navigator.language]) {
-    const primary = tag.toLowerCase().split('-')[0]
-    const match = LOCALES.find(locale => locale.id === primary)
+    const subtags = tag.toLowerCase().split('-')
+    if (subtags[0] === 'zh') {
+      if (subtags.includes('hant')) return 'zh-TW'
+      if (subtags.includes('hans')) return 'zh'
+      if (subtags[1] === 'tw' || subtags[1] === 'hk' || subtags[1] === 'mo') return 'zh-TW'
+      if (subtags[1] === 'cn' || subtags[1] === 'sg') return 'zh'
+      return 'zh'
+    }
+    const match = LOCALES.find(locale => locale.id === subtags[0])
     if (match) return match.id
   }
   return undefined
@@ -355,8 +365,8 @@ export const inject = ['slots', 'connection', 'remote', 'settingsScope']
 export function apply(ctx: ClientContext): void {
   const host = ctx.settingsScope.bind<LocaleSettings>({ namespace: LOCALE_SETTINGS_NAMESPACE })
   const locale = new LocaleRuntime(ctx, host)
-  locale.register(COMMON_NS, { zh, en })
-  locale.register(SETTINGS_NS, { zh: settingsZh, en: settingsEn })
+  locale.register(COMMON_NS, { zh, 'zh-TW': zhTw, en })
+  locale.register(SETTINGS_NS, { zh: settingsZh, 'zh-TW': settingsZhTw, en: settingsEn })
   ctx.provide('locale', locale)
   // The service IS the LocaleFace (bind + getSnapshot/subscribe): install it
   // so the render machinery can synthesize the `t` standard seat.

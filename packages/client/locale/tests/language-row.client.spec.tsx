@@ -11,7 +11,7 @@ import { createLanguageRowStore } from '../src/client/settings-store.ts'
 
 afterEach(cleanup)
 
-const OPTIONS = [{ id: 'zh', label: '中文' }, { id: 'en', label: 'English' }]
+const OPTIONS = [{ id: 'zh', label: '中文' }, { id: 'zh-TW', label: '繁體中文' }, { id: 'en', label: 'English' }]
 
 /** Empty global standard-kit hooks (the row reads neither). */
 function emptySessions() {

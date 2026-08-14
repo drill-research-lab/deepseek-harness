@@ -13,6 +13,15 @@ export const zh = {
   'suggestions.aria': '触发候选建议',
 } satisfies Record<string, string>
 
+/** Traditional Chinese dictionary, checked complete against zh. */
+export const zhTw = {
+  'command': '命令',
+  'skill': '技能',
+  'subagent': '子代理',
+  'loading': '正在載入…',
+  'suggestions.aria': '觸發候選建議',
+} satisfies Record<keyof typeof zh, string>
+
 /** The slash.menu namespace key union. */
 export type MenuKey = keyof typeof zh
 
