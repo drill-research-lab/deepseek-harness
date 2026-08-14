@@ -20,18 +20,26 @@ export interface ZhTwIssue extends Match {
 
 const simplifiedToStandard = OpenCC.Converter({ from: 'cn', to: 't' })
 
-/** Whether a matched span contains any residual Simplified Chinese character. */
-function hasSimplifiedChars(source: string): boolean {
-  return simplifiedToStandard(source) !== source
+/**
+ * Whether the line containing a finding still carries Simplified characters.
+ * Judged on the whole line, not the matched substring: OpenCC s2t maps 面 to
+ * 麵 in isolation, but 面 is correct inside 介面包 (interface wrapper), so a
+ * substring check would misreport it.
+ */
+function lineHasSimplifiedChars(text: string, offset: number): boolean {
+  const lineStart = text.lastIndexOf('\n', offset - 1) + 1
+  const lineEnd = text.indexOf('\n', offset)
+  const line = text.slice(lineStart, lineEnd === -1 ? undefined : lineEnd)
+  return simplifiedToStandard(line) !== line
 }
 
 /**
  * Check one zh-TW Markdown document for residual Simplified Chinese.
  *
- * Only findings whose matched span still contains a Simplified character are
+ * Only findings whose containing line still carries a Simplified character are
  * reported — a zh-TW document is done when every Simplified character is
- * converted. Vocabulary-preference suggestions (聲明→宣告, 綁定→繫結) are
- * left to review, because both forms are legitimate Taiwan usage.
+ * converted. Vocabulary-preference suggestions (聲明→宣告, 綁定→繫結) and
+ * substring false positives (面包 inside 介面包) are left to review.
  *
  * @param markdown - Traditional Chinese Markdown prose.
  * @param file - Repository-relative path for reporting.
@@ -40,7 +48,7 @@ function hasSimplifiedChars(source: string): boolean {
 export function checkZhTwDocument(markdown: string, file = ''): ZhTwIssue[] {
   const { text } = protectSpans(markdown)
   return check(text)
-    .filter(issue => hasSimplifiedChars(issue.source))
+    .filter(issue => lineHasSimplifiedChars(text, issue.start))
     .map(issue => ({ ...issue, file }))
 }
 
