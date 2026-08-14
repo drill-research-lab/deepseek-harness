@@ -107,48 +107,66 @@ function createFixture(attributes = true): Fixture {
   return fixture
 }
 
-function record(root: string, path: string, source: string, zh: string): string {
+function record(
+  root: string,
+  path: string,
+  source: string,
+  zh: string,
+  zhTw: string,
+): string {
   const paths = translationPairPaths(path)
   write(root, paths.source, source)
-  write(root, paths.zh, zh)
+  write(root, paths.languages.zh, zh)
+  write(root, paths.languages['zh-TW'], zhTw)
   const content = renderTranslationPairingRecord(paths, {
-    sourceHash: storeGitBlob(root, Buffer.from(source)),
-    zhHash: storeGitBlob(root, Buffer.from(zh)),
+    en: storeGitBlob(root, Buffer.from(source)),
+    zh: storeGitBlob(root, Buffer.from(zh)),
+    'zh-TW': storeGitBlob(root, Buffer.from(zhTw)),
   })
   write(root, paths.meta, content)
   return content
 }
 
-const baseSource = '# Guide\n\nEnglish | [中文](guide.zh.md)\n\nAlpha base.\n\nBeta base.\n'
+const baseSource = '# Guide\n\nEnglish | [中文](guide.zh.md) | [繁體中文](guide.zh-tw.md)\n\nAlpha base.\n\nBeta base.\n'
 const baseZh = '# 指南\n\n[English](guide.md) | 中文\n\n甲基础。\n\n乙基础。\n'
+const baseZhTw = '# 指南\n\n[English](guide.md) | 繁體中文\n\n甲基礎。\n\n乙基礎。\n'
 const currentSource = baseSource.replace('Alpha base.', 'Alpha current.')
 const currentZh = baseZh.replace('甲基础。', '甲当前。')
+const currentZhTw = baseZhTw.replace('甲基礎。', '甲當前。')
 const otherSource = baseSource.replace('Beta base.', 'Beta other.')
 const otherZh = baseZh.replace('乙基础。', '乙对侧。')
+const otherZhTw = baseZhTw.replace('乙基礎。', '乙對側。')
 const mergedSource = currentSource.replace('Beta base.', 'Beta other.')
 const mergedZh = currentZh.replace('乙基础。', '乙对侧。')
+const mergedZhTw = currentZhTw.replace('乙基礎。', '乙對側。')
 const generatedBaseSource = '# Module graph\n\nAlpha base.\n\nBeta base.\n'
 const generatedBaseZh = '# 模块图\n\n[English](module-graph.md) | 中文\n\n甲基础。\n\n乙基础。\n'
+const generatedBaseZhTw = '# 模組圖\n\n[English](module-graph.md) | 繁體中文\n\n甲基礎。\n\n乙基礎。\n'
 const generatedCurrentSource = generatedBaseSource.replace('Alpha base.', 'Alpha current.')
 const generatedCurrentZh = generatedBaseZh.replace('甲基础。', '甲当前。')
+const generatedCurrentZhTw = generatedBaseZhTw.replace('甲基礎。', '甲當前。')
 const generatedOtherSource = generatedBaseSource.replace('Beta base.', 'Beta other.')
 const generatedOtherZh = generatedBaseZh.replace('乙基础。', '乙对侧。')
-const manualBaseSource = baseSource.replace('guide.zh.md', 'manual.zh.md')
+const generatedOtherZhTw = generatedBaseZhTw.replace('乙基礎。', '乙對側。')
+const manualBaseSource = baseSource.replace('guide.zh.md', 'manual.zh.md').replace('guide.zh-tw.md', 'manual.zh-tw.md')
 const manualBaseZh = baseZh.replace('guide.md', 'manual.md')
+const manualBaseZhTw = baseZhTw.replace('guide.md', 'manual.md')
 const manualCurrentSource = manualBaseSource.replace('Alpha base.', 'Alpha current.')
 const manualCurrentZh = manualBaseZh.replace('甲基础。', '甲当前。')
+const manualCurrentZhTw = manualBaseZhTw.replace('甲基礎。', '甲當前。')
 const manualOtherSource = manualBaseSource.replace('Alpha base.', 'Alpha other.')
 const manualOtherZh = manualBaseZh.replace('甲基础。', '甲对侧。')
+const manualOtherZhTw = manualBaseZhTw.replace('甲基礎。', '甲對側。')
 
-function commitPair(fixture: Fixture, source: string, zh: string, message: string): string {
-  const sidecar = record(fixture.root, 'docs/guide.md', source, zh)
+function commitPair(fixture: Fixture, source: string, zh: string, zhTw: string, message: string): string {
+  const sidecar = record(fixture.root, 'docs/guide.md', source, zh, zhTw)
   git(fixture, ['add', '.'])
   git(fixture, ['commit', '-m', message])
   return sidecar
 }
 
 function commitTextCleanPair(fixture: Fixture, source: string, zh: string, message: string): void {
-  const sidecar = record(fixture.root, 'docs/guide.md', source, zh)
+  const sidecar = record(fixture.root, 'docs/guide.md', source, zh, baseZhTw)
   write(
     fixture.root,
     'docs/guide.i18n.yaml',
@@ -159,11 +177,11 @@ function commitTextCleanPair(fixture: Fixture, source: string, zh: string, messa
 }
 
 function createDivergedPair(fixture: Fixture): { ancestor: string; current: string; other: string } {
-  const ancestor = commitPair(fixture, baseSource, baseZh, 'base')
+  const ancestor = commitPair(fixture, baseSource, baseZh, baseZhTw, 'base')
   git(fixture, ['switch', '-c', 'current'])
-  const current = commitPair(fixture, currentSource, currentZh, 'current')
+  const current = commitPair(fixture, currentSource, currentZh, currentZhTw, 'current')
   git(fixture, ['switch', 'master'])
-  const other = commitPair(fixture, otherSource, otherZh, 'other')
+  const other = commitPair(fixture, otherSource, otherZh, otherZhTw, 'other')
   git(fixture, ['switch', 'current'])
   return { ancestor, current, other }
 }
@@ -189,12 +207,12 @@ function startStoppedPairingMerge(fixture: Fixture): void {
 
 function commitMixedPairs(
   fixture: Fixture,
-  guide: { source: string; zh: string },
-  manual: { source: string; zh: string },
+  guide: { source: string; zh: string; zhTw: string },
+  manual: { source: string; zh: string; zhTw: string },
   message: string,
 ): void {
-  record(fixture.root, 'docs/guide.md', guide.source, guide.zh)
-  record(fixture.root, 'docs/manual.md', manual.source, manual.zh)
+  record(fixture.root, 'docs/guide.md', guide.source, guide.zh, guide.zhTw)
+  record(fixture.root, 'docs/manual.md', manual.source, manual.zh, manual.zhTw)
   git(fixture, ['add', '.'])
   git(fixture, ['commit', '-m', message])
 }
@@ -202,22 +220,22 @@ function commitMixedPairs(
 function startMixedPairingMerge(fixture: Fixture): void {
   commitMixedPairs(
     fixture,
-    { source: baseSource, zh: baseZh },
-    { source: manualBaseSource, zh: manualBaseZh },
+    { source: baseSource, zh: baseZh, zhTw: baseZhTw },
+    { source: manualBaseSource, zh: manualBaseZh, zhTw: manualBaseZhTw },
     'base',
   )
   git(fixture, ['switch', '-c', 'current'])
   commitMixedPairs(
     fixture,
-    { source: currentSource, zh: currentZh },
-    { source: manualCurrentSource, zh: manualCurrentZh },
+    { source: currentSource, zh: currentZh, zhTw: currentZhTw },
+    { source: manualCurrentSource, zh: manualCurrentZh, zhTw: manualCurrentZhTw },
     'current',
   )
   git(fixture, ['switch', 'master'])
   commitMixedPairs(
     fixture,
-    { source: otherSource, zh: otherZh },
-    { source: manualOtherSource, zh: manualOtherZh },
+    { source: otherSource, zh: otherZh, zhTw: otherZhTw },
+    { source: manualOtherSource, zh: manualOtherZh, zhTw: manualOtherZhTw },
     'other',
   )
   git(fixture, ['switch', 'current'])
@@ -231,10 +249,12 @@ function startMixedPairingMerge(fixture: Fixture): void {
 function expectMergedPair(fixture: Fixture): void {
   expect(readFileSync(join(fixture.root, 'docs/guide.md'), 'utf8')).toBe(mergedSource)
   expect(readFileSync(join(fixture.root, 'docs/guide.zh.md'), 'utf8')).toBe(mergedZh)
+  expect(readFileSync(join(fixture.root, 'docs/guide.zh-tw.md'), 'utf8')).toBe(mergedZhTw)
   expect(readFileSync(join(fixture.root, 'docs/guide.i18n.yaml'), 'utf8')).toBe(
     renderTranslationPairingRecord(translationPairPaths('docs/guide.md'), {
-      sourceHash: gitBlobHash(Buffer.from(mergedSource)),
-      zhHash: gitBlobHash(Buffer.from(mergedZh)),
+      en: gitBlobHash(Buffer.from(mergedSource)),
+      zh: gitBlobHash(Buffer.from(mergedZh)),
+      'zh-TW': gitBlobHash(Buffer.from(mergedZhTw)),
     }),
   )
 }
@@ -265,17 +285,19 @@ describe('translation pairing merge composition', { timeout: 15_000 }, () => {
       records.other,
     )
 
-    expect(result.sourceContent.toString('utf8')).toBe(mergedSource)
-    expect(result.zhContent.toString('utf8')).toBe(mergedZh)
-    expect(result.sourceHash).toBe(gitBlobHash(Buffer.from(mergedSource)))
-    expect(result.zhHash).toBe(gitBlobHash(Buffer.from(mergedZh)))
+    expect(result.contents.en.toString('utf8')).toBe(mergedSource)
+    expect(result.contents.zh.toString('utf8')).toBe(mergedZh)
+    expect(result.contents['zh-TW'].toString('utf8')).toBe(mergedZhTw)
+    expect(result.en).toBe(gitBlobHash(Buffer.from(mergedSource)))
+    expect(result.zh).toBe(gitBlobHash(Buffer.from(mergedZh)))
+    expect(result['zh-TW']).toBe(gitBlobHash(Buffer.from(mergedZhTw)))
   })
 
   it('merges a generated source without an English language switcher', () => {
     const fixture = createFixture(false)
-    const ancestor = record(fixture.root, 'docs/module-graph.md', generatedBaseSource, generatedBaseZh)
-    const current = record(fixture.root, 'docs/module-graph.md', generatedCurrentSource, generatedCurrentZh)
-    const other = record(fixture.root, 'docs/module-graph.md', generatedOtherSource, generatedOtherZh)
+    const ancestor = record(fixture.root, 'docs/module-graph.md', generatedBaseSource, generatedBaseZh, generatedBaseZhTw)
+    const current = record(fixture.root, 'docs/module-graph.md', generatedCurrentSource, generatedCurrentZh, generatedCurrentZhTw)
+    const other = record(fixture.root, 'docs/module-graph.md', generatedOtherSource, generatedOtherZh, generatedOtherZhTw)
 
     const result = mergeTranslationPairingRecords(
       fixture.root,
@@ -285,18 +307,19 @@ describe('translation pairing merge composition', { timeout: 15_000 }, () => {
       other,
     )
 
-    expect(result.sourceContent.toString('utf8')).toBe(
+    expect(result.contents.en.toString('utf8')).toBe(
       generatedCurrentSource.replace('Beta base.', 'Beta other.'),
     )
-    expect(result.zhContent.toString('utf8')).toBe(generatedCurrentZh.replace('乙基础。', '乙对侧。'))
+    expect(result.contents.zh.toString('utf8')).toBe(generatedCurrentZh.replace('乙基础。', '乙对侧。'))
+    expect(result.contents['zh-TW'].toString('utf8')).toBe(generatedCurrentZhTw.replace('乙基礎。', '乙對側。'))
   })
 
   it('rejects an authored source without an English language switcher', () => {
     const fixture = createFixture(false)
-    const source = baseSource.replace('English | [中文](guide.zh.md)\n\n', '')
-    const ancestor = record(fixture.root, 'docs/guide.md', source, baseZh)
-    const current = record(fixture.root, 'docs/guide.md', source, baseZh)
-    const other = record(fixture.root, 'docs/guide.md', source, baseZh)
+    const source = baseSource.replace('English | [中文](guide.zh.md) | [繁體中文](guide.zh-tw.md)\n\n', '')
+    const ancestor = record(fixture.root, 'docs/guide.md', source, baseZh, baseZhTw)
+    const current = record(fixture.root, 'docs/guide.md', source, baseZh, baseZhTw)
+    const other = record(fixture.root, 'docs/guide.md', source, baseZh, baseZhTw)
 
     expect(() => mergeTranslationPairingRecords(
       fixture.root,
@@ -304,15 +327,15 @@ describe('translation pairing merge composition', { timeout: 15_000 }, () => {
       ancestor,
       current,
       other,
-    )).toThrow('docs/guide.md clean merge lost its language-switcher link to guide.zh.md')
+    )).toThrow('docs/guide.md clean merge lost its language-switcher links to its counterparts')
   })
 
   it('rejects generated Chinese content without its English backlink', () => {
     const fixture = createFixture(false)
     const zh = generatedBaseZh.replace('[English](module-graph.md) | 中文\n\n', '')
-    const ancestor = record(fixture.root, 'docs/module-graph.md', generatedBaseSource, zh)
-    const current = record(fixture.root, 'docs/module-graph.md', generatedBaseSource, zh)
-    const other = record(fixture.root, 'docs/module-graph.md', generatedBaseSource, zh)
+    const ancestor = record(fixture.root, 'docs/module-graph.md', generatedBaseSource, zh, generatedBaseZhTw)
+    const current = record(fixture.root, 'docs/module-graph.md', generatedBaseSource, zh, generatedBaseZhTw)
+    const other = record(fixture.root, 'docs/module-graph.md', generatedBaseSource, zh, generatedBaseZhTw)
 
     expect(() => mergeTranslationPairingRecords(
       fixture.root,
@@ -327,18 +350,20 @@ describe('translation pairing merge composition', { timeout: 15_000 }, () => {
 
   it('leaves owner-content conflicts for a human', () => {
     const fixture = createFixture(false)
-    const ancestor = record(fixture.root, 'docs/guide.md', baseSource, baseZh)
+    const ancestor = record(fixture.root, 'docs/guide.md', baseSource, baseZh, baseZhTw)
     const current = record(
       fixture.root,
       'docs/guide.md',
       baseSource.replace('Alpha base.', 'Alpha current.'),
       baseZh.replace('甲基础。', '甲当前。'),
+      baseZhTw.replace('甲基礎。', '甲當前。'),
     )
     const other = record(
       fixture.root,
       'docs/guide.md',
       baseSource.replace('Alpha base.', 'Alpha other.'),
       baseZh.replace('甲基础。', '甲对侧。'),
+      baseZhTw.replace('甲基礎。', '甲對側。'),
     )
 
     expect(() => mergeTranslationPairingRecords(
@@ -352,13 +377,14 @@ describe('translation pairing merge composition', { timeout: 15_000 }, () => {
 
   it('rejects structurally divergent clean owner merges', () => {
     const fixture = createFixture(false)
-    const ancestor = record(fixture.root, 'docs/guide.md', baseSource, baseZh)
-    const current = record(fixture.root, 'docs/guide.md', currentSource, currentZh)
+    const ancestor = record(fixture.root, 'docs/guide.md', baseSource, baseZh, baseZhTw)
+    const current = record(fixture.root, 'docs/guide.md', currentSource, currentZh, currentZhTw)
     const other = record(
       fixture.root,
       'docs/guide.md',
       `${otherSource}\n## Extra\n`,
       otherZh,
+      otherZhTw,
     )
 
     expect(() => mergeTranslationPairingRecords(
@@ -461,8 +487,9 @@ describe('translation pairing merge composition', { timeout: 15_000 }, () => {
     expect(result.status).toBe(1)
     expect(git(fixture, ['diff', '--name-only', '--diff-filter=U'])).toBe('docs/guide.i18n.yaml')
     const canonicalRecord = renderTranslationPairingRecord(translationPairPaths('docs/guide.md'), {
-      sourceHash: gitBlobHash(Buffer.from(currentSource)),
-      zhHash: gitBlobHash(Buffer.from(otherZh)),
+      en: gitBlobHash(Buffer.from(currentSource)),
+      zh: gitBlobHash(Buffer.from(otherZh)),
+      'zh-TW': gitBlobHash(Buffer.from(baseZhTw)),
     })
     expect(readFileSync(join(fixture.root, 'docs/guide.i18n.yaml'), 'utf8')).toBe(
       canonicalRecord.replace(
@@ -569,6 +596,7 @@ describe('translation pairing merge composition', { timeout: 15_000 }, () => {
     expect(git(fixture, ['diff', '--name-only', '--diff-filter=U']).split('\n')).toEqual([
       'docs/manual.i18n.yaml',
       'docs/manual.md',
+      'docs/manual.zh-tw.md',
       'docs/manual.zh.md',
     ])
     expectMergedPair(fixture)
