@@ -1,0 +1,7 @@
+# Language-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. All languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/identity/auth-gateway-ldap/README.md
+README.md: 77c3e93f763a4a19ec74976aa5bd1e0e177db772
+README.zh.md: c85571f7f79a42e1d847d2fb1f0aa787a4a95896
+README.zh-tw.md: 6b7d7c72231310013ff910db903f752dffedbb2d

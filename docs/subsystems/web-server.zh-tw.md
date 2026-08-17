@@ -54,6 +54,88 @@ interface Config {
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
+<a id="ctxauth--authservice-abstract-seam"></a>
+
+### `ctx.auth` — `AuthService` (abstract seam)
+
+External-session verifier and AsyncLocalStorage-backed request identity scope.
+
+```ts cordis-catalog
+/**
+ * Recover and verify the authenticated user carried by a request.
+ * @param request - Request headers carrying the session cookie.
+ * @returns The verified user, or undefined when no valid session is present.
+ */
+abstract authenticateRequest(request: Pick<IncomingMessage, 'headers'>): Promise<AuthenticatedUser | undefined>
+
+/**
+ * Read the current request identity.
+ * @returns The user in the current authenticated asynchronous request scope, when present.
+ */
+currentUser(): AuthenticatedUser | undefined
+
+/**
+ * Run an operation inside an authenticated asynchronous scope.
+ * @param user - Identity made available to downstream consumers.
+ * @param operation - Work whose asynchronous continuations inherit the identity.
+ * @returns The operation's result.
+ */
+runAs<T>(user: AuthenticatedUser, operation: () => T): T
+```
+
+Source: [`packages/identity/auth/src/index.ts:26`](../../packages/identity/auth/src/index.ts)
+
+<a id="ctxldapauthgateway--ldapauthgateway"></a>
+
+### `ctx.ldapAuthGateway` — `LdapAuthGateway`
+
+Owns credential routes and identity-cookie signing in the authentication gateway process.
+
+Source: [`packages/identity/auth-gateway-ldap/src/index.ts:173`](../../packages/identity/auth-gateway-ldap/src/index.ts)
+
+<a id="ctxldapdirectory--ldapdirectory"></a>
+
+### `ctx.ldapDirectory` — `LdapDirectory`
+
+LDAP authentication for a separately deployed authentication gateway.
+
+```ts cordis-catalog
+/**
+ * Verify a password directly against LDAP inside the authentication gateway process.
+ * @param username - LDAP login name collected by the gateway.
+ * @param password - Password collected by the gateway and discarded after bind.
+ * @returns The stable LDAP identity, or undefined when the credentials do not match one entry.
+ */
+async authenticate(username: string, password: string): Promise<AuthenticatedUser | undefined>
+```
+
+Source: [`packages/identity/auth-ldap/src/index.ts:57`](../../packages/identity/auth-ldap/src/index.ts)
+
+<a id="ctxlocalaccounts--localaccountstore"></a>
+
+### `ctx.localAccounts` — `LocalAccountStore`
+
+Owner-only account store used solely by the separately deployed authentication gateway.
+
+```ts cordis-catalog
+/**
+ * Verify one gateway-local username and password.
+ * @param username - Login name collected by the gateway.
+ * @param password - Password collected by the gateway and discarded after derivation.
+ * @returns The stable local identity, or undefined when the credentials do not match.
+ */
+async authenticate(username: string, password: string): Promise<AuthenticatedUser | undefined>
+
+/**
+ * Create one gateway-local account with an scrypt-derived password hash.
+ * @param registration - Account fields collected only by the gateway.
+ * @returns The new stable local identity after the owner-only file commits.
+ */
+async create(registration: LocalAccountRegistration): Promise<AuthenticatedUser>
+```
+
+Source: [`packages/identity/auth-local/src/index.ts:80`](../../packages/identity/auth-local/src/index.ts)
+
 <a id="ctxwebserver--webserver"></a>
 
 ### `ctx.webServer` — `WebServer`
