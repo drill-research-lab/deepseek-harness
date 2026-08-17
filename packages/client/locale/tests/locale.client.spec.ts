@@ -203,6 +203,10 @@ describe('LocaleRuntime', () => {
     // Simplified Chinese script resolves to zh.
     stubLanguages('zh-Hans-CN')
     expect(make().svc.getLocale().active).toBe('zh')
+    stubLanguages('zh-SG')
+    expect(make().svc.getLocale().active).toBe('zh')
+    stubLanguages('zh')
+    expect(make().svc.getLocale().active).toBe('zh')
     // An unshipped language walks the list to the first one this app ships.
     stubLanguages('fr-FR', 'en-US')
     expect(make().svc.getLocale().active).toBe('en')
