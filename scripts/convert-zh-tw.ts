@@ -10,9 +10,9 @@
 
 import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { createConverter } from 'zhtw-js'
 import * as OpenCC from 'opencc-js'
+import { runCliMain } from './cli-entry.ts'
 import { protectSpans, restoreSpans } from './zh-tw-spans.ts'
 
 /** Simplified → standard-Traditional glyph fallback for chars zhtw-js leaves behind. */
@@ -195,14 +195,4 @@ export function main(argv: string[]): void {
   }
 }
 
-const invokedPath = process.argv[1]
-const isMain = invokedPath !== undefined && import.meta.url === pathToFileURL(resolve(invokedPath)).href
-
-if (isMain) {
-  try {
-    main(process.argv.slice(2))
-  } catch (error) {
-    console.error(`convert-zh-tw: ${error instanceof Error ? error.message : String(error)}`)
-    process.exit(1)
-  }
-}
+runCliMain(main, 'convert-zh-tw', import.meta.url)

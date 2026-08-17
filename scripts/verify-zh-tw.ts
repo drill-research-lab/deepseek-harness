@@ -8,9 +8,9 @@
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { check, type Match } from 'zhtw-js'
 import * as OpenCC from 'opencc-js'
+import { runCliMain } from './cli-entry.ts'
 import { protectSpans } from './zh-tw-spans.ts'
 
 /** One residual-Simplified finding in a zh-TW document. */
@@ -134,14 +134,4 @@ export function main(argv: string[]): void {
   console.log(`verify-zh-tw: ${targets.length} zh-TW file(s) checked, no residual Simplified Chinese.`)
 }
 
-const invokedPath = process.argv[1]
-const isMain = invokedPath !== undefined && import.meta.url === pathToFileURL(resolve(invokedPath)).href
-
-if (isMain) {
-  try {
-    main(process.argv.slice(2))
-  } catch (error) {
-    console.error(`verify-zh-tw: ${error instanceof Error ? error.message : String(error)}`)
-    process.exit(1)
-  }
-}
+runCliMain(main, 'verify-zh-tw', import.meta.url)
