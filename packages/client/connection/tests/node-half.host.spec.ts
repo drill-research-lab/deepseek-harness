@@ -8,6 +8,7 @@ import type { AddressInfo } from 'node:net'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { ApiProxy } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
+import { authenticatedUserId, type AuthenticatedUser, type AuthService } from '@deepseek-ai/dsh-auth'
 import { RpcId, type ClientRequest } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { WebServer, WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
 import { API_PATH, apply, HOST_EVENTS_PATH, inject, MUX_EVENTS_PATH, type HostConnectionHandle } from '../src/index.ts'
@@ -74,17 +75,28 @@ function fakeResponse(): { response: ServerResponse; state: { status?: number; b
   return { response, state }
 }
 
-async function mounted(config?: { trustedHosts?: string[] }): Promise<{
+function provideAuthenticated(ctx: Context, authenticated = true): void {
+  const user = { userId: authenticatedUserId('test-user'), username: 'tester' }
+  ctx.provide('auth', {
+    authenticateRequest: async () => authenticated ? user : undefined,
+    currentUser: () => user,
+    runAs: <T>(_user: AuthenticatedUser, operation: () => T) => operation(),
+  } as unknown as AuthService)
+}
+
+async function mounted(config?: { trustedHosts?: string[]; authenticated?: boolean }): Promise<{
   routes: WebRoute[]
   upgrades: WebUpgradeRoute[]
   dispose: () => Promise<void>
 }> {
   const ctx = new Context()
+  provideAuthenticated(ctx, config?.authenticated ?? true)
   const routes: WebRoute[] = []
   const upgrades: WebUpgradeRoute[] = []
   ctx.provide('webServer', fakeHttpServer(routes, upgrades) as WebServer)
   ctx.provide('apiProxy', {} as unknown as ApiProxy)
-  const fiber = ctx.plugin({ inject: [...inject], apply }, config)
+  const pluginConfig = config?.trustedHosts === undefined ? {} : { trustedHosts: config.trustedHosts }
+  const fiber = ctx.plugin({ inject: [...inject], apply }, pluginConfig)
   await fiber.await()
   return { routes, upgrades, dispose: () => fiber.dispose() }
 }
@@ -92,6 +104,7 @@ async function mounted(config?: { trustedHosts?: string[] }): Promise<{
 describe('connection node half', () => {
   it('fails loud when the carrier cap cannot hold the configured image batch', () => {
     const ctx = new Context()
+    provideAuthenticated(ctx)
     const routes: WebRoute[] = []
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     ctx.provide('attachments', {
@@ -107,6 +120,7 @@ describe('connection node half', () => {
     const routes: WebRoute[] = []
     const upgrades: WebUpgradeRoute[] = []
     const ctx = new Context()
+    provideAuthenticated(ctx)
     ctx.provide('webServer', fakeHttpServer(routes, upgrades) as WebServer)
     ctx.provide('apiProxy', {} as unknown as ApiProxy)
     const fiber = ctx.plugin({ inject: [...inject], apply }, { trustedHosts: ['harness.internal/path'] })
@@ -158,6 +172,27 @@ describe('connection node half', () => {
     }), response)
     expect(state.status).toBe(403)
     expect(state.body).toBe('forbidden')
+    await dispose()
+  })
+
+  it('refuses an unauthenticated request after the browser-trust fence', async () => {
+    const { routes, dispose } = await mounted({ authenticated: false })
+    const { response, state } = fakeResponse()
+    await routes[0]!.handler(fakeRequest({ host: '127.0.0.1:3080' }), response)
+    expect(state.status).toBe(401)
+    expect(state.body).toBe('{"error":"unauthorized"}')
+    await dispose()
+  })
+
+  it('removes the signed cookie before authenticated /api dispatch', async () => {
+    const { routes, dispose } = await mounted()
+    const { response, state } = fakeResponse()
+    const request = fakeRequest({ host: '127.0.0.1:3080', cookie: 'dsh_identity=signed; other=value' })
+    Object.assign(request, { rawHeaders: ['Host', '127.0.0.1:3080', 'Cookie', 'dsh_identity=signed; other=value'] })
+    await routes[0]!.handler(request, response)
+    expect(state.status).toBe(404)
+    expect(request.headers.cookie).toBeUndefined()
+    expect(request.rawHeaders.some(header => header.toLowerCase() === 'cookie')).toBe(false)
     await dispose()
   })
 
@@ -215,6 +250,7 @@ describe('connection node half', () => {
 
   it('provides a disposable dedicated RPC channel without requiring apiProxy', async () => {
     const ctx = new Context()
+    provideAuthenticated(ctx)
     const routes: WebRoute[] = []
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     const fiber = ctx.plugin({ inject: [...inject], apply })
@@ -259,8 +295,42 @@ describe('connection node half', () => {
     expect(routes).toHaveLength(0)
   })
 
+  it('authenticates dedicated RPC channels and removes browser cookies before their handler', async () => {
+    for (const authenticated of [false, true]) {
+      const ctx = new Context()
+      provideAuthenticated(ctx, authenticated)
+      const routes: WebRoute[] = []
+      ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
+      const fiber = ctx.plugin({ inject: [...inject], apply })
+      await fiber.await()
+      const connection = ctx.get('connection') as HostConnectionHandle
+      let called = false
+      const remove = connection.rpc.handle('/rpc', async () => {
+        called = true
+        return { ok: true, value: null }
+      }, { authority: 'trusted-host' })
+      const request = fakePost(
+        { host: '127.0.0.1:3080', cookie: 'dsh_identity=signed' }, '/rpc/read', {
+          type: 'client-request', rpcId: 'rpc-auth', method: 'read', payload: {},
+        },
+      )
+      Object.assign(request, { rawHeaders: ['Host', '127.0.0.1:3080', 'Cookie', 'dsh_identity=signed'] })
+      const result = fakeResponse()
+      await routes.find(route => route.path === '/rpc')!.handler(request, result.response)
+      expect(result.state.status).toBe(authenticated ? 200 : 401)
+      expect(called).toBe(authenticated)
+      if (authenticated) {
+        expect(request.headers.cookie).toBeUndefined()
+        expect(request.rawHeaders.some(header => header.toLowerCase() === 'cookie')).toBe(false)
+      }
+      await remove()
+      await fiber.dispose()
+    }
+  })
+
   it('dispatches claimed /api endpoints before the API Proxy fallback and withdraws the claim', async () => {
     const ctx = new Context()
+    provideAuthenticated(ctx)
     const routes: WebRoute[] = []
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     ctx.provide('apiProxy', {} as unknown as ApiProxy)
@@ -339,6 +409,7 @@ describe('connection node half', () => {
 
   it('applies the configured trust fence and JSON envelope checks to generic channels', async () => {
     const ctx = new Context()
+    provideAuthenticated(ctx)
     const routes: WebRoute[] = []
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     const fiber = ctx.plugin({ inject: [...inject], apply }, { trustedHosts: ['harness.example'] })

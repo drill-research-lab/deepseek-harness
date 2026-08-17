@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { Context, Service, symbols } from '@deepseek-ai/cordis'
 import { z } from 'zod'
 import { apply as applyConnection, inject as connectionInject } from '@deepseek-ai/dsh-client-connection'
+import { authenticatedUserId, type AuthenticatedUser, type AuthService } from '@deepseek-ai/dsh-auth'
 import type { WebServer, WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import {
   bindTypertRemote,
@@ -1102,6 +1103,12 @@ describe('TypertGatewayService', () => {
 
   it('dispatches claimed invocations through /api and leaves unclaimed endpoints to its fallback', async () => {
     const ctx = new Context().extend({ fixtureScope: 'http-caller' })
+    const authenticatedUser = { userId: authenticatedUserId('http-caller'), username: 'http-caller' }
+    ctx.provide('auth', {
+      authenticateRequest: async () => authenticatedUser,
+      currentUser: () => authenticatedUser,
+      runAs: <T>(_user: AuthenticatedUser, operation: () => T) => operation(),
+    } as unknown as AuthService)
     const routes: WebRoute[] = []
     ctx.provide('webServer', fakeHttpServer(routes) as WebServer)
     const connectionFiber = ctx.plugin({ inject: [...connectionInject], apply: applyConnection })

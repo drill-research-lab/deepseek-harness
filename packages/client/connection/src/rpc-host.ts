@@ -14,6 +14,7 @@ import {
 import { bridge, type FetchHandler } from './http-bridge.ts'
 import { isTrustedApiRequest } from './api-request-trust.ts'
 import { API_PATH } from './api-path.ts'
+import { removeBrowserCookies } from './authenticated-request.ts'
 import type {
   ConnectionRpcEndpointMatcher,
   ConnectionRpcHandler,
@@ -105,7 +106,14 @@ export class HostConnectionService extends Service implements HostConnectionHand
           res.end('forbidden')
           return
         }
-        await bridge(req, res, fetchHandler)
+        const user = await this.ctx.auth.authenticateRequest(req)
+        if (user === undefined) {
+          res.writeHead(401, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+          res.end(JSON.stringify({ error: 'unauthorized' }))
+          return
+        }
+        removeBrowserCookies(req)
+        await this.ctx.auth.runAs(user, () => bridge(req, res, fetchHandler))
       },
     }
     return owner.effect(

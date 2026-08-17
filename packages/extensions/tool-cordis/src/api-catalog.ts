@@ -379,6 +379,31 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'auth',
+    summary: 'External-session verifier and AsyncLocalStorage-backed request identity scope.',
+    description: 'External-session verifier and AsyncLocalStorage-backed request identity scope.',
+    methods: [
+      {
+        signature: 'abstract authenticateRequest(request: Pick<IncomingMessage, \'headers\'>): Promise<AuthenticatedUser | undefined>',
+        description: 'Recover and verify the authenticated user carried by a request.',
+        parameters: [{ name: 'request', description: 'Request headers carrying the session cookie.' }],
+        returns: 'The verified user, or undefined when no valid session is present.',
+      },
+      {
+        signature: 'currentUser(): AuthenticatedUser | undefined',
+        description: 'Read the current request identity.',
+        parameters: [],
+        returns: 'The user in the current authenticated asynchronous request scope, when present.',
+      },
+      {
+        signature: 'runAs<T>(user: AuthenticatedUser, operation: () => T): T',
+        description: 'Run an operation inside an authenticated asynchronous scope.',
+        parameters: [{ name: 'user', description: 'Identity made available to downstream consumers.' }, { name: 'operation', description: 'Work whose asynchronous continuations inherit the identity.' }],
+        returns: 'The operation\'s result.',
+      },
+    ],
+  },
+  {
     key: 'clientModules',
     summary: 'The web plugin table service: incremental `dsh.client` scan + wire composition + bundle route + index tap.',
     description: 'The web plugin table service: incremental `dsh.client` scan + wire composition + bundle route + index tap. Construction runs the activation scan synchronously — a malformed declaration or missing bundle among the already-loaded entries aggregates into one loud throw (FAILED fiber; the boot activation audit reports it).',
@@ -784,6 +809,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'ldapAuthGateway',
+    summary: 'Owns credential routes and identity-cookie signing in the authentication gateway process.',
+    description: 'Owns credential routes and identity-cookie signing in the authentication gateway process.',
+    methods: [],
+  },
+  {
+    key: 'ldapDirectory',
+    summary: 'LDAP authentication for a separately deployed authentication gateway.',
+    description: 'LDAP authentication for a separately deployed authentication gateway.',
+    methods: [
+      {
+        signature: 'async authenticate(username: string, password: string): Promise<AuthenticatedUser | undefined>',
+        description: 'Verify a password directly against LDAP inside the authentication gateway process.',
+        parameters: [{ name: 'username', description: 'LDAP login name collected by the gateway.' }, { name: 'password', description: 'Password collected by the gateway and discarded after bind.' }],
+        returns: 'The stable LDAP identity, or undefined when the credentials do not match one entry.',
+      },
+    ],
+  },
+  {
     key: 'llm',
     summary: 'The abstract `llm` service: an adapter registry plus a streaming model-call API, interceptable via the `llm/stream` waterfall.',
     description: 'The abstract `llm` service: an adapter registry plus a streaming model-call API, interceptable via the `llm/stream` waterfall.',
@@ -859,6 +903,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Stream one model call as raw chunks (token-level deltas). Replay state is retained only when the same adapter instance owns its historical provider and the target provider. Final adapter selection remains fixed through asynchronous exact-model resolution and dispatch. Adapter selection, dispatch, and iteration failures become terminal `error` or `aborted` finish chunks; middleware, nested-call, cleanup, and consumer failures remain thrown.',
         parameters: [{ name: 'options', description: 'the full request; `options.provider` selects the adapter.' }],
         returns: 'the chunk stream, possibly wrapped by `llm/stream` listeners.',
+      },
+    ],
+  },
+  {
+    key: 'localAccounts',
+    summary: 'Owner-only account store used solely by the separately deployed authentication gateway.',
+    description: 'Owner-only account store used solely by the separately deployed authentication gateway.',
+    methods: [
+      {
+        signature: 'async authenticate(username: string, password: string): Promise<AuthenticatedUser | undefined>',
+        description: 'Verify one gateway-local username and password.',
+        parameters: [{ name: 'username', description: 'Login name collected by the gateway.' }, { name: 'password', description: 'Password collected by the gateway and discarded after derivation.' }],
+        returns: 'The stable local identity, or undefined when the credentials do not match.',
+      },
+      {
+        signature: 'async create(registration: LocalAccountRegistration): Promise<AuthenticatedUser>',
+        description: 'Create one gateway-local account with an scrypt-derived password hash.',
+        parameters: [{ name: 'registration', description: 'Account fields collected only by the gateway.' }],
+        returns: 'The new stable local identity after the owner-only file commits.',
       },
     ],
   },
@@ -2714,6 +2777,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AttachmentId = Branded<\'AttachmentId\'>;',
   },
   {
+    name: 'AuthenticatedUser',
+    declaration: 'export interface AuthenticatedUser {\n    readonly userId: AuthenticatedUserId;\n    readonly username: string;\n}',
+  },
+  {
+    name: 'AuthenticatedUserId',
+    declaration: 'export type AuthenticatedUserId = Branded<\'AuthenticatedUserId\'>;',
+  },
+  {
     name: 'BackendRegistry',
     declaration: 'export class BackendRegistry {\n    register(name: string, backend: StorageBackend): () => void;\n    get(name: string): StorageBackend;\n    names(): string[];\n}',
   },
@@ -3316,6 +3387,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'LlmRuntime',
     declaration: 'export class LlmRuntime extends Service {\n    constructor(ctx: Context);\n    registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle;\n    listProviders(): LlmProviderInfo[];\n    registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): DirectoryRegistrationHandle;\n    listConfigurableProviders(): LlmConfigurableProvider[];\n    registerModelDiscovery(settingsNs: string, discover: (request: LlmModelDiscoveryRequest) => Promise<readonly LlmDiscoveredModel[]>): () => void;\n    async discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest): Promise<LlmDiscoveredModel[]>;\n    providerRetryPolicy(provider: string): ResolvedRetryPolicy;\n    async listModels(provider: string): Promise<LlmModelInfo[]>;\n    async resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<LlmCallConfig>;\n    async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<PreparedLlmCall>;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
+  },
+  {
+    name: 'LocalAccountRegistration',
+    declaration: 'export interface LocalAccountRegistration {\n    readonly username: string;\n    readonly password: string;\n    readonly displayName: string;\n    readonly email: string;\n}',
   },
   {
     name: 'LspHover',
