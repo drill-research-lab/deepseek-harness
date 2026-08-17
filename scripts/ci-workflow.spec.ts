@@ -49,8 +49,8 @@ describe('CI workflow', () => {
     const node24Coverage = workflow.jobs['node-24-coverage']
     const node24Consumers = workflow.jobs['node-24-consumers']
     const aggregate = workflow.jobs['all-checks-passed']
-    if (!Array.isArray(windows.steps) || !Array.isArray(aggregate.needs)) {
-      throw new TypeError('Windows job must define steps and the aggregate must define needs')
+    if (!Array.isArray(windows.steps) || !Array.isArray(aggregate.needs) || !Array.isArray(aggregate.steps)) {
+      throw new TypeError('Windows and aggregate jobs must define steps, and the aggregate must define needs')
     }
     const commandSteps = windows.steps.filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
@@ -95,6 +95,13 @@ describe('CI workflow', () => {
     expect(aggregate.needs).toContain('windows')
     expect(aggregate.needs).not.toContain('windows-native')
     expect(aggregate.needs).not.toContain('serial-windows')
+    expect(aggregate.permissions).toEqual({ contents: 'read', 'pull-requests': 'write' })
+    const summary = aggregate.steps.find(step => isRecord(step) && step.name === 'Post CI summary comment')
+    expect(summary).toMatchObject({
+      'continue-on-error': true,
+      uses: 'actions/github-script@v7',
+    })
+    expect(JSON.stringify(summary)).toContain('<!-- dsh-ci-summary -->')
 
     // Linux failover is a separate switch: the three required Linux workers
     // and the verdict job resolve their pool through DSH_CI_FAILOVER_LINUX,
