@@ -342,10 +342,12 @@ describe('Python release workflows', () => {
     expect(plan.if).toContain('inputs.release')
     expect(JSON.stringify(plan.steps)).toContain('pep440_version')
     expect(JSON.stringify(workflow)).toContain('macosx_14_0_arm64')
-    expect(manylinuxAddon).toMatchObject({ if: "runner.os == 'Linux'" })
+    expect(manylinuxAddon).toMatchObject({
+      if: "runner.os == 'Linux'",
+      run: expect.stringContaining('(cd "$addon_dir" && npm_config_build_from_source=true pnpm run install)'),
+    })
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_x86_64')
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_aarch64')
-    expect(JSON.stringify(manylinuxAddon)).toContain('npm_config_build_from_source=true pnpm run install')
     expect(JSON.stringify(manylinuxAddon)).toContain('$HOME/setup-pnpm:$HOME/setup-pnpm:ro')
     expect(JSON.stringify(manylinuxAddon)).toContain('node-pty-glibc-versions.txt')
     expect(JSON.stringify(manylinuxAddon)).toContain('le 2.28')
