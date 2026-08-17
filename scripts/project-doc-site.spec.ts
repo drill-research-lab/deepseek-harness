@@ -36,6 +36,8 @@ function fixture(): { root: string; pages: DocsPage[] } {
     pages: [
       { locale: 'root', contentLocale: 'en-US', source: 'docs/a.md', route: 'a.md', label: 'A', sidebar: 'zh-reference', section: 'Test', order: 1 },
       { locale: 'root', contentLocale: 'en-US', source: 'docs/b.md', route: 'reference-root/b.md', label: 'B', sidebar: 'zh-reference', section: 'Test', order: 2 },
+      { locale: 'zh-TW', contentLocale: 'en-US', source: 'docs/a.md', route: 'zh-TW/a.md', label: 'A', sidebar: 'zh-TW-reference', section: 'Test', order: 1 },
+      { locale: 'zh-TW', contentLocale: 'en-US', source: 'docs/b.md', route: 'zh-TW/reference/b.md', label: 'B', sidebar: 'zh-TW-reference', section: 'Test', order: 2 },
       { locale: 'en', contentLocale: 'en-US', source: 'docs/a.md', route: 'en/a.md', label: 'A', sidebar: 'en-reference', section: 'Test', order: 1 },
       { locale: 'en', contentLocale: 'en-US', source: 'docs/b.md', route: 'en/reference/b.md', label: 'B', sidebar: 'en-reference', section: 'Test', order: 2 },
     ],
@@ -226,11 +228,16 @@ describe('rewriteMarkdown', () => {
   it('routes a pair switcher across locales while ordinary links stay in locale', () => {
     const { root, pages } = fixture()
     writeFileSync(join(root, 'docs/a.zh.md'), '# A\n')
+    writeFileSync(join(root, 'docs/a.zh-tw.md'), '# A\n')
     const paired = pages.filter(page => page.source !== 'docs/a.md')
     paired.push(
       {
         locale: 'root', contentLocale: 'zh-CN', source: 'docs/a.zh.md', sourceAliases: ['docs/a.md'],
         route: 'guide/a.md', label: 'A', sidebar: 'zh-guide', section: 'Test', order: 1,
+      },
+      {
+        locale: 'zh-TW', contentLocale: 'zh-TW', source: 'docs/a.zh-tw.md', sourceAliases: ['docs/a.md', 'docs/a.zh.md'],
+        route: 'zh-TW/guide/a.md', label: 'A', sidebar: 'zh-TW-guide', section: 'Test', order: 1,
       },
       {
         locale: 'en', contentLocale: 'en-US', source: 'docs/a.md', sourceAliases: ['docs/a.zh.md'],
@@ -245,6 +252,53 @@ describe('rewriteMarkdown', () => {
       repoRoot: root,
       repositoryRef: 'abc123',
     })).toBe('[English](../en/guide/a.md) [B](../reference-root/b.md)\n')
+    expect(rewriteMarkdown('[English](a.md) [B](b.md)\n', {
+      locale: 'zh-TW',
+      sourcePath: 'docs/a.zh-tw.md',
+      route: 'zh-TW/guide/a.md',
+      pages: paired,
+      repoRoot: root,
+      repositoryRef: 'abc123',
+    })).toBe('[English](../../en/guide/a.md) [B](../reference/b.md)\n')
+  })
+
+  it('routes a third-side switcher link to its own locale, not back into the current one', () => {
+    const { root, pages } = fixture()
+    writeFileSync(join(root, 'docs/a.zh.md'), '# A\n')
+    writeFileSync(join(root, 'docs/a.zh-tw.md'), '# A\n')
+    const paired = pages.filter(page => page.source !== 'docs/a.md')
+    paired.push(
+      {
+        locale: 'root', contentLocale: 'zh-CN', source: 'docs/a.zh.md', sourceAliases: ['docs/a.md'],
+        route: 'guide/a.md', label: 'A', sidebar: 'zh-guide', section: 'Test', order: 1,
+      },
+      {
+        locale: 'zh-TW', contentLocale: 'zh-TW', source: 'docs/a.zh-tw.md', sourceAliases: ['docs/a.md', 'docs/a.zh.md'],
+        route: 'zh-TW/guide/a.md', label: 'A', sidebar: 'zh-TW-guide', section: 'Test', order: 1,
+      },
+      {
+        locale: 'en', contentLocale: 'en-US', source: 'docs/a.md', sourceAliases: ['docs/a.zh.md'],
+        route: 'en/guide/a.md', label: 'A', sidebar: 'en-guide', section: 'Test', order: 1,
+      },
+    )
+    // The 简体中文 link inside a three-way switcher on the zh-TW page must
+    // land on the zh-CN (root-locale) route, not resolve back into zh-TW.
+    expect(rewriteMarkdown('[简体中文](a.zh.md)\n', {
+      locale: 'zh-TW',
+      sourcePath: 'docs/a.zh-tw.md',
+      route: 'zh-TW/guide/a.md',
+      pages: paired,
+      repoRoot: root,
+      repositoryRef: 'abc123',
+    })).toBe('[简体中文](../../guide/a.md)\n')
+    expect(rewriteMarkdown('[繁體中文](a.zh-tw.md)\n', {
+      locale: 'en',
+      sourcePath: 'docs/a.md',
+      route: 'en/guide/a.md',
+      pages: paired,
+      repoRoot: root,
+      repositoryRef: 'abc123',
+    })).toBe('[繁體中文](../../zh-TW/guide/a.md)\n')
   })
 
   it('fails loud when a relative target is missing', () => {
@@ -261,9 +315,9 @@ describe('rewriteMarkdown', () => {
 })
 
 describe('docsPages locale routes', () => {
-  it('redirects both locale roots to their locale-relative quick-start page', () => {
+  it('redirects all three locale roots to their locale-relative quick-start page', () => {
     const homes = docsPages.filter(page => page.sidebar === null)
-    expect(homes.map(page => page.route).sort()).toEqual(['en/index.md', 'index.md'])
+    expect(homes.map(page => page.route).sort()).toEqual(['en/index.md', 'index.md', 'zh-TW/index.md'])
     for (const page of homes) {
       const source = readFileSync(resolve(repositoryRoot, page.source), 'utf8')
       const projected = projectedPageContent(source, page)
@@ -274,20 +328,27 @@ describe('docsPages locale routes', () => {
     }
   })
 
-  it('publishes every route in both locales and uses every available Chinese counterpart', () => {
+  it('publishes every route in all three locales and uses every available Chinese counterpart', () => {
     const byRoute = new Map(docsPages.map(page => [page.route, page]))
     for (const page of docsPages.filter(page => page.locale === 'root')) {
-      const counterpart = byRoute.get(`en/${page.route}`)
-      expect(counterpart, page.route).toBeDefined()
-      expect(counterpart?.locale).toBe('en')
+      const traditional = byRoute.get(`zh-TW/${page.route}`)
+      const english = byRoute.get(`en/${page.route}`)
+      expect(traditional, page.route).toBeDefined()
+      expect(traditional?.locale).toBe('zh-TW')
+      expect(english, page.route).toBeDefined()
+      expect(english?.locale).toBe('en')
       if (page.contentLocale === 'zh-CN') {
         expect(page.source).toMatch(/\.zh\.md$/)
         expect(page.contentLocale).toBe('zh-CN')
-        expect(counterpart?.source).toBe(page.source.replace(/\.zh\.md$/, '.md'))
-        expect(counterpart?.contentLocale).toBe('en-US')
+        expect(traditional?.source).toBe(page.source.replace(/\.zh\.md$/, '.zh-tw.md'))
+        expect(traditional?.contentLocale).toBe('zh-TW')
+        expect(english?.source).toBe(page.source.replace(/\.zh\.md$/, '.md'))
+        expect(english?.contentLocale).toBe('en-US')
       } else {
-        expect(counterpart?.source).toBe(page.source)
-        expect(counterpart?.contentLocale).toBe(page.contentLocale)
+        expect(traditional?.source).toBe(page.source)
+        expect(traditional?.contentLocale).toBe(page.contentLocale)
+        expect(english?.source).toBe(page.source)
+        expect(english?.contentLocale).toBe(page.contentLocale)
         const chineseSource = page.source.replace(/\.md$/, '.zh.md')
         expect(
           existsSync(resolve(repositoryRoot, chineseSource)),
@@ -297,28 +358,28 @@ describe('docsPages locale routes', () => {
     }
   })
 
-  it('indexes every subsystem page in both sides of the folder README', () => {
+  it('indexes every subsystem page in all localized folder READMEs', () => {
     const pages = globSync(join(repositoryRoot, 'docs/subsystems/*.md'))
       .map(page => basename(page))
-      .filter(page => !page.endsWith('.zh.md') && page !== 'README.md')
+      .filter(page => !page.endsWith('.zh.md') && !page.endsWith('.zh-tw.md') && page !== 'README.md')
       .sort()
     expect(pages.length).toBeGreaterThan(0)
-    for (const readme of ['README.md', 'README.zh.md']) {
+    for (const readme of ['README.md', 'README.zh.md', 'README.zh-tw.md']) {
       const rows = readFileSync(join(repositoryRoot, 'docs/subsystems', readme), 'utf8')
       const missing = pages.filter(page => !rows.includes(`| [${page}](${page}) |`))
       expect(missing, `${readme} must carry one table row per subsystem page`).toEqual([])
     }
   })
 
-  it('projects every published subsystem page in Chinese', () => {
-    const rootPages = docsPages.filter(page => (
-      page.locale === 'root' && page.route.startsWith('reference/subsystems/')
+  it('projects every published subsystem page in both Chinese locales', () => {
+    const chinesePages = docsPages.filter(page => (
+      page.locale !== 'en' && page.route.includes('reference/subsystems/')
     ))
-    const translated = rootPages.filter(page => page.contentLocale === 'zh-CN')
-    const fallbacks = rootPages.filter(page => page.contentLocale === 'en-US')
+    const translated = chinesePages.filter(page => page.contentLocale !== 'en-US')
+    const fallbacks = chinesePages.filter(page => page.contentLocale === 'en-US')
 
-    expect(translated).toHaveLength(43)
-    expect(translated.every(page => page.source.endsWith('.zh.md'))).toBe(true)
+    expect(translated).toHaveLength(86)
+    expect(translated.every(page => page.source.endsWith('.zh.md') || page.source.endsWith('.zh-tw.md'))).toBe(true)
     expect(fallbacks).toEqual([])
   })
 
@@ -326,34 +387,39 @@ describe('docsPages locale routes', () => {
     const files = ['context.md', 'events.md', 'fiber.md', 'registry.md', 'service.md']
     for (const file of files) {
       const root = docsPages.find(page => page.route === `reference/cordis-api/${file}`)
+      const traditional = docsPages.find(page => page.route === `zh-TW/reference/cordis-api/${file}`)
       const english = docsPages.find(page => page.route === `en/reference/cordis-api/${file}`)
       expect(root?.source).toBe(`docs/cordis-api/${file.replace(/\.md$/, '.zh.md')}`)
       expect(root?.contentLocale).toBe('zh-CN')
       expect(root?.section).toBe('Cordis API')
+      expect(traditional?.source).toBe(`docs/cordis-api/${file.replace(/\.md$/, '.zh-tw.md')}`)
+      expect(traditional?.contentLocale).toBe('zh-TW')
+      expect(traditional?.section).toBe('Cordis API')
       expect(english?.source).toBe(`docs/cordis-api/${file}`)
       expect(english?.contentLocale).toBe('en-US')
       expect(english?.section).toBe('Cordis Core API')
     }
   })
 
-  it('keeps Cordis inherited on the English fallback in both locales', () => {
+  it('keeps Cordis inherited on the English fallback in all locales', () => {
     const pages = docsPages.filter(page => page.route.endsWith('reference/cordis-api/inherited.md'))
-    expect(pages).toHaveLength(2)
+    expect(pages).toHaveLength(3)
     expect(pages.every(page => page.source === 'docs/cordis-api/inherited.md')).toBe(true)
     expect(pages.every(page => page.contentLocale === 'en-US')).toBe(true)
   })
 
-  it('includes persistence event headings in both locale outlines', () => {
+  it('includes persistence event headings in all locale outlines', () => {
     const pages = docsPages.filter(page => page.route.endsWith('reference/persistence-catalog.md'))
-    expect(pages).toHaveLength(2)
+    expect(pages).toHaveLength(3)
     expect(pages.map(page => page.source).sort()).toEqual([
       'docs/persistence-catalog.md',
+      'docs/persistence-catalog.zh-tw.md',
       'docs/persistence-catalog.zh.md',
     ])
-    expect(pages.map(page => page.outline)).toEqual(['deep', 'deep'])
+    expect(pages.map(page => page.outline)).toEqual(['deep', 'deep', 'deep'])
   })
 
-  it('projects reviewed generated counterparts into root locale routes', () => {
+  it('projects reviewed generated counterparts into both Chinese locale routes', () => {
     // module-graph, event-producer-consumer, and graph-atlas are paired but intentionally unpublished.
     const routes = [
       'reference/capability-seams.md',
@@ -368,9 +434,12 @@ describe('docsPages locale routes', () => {
       'reference/cordis-api/registry.md',
       'reference/cordis-api/service.md',
     ]
-    const pages = routes.map(route => docsPages.find(page => page.route === route))
-    expect(pages.every(page => page?.contentLocale === 'zh-CN')).toBe(true)
-    expect(pages.every(page => page?.source.endsWith('.zh.md'))).toBe(true)
+    const simplified = routes.map(route => docsPages.find(page => page.route === route))
+    const traditional = routes.map(route => docsPages.find(page => page.route === `zh-TW/${route}`))
+    expect(simplified.every(page => page?.contentLocale === 'zh-CN')).toBe(true)
+    expect(simplified.every(page => page?.source.endsWith('.zh.md'))).toBe(true)
+    expect(traditional.every(page => page?.contentLocale === 'zh-TW')).toBe(true)
+    expect(traditional.every(page => page?.source.endsWith('.zh-tw.md'))).toBe(true)
   })
 })
 
@@ -391,9 +460,11 @@ describe('sidebar ordering', () => {
     // `SDK` labels a group in both locales, so one shared list would have to
     // rank it against `入门` and against `Guide` at the same position.
     expect(sectionSpec('root', 'SDK').index).toBeGreaterThan(sectionSpec('root', '入门').index)
+    expect(sectionSpec('zh-TW', 'SDK').index).toBeGreaterThan(sectionSpec('zh-TW', '入門').index)
     expect(sectionSpec('en', 'SDK').index).toBeGreaterThan(sectionSpec('en', 'Guide').index)
     expect(() => sectionSpec('en', '入门')).toThrow()
     expect(() => sectionSpec('root', 'Guide')).toThrow()
+    expect(() => sectionSpec('zh-TW', 'Guide')).toThrow()
   })
 
   it('lands every navigation item on a page the manifest publishes', () => {
@@ -401,6 +472,7 @@ describe('sidebar ordering', () => {
     // first page at `guide/quickstart.md`, so the item served a 404.
     const collections = [
       ['root', 'zh-guide'], ['root', 'zh-develop'], ['root', 'zh-reference'],
+      ['zh-TW', 'zh-TW-guide'], ['zh-TW', 'zh-TW-develop'], ['zh-TW', 'zh-TW-reference'],
       ['en', 'en-guide'], ['en', 'en-develop'], ['en', 'en-reference'],
     ] as const
     const published = new Set(docsPages.map(page => routeLink(page.route)))
@@ -411,6 +483,7 @@ describe('sidebar ordering', () => {
 
   it('collapses the subsystem groups and leaves the smaller ones open', () => {
     expect(sectionSpec('root', '执行与工具').collapsed).toBe(true)
+    expect(sectionSpec('zh-TW', '執行與工具').collapsed).toBe(true)
     expect(sectionSpec('en', 'Execution and tools').collapsed).toBe(true)
     expect(sectionSpec('root', '概念').collapsed).toBeUndefined()
   })
@@ -479,9 +552,11 @@ describe('projectedPageContent', () => {
   })
 
   it('drops the language switcher the navigation bar already offers', () => {
-    expect(projectedPageContent('# Guide\n\nEnglish | [中文](./en/guide)\n\nBody.\n', page('zh-guide')))
+    expect(projectedPageContent('# Guide\n\nEnglish | [简体中文](./guide) | [繁體中文](./zh-TW/guide)\n\nBody.\n', page('zh-guide')))
       .toBe('# Guide\n\nBody.\n')
-    expect(projectedPageContent('# 指南\n\n[English](./en/guide) | 中文\n\n正文。\n', page('zh-guide')))
+    expect(projectedPageContent('# 指南\n\n[English](./en/guide) | 简体中文\n\n正文。\n', page('zh-guide')))
+      .toBe('# 指南\n\n正文。\n')
+    expect(projectedPageContent('# 指南\n\n[English](./en/guide) | [简体中文](./guide) | 繁體中文\n\n正文。\n', page('zh-guide')))
       .toBe('# 指南\n\n正文。\n')
   })
 
@@ -493,7 +568,7 @@ describe('projectedPageContent', () => {
 
   it('keeps a switcher-shaped line that is not the page header', () => {
     // A tutorial showing the convention must still render the example.
-    const sample = '# Guide\n\nA\n\nB\n\nC\n\nD\n\nE\n\nEnglish | [中文](./x)\n'
+    const sample = '# Guide\n\nA\n\nB\n\nC\n\nD\n\nE\n\nEnglish | [简体中文](./x) | [繁體中文](./y)\n'
     expect(projectedPageContent(sample, page('zh-guide'))).toBe(sample)
   })
 

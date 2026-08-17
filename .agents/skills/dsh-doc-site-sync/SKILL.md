@@ -7,7 +7,7 @@ description: Use when publishing, updating, moving, or removing DeepSeek Harness
 
 Keep repository Markdown as the only editable content source. Treat the website as a tested projection: [website/docs.ts](../../../website/docs.ts) selects public pages, [scripts/project-doc-site.ts](../../../scripts/project-doc-site.ts) rewrites them into the disposable `website/.generated/` tree, and VitePress builds that tree.
 
-Repository translations follow the sibling pairing contract: English `foo.md`, Chinese `foo.zh.md`, and `foo.i18n.yaml` live together. Never create `zh-CN/` or other locale directories for website content. The site route trees are independent of that source layout: `foo.zh.md` projects to the root route and `foo.md` projects to the matching `/en/` route.
+Repository translations follow the sibling pairing contract: English `foo.md`, Simplified Chinese `foo.zh.md`, Traditional Chinese `foo.zh-tw.md`, and `foo.i18n.yaml` live together. Never create locale directories for website content. The site route trees are independent of that source layout: `foo.zh.md` projects to the root route, `foo.zh-tw.md` to `/zh-TW/`, and `foo.md` to `/en/`.
 
 ## Read the owning contracts
 
@@ -24,17 +24,17 @@ Repository translations follow the sibling pairing contract: English `foo.md`, C
 - **Publish a generated catalog:** map the generated `docs/` file, but change its generator or source metadata rather than editing the catalog by hand.
 - **Change site structure:** update the manifest for ordinary pages; update VitePress configuration only when the existing sidebar, section, or locale model cannot express the change.
 
-Never edit or commit `website/.generated/`, `website/.cache/`, or `website/.dist/`. Except for `website/AGENTS.md`, never add Markdown under `website/`; locale and route directories such as `website/zh-CN/`, `website/en/`, and `website/api/` are invalid source layouts. Keep generated catalogs under `docs/`, freshness-gate them there, and publish them through the manifest.
+Never edit or commit `website/.generated/`, `website/.cache/`, or `website/.dist/`. Except for `website/AGENTS.md`, never add Markdown under `website/`; locale and route directories such as `website/zh-CN/`, `website/zh-TW/`, `website/en/`, and `website/api/` are invalid source layouts. Keep generated catalogs under `docs/`, freshness-gate them there, and publish them through the manifest.
 
 ## Add or update a manifest entry
 
 Set every `DocsPage` field deliberately:
 
-- `source`: repository-relative canonical Markdown path. For a complete bilingual pair, add the English `.md` path through `pairedPages()`; it derives the sibling `.zh.md`, the content locales, and counterpart aliases.
+- `source`: repository-relative canonical Markdown path. For a complete localized set, add the English `.md` path through `pairedPages()`; it derives the sibling `.zh.md` and `.zh-tw.md` sources, content locales, and counterpart aliases.
 - `route`: public VitePress path including the `.md` suffix.
 - `label`: sidebar label, not necessarily the document H1.
-- `sidebar`: reuse `zh-guide`, `zh-develop`, or `en-docs` unless the information architecture genuinely needs another collection.
-- `section`: reuse an existing section when possible. If adding one, also place it in `sectionOrder` in the VitePress config.
+- `sidebar`: reuse the locale's guide, develop, or reference collection unless the information architecture genuinely needs another collection.
+- `section`: reuse an existing section when possible. If adding one, also place it in `sections` in `website/docs.ts`.
 - `order`: stable order within the section.
 - `sourceAliases`: optional additional repository paths that should resolve to this page when links are projected. It does not create another public route.
 

@@ -17,21 +17,23 @@ export const TRANSLATION_PROMPT_PLACEHOLDERS = ['source_lang', 'target_lang', 't
 type TranslationPromptPlaceholder = (typeof TRANSLATION_PROMPT_PLACEHOLDERS)[number]
 
 /** Languages accepted by the bidirectional prompt. */
-type TranslationLanguage = 'English' | 'Chinese'
+export type TranslationLanguage = 'English' | 'Chinese' | 'Chinese-TW'
 
 /** Inputs that vary for one rendered translation request. */
 export interface TranslationPromptInput {
   sourceLanguage: TranslationLanguage
-  /** Source basename, including `.md` or `.zh.md`. */
+  targetLanguage: TranslationLanguage
+  /** Source basename, including `.md`, `.zh.md`, or `.zh-tw.md`. */
   sourceFilename: string
-  /** Complete current `terminology.md` contents. */
+  /** Complete current terminology contents for the target direction. */
   terminology: string
 }
 
-/** One reviewed whole-document example available in both directions. */
+/** One reviewed whole-document example available in the requested direction. */
 export interface TranslationExample {
-  english: string
-  chinese: string
+  english?: string
+  chinese?: string
+  chineseTw?: string
 }
 
 /** Inputs for one complete model request. */
@@ -64,32 +66,45 @@ const TEMPLATE_OPEN = '## 模板正文\n\n````text\n'
 const TEMPLATE_CLOSE = '\n````'
 const RESPONSE_SECTIONS = ['translation', 'review', 'final'] as const
 const RESPONSE_DELIMITERS = new Set(RESPONSE_SECTIONS.flatMap(section => [`<${section}>`, `</${section}>`]))
-const LANGUAGE_SWITCHER = /^(?:English \| \[中文\]\(.+\)|\[English\]\(.+\) \| 中文)$/
+const LANGUAGE_SWITCHER = /^(?:English \| \[简体中文\]\(.+\)(?: \| \[繁體中文\]\(.+\))?|\[English\]\(.+\) \| (?:简体中文|\[简体中文\]\(.+\) \| 繁體中文))$/
 
 interface TranslationFiles {
   targetFilename: string
   targetSwitcher: string
 }
 
-function translationFiles(input: Pick<TranslationPromptInput, 'sourceFilename' | 'sourceLanguage'>): TranslationFiles {
+/** Map a language key to its canonical filename suffix. */
+function suffixOf(language: TranslationLanguage): string {
+  return language === 'English' ? '' : language === 'Chinese' ? '.zh' : '.zh-tw'
+}
+
+/** Filename basename → language, or undefined when the stem is unrecognized. */
+function languageOfFilename(filename: string): TranslationLanguage | undefined {
+  if (filename.endsWith('.zh-tw.md')) return 'Chinese-TW'
+  if (filename.endsWith('.zh.md')) return 'Chinese'
+  if (filename.endsWith('.md')) return 'English'
+  return undefined
+}
+
+function translationFiles(input: Pick<TranslationPromptInput, 'sourceFilename' | 'sourceLanguage' | 'targetLanguage'>): TranslationFiles {
   if (basename(input.sourceFilename) !== input.sourceFilename) {
     throw new Error(`translation prompt: sourceFilename must be a basename; got ${JSON.stringify(input.sourceFilename)}`)
   }
-  const sourceIsChinese = input.sourceFilename.endsWith('.zh.md')
-  const sourceIsEnglish = input.sourceFilename.endsWith('.md') && !sourceIsChinese
-  if (input.sourceLanguage === 'Chinese' ? !sourceIsChinese : !sourceIsEnglish) {
+  const sourceLanguage = languageOfFilename(input.sourceFilename)
+  if (sourceLanguage === undefined || sourceLanguage !== input.sourceLanguage) {
     throw new Error(`translation prompt: ${input.sourceFilename} does not match source language ${input.sourceLanguage}`)
   }
-  if (sourceIsChinese) {
-    return {
-      targetFilename: input.sourceFilename.replace(/\.zh\.md$/, '.md'),
-      targetSwitcher: `English | [中文](${input.sourceFilename})`,
-    }
+  if (input.sourceLanguage === input.targetLanguage) {
+    throw new Error(`translation prompt: target language must differ from source language ${input.sourceLanguage}`)
   }
-  return {
-    targetFilename: input.sourceFilename.replace(/\.md$/, '.zh.md'),
-    targetSwitcher: `[English](${input.sourceFilename}) | 中文`,
-  }
+  const stem = input.sourceFilename.replace(/\.(zh-tw|zh)\.md$/, '').replace(/\.md$/, '')
+  const targetFilename = `${stem}${suffixOf(input.targetLanguage)}.md`
+  const targetSwitcher = input.targetLanguage === 'English'
+    ? `English | [简体中文](${stem}.zh.md) | [繁體中文](${stem}.zh-tw.md)`
+    : input.targetLanguage === 'Chinese'
+      ? `[English](${stem}.md) | 简体中文`
+      : `[English](${stem}.md) | [简体中文](${stem}.zh.md) | 繁體中文`
+  return { targetFilename, targetSwitcher }
 }
 
 /** Extract the machine-consumed text fence from `translation-prompt.md`. */
@@ -112,10 +127,9 @@ export function documentedTranslationPromptPlaceholders(document: string): strin
 /** Render one system prompt from the checked-in template. */
 export function renderTranslationPrompt(document: string, input: TranslationPromptInput): string {
   translationFiles(input)
-  const targetLanguage: TranslationLanguage = input.sourceLanguage === 'English' ? 'Chinese' : 'English'
   const values: Record<TranslationPromptPlaceholder, string> = {
     source_lang: input.sourceLanguage,
-    target_lang: targetLanguage,
+    target_lang: input.targetLanguage,
     terminology: input.terminology,
   }
   const template = extractTranslationPrompt(document)
@@ -141,17 +155,27 @@ export function renderTranslationPrompt(document: string, input: TranslationProm
  */
 export function renderTranslationRequest(document: string, input: TranslationRequestInput): TranslationRequest {
   const files = translationFiles(input)
-  const sourceKey = input.sourceLanguage === 'English' ? 'english' : 'chinese'
-  const targetKey = input.sourceLanguage === 'English' ? 'chinese' : 'english'
+  const sourceKey = languageKeyOf(input.sourceLanguage)
+  const targetKey = languageKeyOf(input.targetLanguage)
   const messages: TranslationMessage[] = [{ role: 'system', content: renderTranslationPrompt(document, input) }]
   for (const example of input.examples) {
+    const source = example[sourceKey]
+    const target = example[targetKey]
+    if (source === undefined || target === undefined) {
+      throw new Error(`translation prompt: example lacks the ${input.sourceLanguage} or ${input.targetLanguage} side`)
+    }
     messages.push(
-      { role: 'user', content: example[sourceKey] },
-      { role: 'assistant', content: example[targetKey] },
+      { role: 'user', content: source },
+      { role: 'assistant', content: target },
     )
   }
   messages.push({ role: 'user', content: input.sourceDocument })
   return { targetFilename: files.targetFilename, messages }
+}
+
+/** Map a language key to its example-dictionary property. */
+function languageKeyOf(language: TranslationLanguage): keyof TranslationExample {
+  return language === 'English' ? 'english' : language === 'Chinese' ? 'chinese' : 'chineseTw'
 }
 
 function escapeResponseBody(value: string): string {
@@ -251,7 +275,7 @@ function correctLanguageSwitcher(markdown: string, switcher: string): string {
  */
 export function consumeTranslationResponse(
   text: string,
-  input: Pick<TranslationPromptInput, 'sourceFilename' | 'sourceLanguage'>,
+  input: Pick<TranslationPromptInput, 'sourceFilename' | 'sourceLanguage' | 'targetLanguage'>,
 ): TranslationResponse {
   const parsed = parseTranslationResponse(text)
   const files = translationFiles(input)

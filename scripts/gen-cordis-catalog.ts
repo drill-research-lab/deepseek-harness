@@ -33,7 +33,6 @@ import {
   blobHash,
   parsePairMeta,
   partitionGeneratedRegions,
-  renderPairMeta,
 } from './translation-pairing.ts'
 
 const root = resolve(import.meta.dirname, '..')
@@ -819,13 +818,13 @@ export function computeOutputs(): [string, string][] {
       events.filter(e => EVENT_SCOPE_PAGE[e.scope] === page),
       CORDIS_CATALOG_POLICY,
     )
-    for (const side of [page, page.replace(/\.md$/, '.zh.md')]) {
+    for (const side of [page, page.replace(/\.md$/, '.zh.md'), page.replace(/\.md$/, '.zh-tw.md')]) {
       const rel = `${SUBSYSTEMS_DIR}/${side}`
       let current: string
       try {
         current = readFileSync(resolve(root, rel), 'utf8')
       } catch {
-        // Both pair sides must exist before a region can be injected; the
+        // Every pair side must exist before a region can be injected; the
         // pairing gate owns pair completeness, this generator names the miss.
         problems.push(`${rel}: mapped subsystems page does not exist.`)
         continue
@@ -843,7 +842,7 @@ export function computeOutputs(): [string, string][] {
 
 /**
  * Re-record a pair's `.i18n.yaml` after a region write ONLY when the write is
- * region-confined: both sides' region-stripped content must be byte-equal to
+ * region-confined: every side's region-stripped content must be byte-equal to
  * the region-stripped previous content whose hashes the record holds. The
  * caller supplies the previous bytes (read before writing); human-content
  * drift leaves the record untouched so the pairing gate still demands the
@@ -855,8 +854,10 @@ export function computeOutputs(): [string, string][] {
  */
 export function maybeRecordPair(pageRel: string, before: Map<string, Buffer>, scanRoot: string = root): boolean {
   const zhRel = pageRel.replace(/\.md$/, '.zh.md')
+  const zhTwRel = pageRel.replace(/\.md$/, '.zh-tw.md')
   const metaRel = pageRel.replace(/\.md$/, '.i18n.yaml')
   const metaAbs = resolve(scanRoot, metaRel)
+  const sides = [pageRel, zhRel, zhTwRel].filter(rel => before.has(rel))
   let meta: string
   try {
     meta = readFileSync(metaAbs, 'utf8')
@@ -865,13 +866,14 @@ export function maybeRecordPair(pageRel: string, before: Map<string, Buffer>, sc
     // after review, never silently by regeneration.
     return false
   }
-  // The record must contain exactly the two valid entries for THIS pair;
-  // a malformed or renamed-key sidecar is the pairing gate's problem to
-  // report, never something regeneration silently repairs into validity.
+  // The record must contain exactly the valid entries for THIS pair's
+  // existing sides; a malformed or renamed-key sidecar is the pairing gate's
+  // problem to report, never something regeneration silently repairs into
+  // validity.
   const recorded = parsePairMeta(meta)
-  const names = [pageRel, zhRel].map(rel => rel.split('/').at(-1) ?? rel)
-  if (!recorded || recorded.size !== 2 || !names.every(name => recorded.has(name))) return false
-  for (const rel of [pageRel, zhRel]) {
+  const names = sides.map(rel => rel.split('/').at(-1) ?? rel)
+  if (!recorded || recorded.size !== sides.length || !names.every(name => recorded.has(name))) return false
+  for (const rel of sides) {
     const previous = before.get(rel)
     if (!previous) return false
     if (recorded.get(rel.split('/').at(-1) ?? rel) !== blobHash(previous)) return false
@@ -880,9 +882,18 @@ export function maybeRecordPair(pageRel: string, before: Map<string, Buffer>, sc
     const strippedAfter = partitionGeneratedRegions(current.toString('utf8')).stripped
     if (strippedBefore !== strippedAfter) return false
   }
-  const source = readFileSync(resolve(scanRoot, pageRel))
-  const zh = readFileSync(resolve(scanRoot, zhRel))
-  writeFileSync(metaAbs, renderPairMeta(pageRel, blobHash(source), zhRel, blobHash(zh)))
+  const lines = sides.map((rel) => {
+    const content = readFileSync(resolve(scanRoot, rel))
+    return `${rel.split('/').at(-1)}: ${blobHash(content)}`
+  })
+  writeFileSync(metaAbs, [
+    '# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each',
+    '# side as of the last confirmed-consistent state. All languages carry equal authority;',
+    '# after editing either side, bring the other along and re-record with:',
+    `#   pnpm run verify-translation-pairing --write ${pageRel}`,
+    ...lines,
+    '',
+  ].join('\n'))
   return true
 }
 

@@ -81,7 +81,7 @@ const PAIR_META_LINE = /^([^:#]+\.md): ([0-9a-f]{40})$/
  * Parse a `foo.i18n.yaml` consistency record into basename → recorded blob
  * hash, or undefined when any non-comment line deviates from the exact
  * `<basename>.md: <40-hex>` format or repeats a key. Consumers must
- * additionally require exactly the two expected basenames — a renamed key is
+ * additionally require exactly the expected basenames — a renamed key is
  * a malformed record, never a silently-missing entry.
  * @param content - Sidecar file text.
  * @returns The recorded map, or undefined for a malformed record.
@@ -99,17 +99,19 @@ export function parsePairMeta(content: string): Map<string, string> | undefined 
 }
 
 /**
- * Render a `foo.i18n.yaml` consistency record.
+ * Render a `foo.i18n.yaml` consistency record for the English and Simplified
+ * Chinese sides (the generated-region form; the pairing gate renders every
+ * language through `renderTranslationPairingRecord`).
  * @param source - Repo-relative English path.
  * @param sourceHash - Blob hash of the English side.
- * @param zh - Repo-relative Chinese path.
- * @param zhHash - Blob hash of the Chinese side.
+ * @param zh - Repo-relative Simplified Chinese path.
+ * @param zhHash - Blob hash of the Simplified Chinese side.
  * @returns The exact sidecar file content.
  */
 export function renderPairMeta(source: string, sourceHash: string, zh: string, zhHash: string): string {
   return [
     '# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each',
-    '# side as of the last confirmed-consistent state. Both languages carry equal authority;',
+    '# side as of the last confirmed-consistent state. All languages carry equal authority;',
     '# after editing either side, bring the other along and re-record with:',
     `#   pnpm run verify-translation-pairing --write ${source}`,
     `${basename(source)}: ${sourceHash}`,
@@ -124,8 +126,8 @@ export interface TranslationPairingManifest {
   excluded: string[]
 }
 
-const README_ARTIFACT = /(?:^|\/)readme(?:\.md|\.zh\.md|\.i18n\.yaml)$/i
-const ROOT_CONTRIBUTING_ARTIFACT = /^contributing(?:\.md|\.zh\.md|\.i18n\.yaml)$/i
+const README_ARTIFACT = /(?:^|\/)readme(?:\.md|\.zh\.md|\.zh-tw\.md|\.i18n\.yaml)$/i
+const ROOT_CONTRIBUTING_ARTIFACT = /^contributing(?:\.md|\.zh\.md|\.zh-tw\.md|\.i18n\.yaml)$/i
 const NON_SOURCE_DIRECTORIES = new Set([
   'node_modules',
   'lib',
@@ -178,10 +180,9 @@ function isTranslationSourceExcluded(file: string): boolean {
 
 /** Whether one discovered Markdown or sidecar path belongs to the bilingual source corpus. */
 export function isTranslationScopeFile(file: string): boolean {
-  return !file.startsWith('.agents/notes/archived/')
+  return !file.startsWith('.agents/')
     && !isTranslationSourceExcluded(file) && (README_ARTIFACT.test(file)
     || ROOT_CONTRIBUTING_ARTIFACT.test(file)
-    || file.startsWith('.agents/notes/')
     || file.startsWith('docs/')
     || file.startsWith('python/'))
 }
@@ -215,8 +216,9 @@ export function parseTranslationPairingManifest(content: string): TranslationPai
 
 /**
  * Normalize one CLI pair argument to its English anchor path: any of the
- * pair's three files (`foo.md`, `foo.zh.md`, `foo.i18n.yaml`) or the bare
- * `foo` stem names the same pair, and platform separators are accepted.
+ * pair's files (`foo.md`, `foo.zh.md`, `foo.zh-tw.md`, `foo.i18n.yaml`) or
+ * the bare `foo` stem names the same pair, and platform separators are
+ * accepted.
  *
  * @param argument - Repo-relative path as passed on a command line.
  * @returns The pair's `foo.md` anchor path with `/` separators.
@@ -224,6 +226,7 @@ export function parseTranslationPairingManifest(content: string): TranslationPai
 export function pairAnchorOfArgument(argument: string): string {
   const normalized = argument.split('\\').join('/').replace(/^\.\//, '')
   if (normalized.endsWith('.zh.md')) return `${normalized.slice(0, -'.zh.md'.length)}.md`
+  if (normalized.endsWith('.zh-tw.md')) return `${normalized.slice(0, -'.zh-tw.md'.length)}.md`
   if (normalized.endsWith('.i18n.yaml')) return `${normalized.slice(0, -'.i18n.yaml'.length)}.md`
   if (normalized.endsWith('.md')) return normalized
   return `${normalized}.md`
@@ -307,6 +310,16 @@ const PUBLIC_REPOSITORY_BLOB_ROOT = 'https://github.com/deepseek-ai/deepseek-har
 /** Return the accepted relative and public-repository links to one counterpart. */
 export function languageSwitcherTargets(counterpart: string): string[] {
   return [basename(counterpart), `${PUBLIC_REPOSITORY_BLOB_ROOT}${counterpart}`]
+}
+
+/**
+ * Return the accepted relative and public-repository links to every language
+ * counterpart of one pair.
+ * @param counterparts - Repository-relative paths of all non-source sides.
+ * @returns Every accepted switcher target.
+ */
+export function languageSwitcherTargetsForAll(counterparts: readonly string[]): string[] {
+  return counterparts.flatMap(languageSwitcherTargets)
 }
 
 /** Whether the tree contains a link to any accepted target. */

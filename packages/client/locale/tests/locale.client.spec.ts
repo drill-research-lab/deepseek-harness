@@ -192,10 +192,16 @@ describe('LocaleRuntime', () => {
     expect(host.listenerCount()).toBe(0)
   })
 
-  it('opens provisionally in the browser language, matching regional variants on their primary subtag', () => {
+  it('opens provisionally in the browser language, matching script and regional variants', () => {
     stubLanguages('en-GB', 'zh-CN')
     expect(make().svc.getLocale().active).toBe('en')
+    // Traditional Chinese script resolves to the zh-TW locale, not zh.
     stubLanguages('zh-Hant-TW')
+    expect(make().svc.getLocale().active).toBe('zh-TW')
+    stubLanguages('zh-TW')
+    expect(make().svc.getLocale().active).toBe('zh-TW')
+    // Simplified Chinese script resolves to zh.
+    stubLanguages('zh-Hans-CN')
     expect(make().svc.getLocale().active).toBe('zh')
     // An unshipped language walks the list to the first one this app ships.
     stubLanguages('fr-FR', 'en-US')
@@ -230,10 +236,11 @@ describe('LocaleRuntime', () => {
     expect(svc.getLocale().active).toBe('zh')
   })
 
-  it('exposes the two shipped locales with self-described labels', () => {
+  it('exposes the three shipped locales with self-described labels', () => {
     const { svc } = make()
     expect(svc.getLocale().locales).toEqual([
-      { id: 'zh', label: '中文' },
+      { id: 'zh', label: '簡體中文' },
+      { id: 'zh-TW', label: '繁體中文' },
       { id: 'en', label: 'English' },
     ])
   })

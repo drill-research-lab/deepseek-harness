@@ -624,6 +624,7 @@ function docSyncLeafGates(options: {
     pnpmScript('skill-invocation-metadata', 'verify-skill-invocation-metadata', { label: 'skill invocation metadata' }),
     pnpmScript('translation-prompt', 'verify-translation-prompt', { label: 'translation prompt' }),
     pnpmScript('translation-pairing', 'verify-translation-pairing', { label: 'translation pairing' }),
+    pnpmScript('zh-tw', 'verify-zh-tw', { label: 'zh-TW residual Simplified' }),
     pnpmScript('doc-budgets', 'verify-doc-budgets', { label: 'doc budgets' }),
     pnpmExec('docs-site-projection', ['vitest', 'run', 'scripts/project-doc-site.spec.ts', 'scripts/verify-doc-site-fragments.spec.ts'], {
       label: 'documentation site checks',

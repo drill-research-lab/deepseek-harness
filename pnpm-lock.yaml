@@ -93,6 +93,9 @@ importers:
       micromark-extension-gfm:
         specifier: ^3.0.0
         version: 3.0.0
+      opencc-js:
+        specifier: ^1.4.1
+        version: 1.4.1
       oxlint:
         specifier: 1.76.0
         version: 1.76.0(oxlint-tsgolint@7.0.2001)
@@ -123,6 +126,9 @@ importers:
       vitest:
         specifier: ^4.1.8
         version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.8)(jsdom@29.1.1)(vite@8.0.16(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+      zhtw-js:
+        specifier: ^4.4.5
+        version: 4.4.5
 
   apps/cli:
     dependencies:
@@ -13233,6 +13239,9 @@ packages:
   openapi-typescript-helpers@0.0.15:
     resolution: {integrity: sha512-opyTPaunsklCBpTK8JGef6mfPhLSnyy5a0IN9vKtx3+4aExf+KxEqYwIy3hqkedXIB97u357uLMJsOnm3GVjsw==}
 
+  opencc-js@1.4.1:
+    resolution: {integrity: sha512-2lPLcrg7cnh1ATSduOxhnk/jq6KlR6w+5Ihl4wF7Z5e5Rva4vxTyugV5rZ7EiUCOZl+EDOLetIix+BhgYDCC+A==}
+
   optionator@0.9.4:
     resolution: {integrity: sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g==}
     engines: {node: '>= 0.8.0'}
@@ -14238,6 +14247,10 @@ packages:
   yoctocolors@2.1.2:
     resolution: {integrity: sha512-CzhO+pFNo8ajLM2d2IW/R93ipy99LWjtwblvC1RsoSUMZgyLbYFr221TnSNT7GjGdYui6P459mw9JH/g/zW2ug==}
     engines: {node: '>=18'}
+
+  zhtw-js@4.4.5:
+    resolution: {integrity: sha512-vOPM8yDgqSVAwmzVN04s2+irk/kekv9zUHRVuSTPnTxvMbX2hdSMsY3xNYTXVZ7ZW8weNi4gyYpDwKAhe9giPg==}
+    engines: {node: '>=20'}
 
   zod-to-json-schema@3.25.2:
     resolution: {integrity: sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==}
@@ -18650,6 +18663,8 @@ snapshots:
 
   openapi-typescript-helpers@0.0.15: {}
 
+  opencc-js@1.4.1: {}
+
   optionator@0.9.4:
     dependencies:
       deep-is: 0.1.4
@@ -19799,6 +19814,8 @@ snapshots:
   yocto-queue@0.1.0: {}
 
   yoctocolors@2.1.2: {}
+
+  zhtw-js@4.4.5: {}
 
   zod-to-json-schema@3.25.2(zod@4.4.3):
     dependencies:

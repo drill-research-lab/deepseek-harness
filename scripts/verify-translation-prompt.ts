@@ -29,10 +29,6 @@ try {
     ['docs/development.md', 'docs/development.zh.md'],
     ['docs/i18n/README.md', 'docs/i18n/README.zh.md'],
     ['docs/i18n/translation-rules.md', 'docs/i18n/translation-rules.zh.md'],
-    [
-      '.agents/notes/implemented/process/2026-07-02-bilingual-docs-and-pairing-gate.md',
-      '.agents/notes/implemented/process/2026-07-02-bilingual-docs-and-pairing-gate.zh.md',
-    ],
   ] as const
   const examples: TranslationExample[] = examplePaths.map(([english, chinese]) => ({
     english: read(english),
@@ -45,16 +41,31 @@ try {
     throw new Error(`placeholder table must list exactly: ${TRANSLATION_PROMPT_PLACEHOLDERS.join(', ')}`)
   }
 
-  const englishInput = { sourceLanguage: 'English' as const, sourceFilename: 'snapshot-note.md', terminology }
+  const englishInput = {
+    sourceLanguage: 'English' as const,
+    targetLanguage: 'Chinese' as const,
+    sourceFilename: 'snapshot-note.md',
+    terminology,
+  }
   const englishSource = renderTranslationPrompt(document, englishInput)
   const chineseSource = renderTranslationPrompt(document, {
     sourceLanguage: 'Chinese',
+    targetLanguage: 'English',
     sourceFilename: 'snapshot-note.zh.md',
     terminology,
   })
-  if (englishSource.includes('{{') || chineseSource.includes('{{')) throw new Error('rendered prompt contains an unresolved placeholder')
+  const chineseTwSource = renderTranslationPrompt(document, {
+    sourceLanguage: 'Chinese',
+    targetLanguage: 'Chinese-TW',
+    sourceFilename: 'snapshot-note.zh.md',
+    terminology,
+  })
+  if (englishSource.includes('{{') || chineseSource.includes('{{') || chineseTwSource.includes('{{')) {
+    throw new Error('rendered prompt contains an unresolved placeholder')
+  }
   if (!englishSource.includes('from English to Chinese')) throw new Error('English-source render does not translate into Chinese')
   if (!chineseSource.includes('from Chinese to English')) throw new Error('Chinese-source render does not translate into English')
+  if (!chineseTwSource.includes('from Chinese to Chinese-TW')) throw new Error('Chinese-source render does not transcribe into Traditional Chinese')
 
   const example = /```xml\n([\s\S]*?)\n```/.exec(englishSource)?.[1]
   if (example === undefined) throw new Error('rendered prompt has no three-section response example')
@@ -78,7 +89,7 @@ try {
     '',
     '# 快照说明',
     '',
-    '[English](snapshot-note.md) | 中文',
+    '[English](snapshot-note.md) | 简体中文',
     '',
   ].join('\n')
   if (!consumed.final.startsWith(expectedFinalPrefix)) {
