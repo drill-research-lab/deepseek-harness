@@ -44,6 +44,28 @@ function fixture(): { root: string; pages: DocsPage[] } {
   }
 }
 
+function pairedPagesFixture(): { root: string; paired: DocsPage[] } {
+  const { root, pages } = fixture()
+  writeFileSync(join(root, 'docs/a.zh.md'), '# A\n')
+  writeFileSync(join(root, 'docs/a.zh-tw.md'), '# A\n')
+  const paired = pages.filter(page => page.source !== 'docs/a.md')
+  paired.push(
+    {
+      locale: 'root', contentLocale: 'zh-CN', source: 'docs/a.zh.md', sourceAliases: ['docs/a.md'],
+      route: 'guide/a.md', label: 'A', sidebar: 'zh-guide', section: 'Test', order: 1,
+    },
+    {
+      locale: 'zh-TW', contentLocale: 'zh-TW', source: 'docs/a.zh-tw.md', sourceAliases: ['docs/a.md', 'docs/a.zh.md'],
+      route: 'zh-TW/guide/a.md', label: 'A', sidebar: 'zh-TW-guide', section: 'Test', order: 1,
+    },
+    {
+      locale: 'en', contentLocale: 'en-US', source: 'docs/a.md', sourceAliases: ['docs/a.zh.md'],
+      route: 'en/guide/a.md', label: 'A', sidebar: 'en-guide', section: 'Test', order: 1,
+    },
+  )
+  return { root, paired }
+}
+
 describe('website source layout', () => {
   it('rejects Markdown outside the subtree instructions', () => {
     expect(unexpectedWebsiteMarkdown([
@@ -226,24 +248,7 @@ describe('rewriteMarkdown', () => {
   })
 
   it('routes a pair switcher across locales while ordinary links stay in locale', () => {
-    const { root, pages } = fixture()
-    writeFileSync(join(root, 'docs/a.zh.md'), '# A\n')
-    writeFileSync(join(root, 'docs/a.zh-tw.md'), '# A\n')
-    const paired = pages.filter(page => page.source !== 'docs/a.md')
-    paired.push(
-      {
-        locale: 'root', contentLocale: 'zh-CN', source: 'docs/a.zh.md', sourceAliases: ['docs/a.md'],
-        route: 'guide/a.md', label: 'A', sidebar: 'zh-guide', section: 'Test', order: 1,
-      },
-      {
-        locale: 'zh-TW', contentLocale: 'zh-TW', source: 'docs/a.zh-tw.md', sourceAliases: ['docs/a.md', 'docs/a.zh.md'],
-        route: 'zh-TW/guide/a.md', label: 'A', sidebar: 'zh-TW-guide', section: 'Test', order: 1,
-      },
-      {
-        locale: 'en', contentLocale: 'en-US', source: 'docs/a.md', sourceAliases: ['docs/a.zh.md'],
-        route: 'en/guide/a.md', label: 'A', sidebar: 'en-guide', section: 'Test', order: 1,
-      },
-    )
+    const { root, paired } = pairedPagesFixture()
     expect(rewriteMarkdown('[English](a.md) [B](b.md)\n', {
       locale: 'root',
       sourcePath: 'docs/a.zh.md',
@@ -263,24 +268,7 @@ describe('rewriteMarkdown', () => {
   })
 
   it('routes a third-side switcher link to its own locale, not back into the current one', () => {
-    const { root, pages } = fixture()
-    writeFileSync(join(root, 'docs/a.zh.md'), '# A\n')
-    writeFileSync(join(root, 'docs/a.zh-tw.md'), '# A\n')
-    const paired = pages.filter(page => page.source !== 'docs/a.md')
-    paired.push(
-      {
-        locale: 'root', contentLocale: 'zh-CN', source: 'docs/a.zh.md', sourceAliases: ['docs/a.md'],
-        route: 'guide/a.md', label: 'A', sidebar: 'zh-guide', section: 'Test', order: 1,
-      },
-      {
-        locale: 'zh-TW', contentLocale: 'zh-TW', source: 'docs/a.zh-tw.md', sourceAliases: ['docs/a.md', 'docs/a.zh.md'],
-        route: 'zh-TW/guide/a.md', label: 'A', sidebar: 'zh-TW-guide', section: 'Test', order: 1,
-      },
-      {
-        locale: 'en', contentLocale: 'en-US', source: 'docs/a.md', sourceAliases: ['docs/a.zh.md'],
-        route: 'en/guide/a.md', label: 'A', sidebar: 'en-guide', section: 'Test', order: 1,
-      },
-    )
+    const { root, paired } = pairedPagesFixture()
     // The 简体中文 link inside a three-way switcher on the zh-TW page must
     // land on the zh-CN (root-locale) route, not resolve back into zh-TW.
     expect(rewriteMarkdown('[简体中文](a.zh.md)\n', {
