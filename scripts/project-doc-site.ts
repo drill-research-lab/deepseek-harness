@@ -171,10 +171,14 @@ function sourceMap(pages: DocsPage[]): Map<string, Map<DocsLocale, DocsPage>> {
   return map
 }
 
-function counterpartSource(source: string): string {
-  return source.endsWith('.zh.md')
-    ? source.replace(/\.zh\.md$/, '.md')
-    : source.replace(/\.md$/, '.zh.md')
+function tripletBase(source: string): string {
+  return source.replace(/(\.zh-tw)?(\.zh)?\.md$/, '.md')
+}
+
+function sourceLocale(source: string): DocsLocale {
+  if (source.endsWith('.zh-tw.md')) return 'zh-TW'
+  if (source.endsWith('.zh.md')) return 'root'
+  return 'en'
 }
 
 function resolveRepositoryTarget(sourceAbs: string, rawPath: string, repoRoot: string): { absPath: string; line?: number } {
@@ -234,9 +238,13 @@ export function rewriteMarkdown(source: string, options: RewriteMarkdownOptions)
     if (path === '') return
     const { absPath, line } = resolveRepositoryTarget(sourceAbs, path, options.repoRoot)
     const targetPath = repoPath(absPath, options.repoRoot)
-    const isLanguageSwitcher = targetPath === counterpartSource(options.sourcePath)
+    // A link to a sibling side of this page's language triplet is a language
+    // switcher; the alias mechanism would otherwise resolve it back into the
+    // current locale as a self-link.
+    const isLanguageSwitcher
+      = tripletBase(targetPath) === tripletBase(options.sourcePath) && targetPath !== options.sourcePath
     const targetLocale: DocsLocale = isLanguageSwitcher
-      ? options.locale === 'root' ? 'en' : 'root'
+      ? sourceLocale(targetPath)
       : options.locale
     const page = published.get(targetPath)?.get(targetLocale)
     const nextUrl = page !== undefined
@@ -293,7 +301,10 @@ export function addProjectionFrontmatter(markdown: string, page: Pick<DocsPage, 
 }
 
 /** The switcher line a canonical page carries so its GitHub reader can reach the other language. */
-const LANGUAGE_SWITCHER = /^(?:English \| \[中文\]\([^)]*\)|\[English\]\([^)]*\) \| 中文)$/
+const LANGUAGE_SWITCHER = new RegExp(
+  '^(?:English \\| \\[简体中文\\]\\([^)]*\\) \\| \\[繁體中文\\]\\([^)]*\\)'
+  + '|\\[English\\]\\([^)]*\\) \\| (?:简体中文|\\[简体中文\\]\\([^)]*\\) \\| 繁體中文))$',
+)
 
 /** The repository badge a canonical page carries for its GitHub reader. */
 const REPOSITORY_BADGE = /^\[!\[[^\]]*\]\(https:\/\/img\.shields\.io\/[^)]*\)\]\([^)]*\)$/

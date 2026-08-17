@@ -22,6 +22,28 @@ export const zh = {
   unloading: '卸载中',
 } satisfies Record<string, string>
 
+/** Traditional Chinese dictionary, checked complete against zh. */
+export const zhTw = {
+  'tab': '外掛程式列表',
+  'loading': '正在讀取外掛程式…',
+  'error': '暫時無法讀取外掛程式。',
+  'retry': '重試',
+  'search': '搜尋外掛程式',
+  'catalog': '外掛程式列表',
+  'empty': '暫無外掛程式。',
+  'emptySearch': '沒有相符的外掛程式。',
+  'enabledTag': '已啟用',
+  'disabledTag': '已停用',
+  'configuration': '設定狀態',
+  'cordis': 'Cordis 狀態',
+  'unobserved': '未掛載',
+  'pending': '等待依賴',
+  'loadingPhase': '載入中',
+  'active': '已掛載',
+  'failed': '掛載失敗',
+  'unloading': '解除安裝中',
+} satisfies Record<keyof typeof zh, string>
+
 /** Plugin inventory locale key union. */
 export type PluginInventoryLocaleKey = keyof typeof zh
 

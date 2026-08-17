@@ -11,6 +11,17 @@ export const zh = {
   'listbox.aria': '/{command} 匹配项',
 } satisfies Record<string, string>
 
+/** Traditional Chinese dictionary, checked complete against zh. */
+export const zhTw = {
+  'search.placeholder': '搜尋…',
+  'search.aria': '篩選選項',
+  'status.loading': '正在載入選項…',
+  'status.applying': '正在應用…',
+  'status.empty': '無選項',
+  'overlay.aria': '/{command} 選項',
+  'listbox.aria': '/{command} 相符項目',
+} satisfies Record<keyof typeof zh, string>
+
 /** The command namespace key union. */
 export type CommandKey = keyof typeof zh
 

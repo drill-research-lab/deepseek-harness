@@ -45,7 +45,7 @@ interface GuideModuleLink {
  */
 interface GuideModules {
   /** Guide sidebar collection for the locale. */
-  guide: 'zh-guide' | 'en-guide'
+  guide: 'zh-guide' | 'zh-TW-guide' | 'en-guide'
   /** Development module link. */
   develop: GuideModuleLink
   /** Reference module link. */
@@ -61,6 +61,11 @@ const guideModules = {
     guide: 'zh-guide',
     develop: { label: '开发', collection: 'zh-develop' },
     reference: { label: '参考', collection: 'zh-reference' },
+  },
+  'zh-TW': {
+    guide: 'zh-TW-guide',
+    develop: { label: '開發', collection: 'zh-TW-develop' },
+    reference: { label: '參考', collection: 'zh-TW-reference' },
   },
   en: {
     guide: 'en-guide',
@@ -95,7 +100,7 @@ function guideSidebar(locale: DocsLocale): DefaultTheme.SidebarItem[] {
  */
 function moduleNav(locale: DocsLocale): DefaultTheme.NavItem[] {
   const { develop, reference } = guideModules[locale]
-  const routePrefix = locale === 'root' ? '' : '/en'
+  const routePrefix = locale === 'root' ? '' : `/${locale}`
   return [
     { text: develop.label, link: landingLink(locale, develop.collection), activeMatch: `^${routePrefix}/develop/` },
     { text: reference.label, link: landingLink(locale, reference.collection), activeMatch: `^${routePrefix}/reference/` },
@@ -112,7 +117,7 @@ function watchCanonicalDocs(server: ViteDevServer): void {
 }
 
 function escapeVueInterpolation(html: string): string {
-  return html.replaceAll('{{', '&#123;&#123;').replaceAll('}}', '&#125;&#125;')
+  return html.replace(/\{\{/g, '&#123;&#123;').replace(/}}/g, '&#125;&#125;')
 }
 
 const sharedTheme: Pick<DefaultTheme.Config, 'search' | 'socialLinks' | 'editLink'> = {
@@ -139,6 +144,29 @@ const sharedTheme: Pick<DefaultTheme.Config, 'search' | 'socialLinks' | 'editLin
                 navigateDownKeyAriaLabel: '下方向键',
                 closeText: '关闭',
                 closeKeyAriaLabel: 'Esc 键',
+              },
+            },
+          },
+        },
+        'zh-TW': {
+          translations: {
+            button: {
+              buttonText: '搜尋文件',
+              buttonAriaLabel: '搜尋文件',
+            },
+            modal: {
+              displayDetails: '顯示詳細列表',
+              resetButtonTitle: '清除搜尋',
+              backButtonTitle: '關閉搜尋',
+              noResultsText: '未找到相關結果',
+              footer: {
+                selectText: '選擇',
+                selectKeyAriaLabel: '回車鍵',
+                navigateText: '切換',
+                navigateUpKeyAriaLabel: '上方向鍵',
+                navigateDownKeyAriaLabel: '下方向鍵',
+                closeText: '關閉',
+                closeKeyAriaLabel: 'Esc 鍵',
               },
             },
           },
@@ -284,6 +312,41 @@ export default withMermaid({
         returnToTopLabel: '返回顶部',
         langMenuLabel: '切换语言',
         skipToContentLabel: '跳至内容',
+      },
+    },
+    'zh-TW': {
+      label: '繁體中文',
+      lang: 'zh-TW',
+      link: '/zh-TW/',
+      themeConfig: {
+        siteTitle: siteTitle('技術預覽'),
+        nav: [
+          { text: '入門', link: landingLink('zh-TW', guideModules['zh-TW'].guide), activeMatch: '^/zh-TW/guide/' },
+          ...moduleNav('zh-TW'),
+        ],
+        sidebar: {
+          '/zh-TW/guide/': guideSidebar('zh-TW'),
+          '/zh-TW/develop/': sidebar('zh-TW', 'zh-TW-develop'),
+          '/zh-TW/reference/': sidebar('zh-TW', 'zh-TW-reference'),
+        },
+        editLink: {
+          pattern: ({ frontmatter }: PageData) => {
+            const data: unknown = frontmatter
+            const editSource: unknown = typeof data === 'object' && data !== null ? Reflect.get(data, 'editSource') : undefined
+            if (typeof editSource !== 'string') throw new Error('Projected documentation page has no editSource frontmatter.')
+            return `https://github.com/deepseek-ai/deepseek-harness/edit/master/${editSource}`
+          },
+          text: '在 GitHub 上編輯此頁',
+        },
+        outline: { label: '本頁目錄' },
+        docFooter: { prev: '上一篇', next: '下一篇' },
+        darkModeSwitchLabel: '外觀',
+        lightModeSwitchTitle: '切換到淺色主題',
+        darkModeSwitchTitle: '切換到深色主題',
+        sidebarMenuLabel: '選單',
+        returnToTopLabel: '返回頂部',
+        langMenuLabel: '切換語言',
+        skipToContentLabel: '跳至內容',
       },
     },
     en: {

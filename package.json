@@ -83,8 +83,10 @@
     "verify-skill-invocation-metadata": "tsx scripts/verify-skill-invocation-metadata.ts",
     "verify-translation-prompt": "tsx scripts/verify-translation-prompt.ts",
     "verify-translation-pairing": "tsx scripts/verify-translation-pairing.ts",
+    "verify-zh-tw": "tsx scripts/verify-zh-tw.ts --all",
     "resolve-translation-pairing-conflicts": "tsx scripts/merge-translation-pairing.ts --resolve",
     "gen-translation-brief": "tsx scripts/gen-translation-brief.ts",
+    "convert-zh-tw": "tsx scripts/convert-zh-tw.ts",
     "verify-doc-budgets": "tsx scripts/verify-doc-budgets.ts",
     "docs:dev": "pnpm --filter @deepseek-ai/website run dev",
     "docs:build": "pnpm --filter @deepseek-ai/website run build && pnpm run verify-doc-site-fragments",
@@ -168,6 +170,7 @@
     "mdast-util-gfm": "^3.1.0",
     "mermaid": "11.16.0",
     "micromark-extension-gfm": "^3.0.0",
+    "opencc-js": "^1.4.1",
     "oxlint": "1.76.0",
     "oxlint-tsgolint": "7.0.2001",
     "publint": "^0.3.21",
@@ -177,6 +180,7 @@
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "vite-tsconfig-paths": "^6.1.1",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.8",
+    "zhtw-js": "^4.4.5"
   }
 }

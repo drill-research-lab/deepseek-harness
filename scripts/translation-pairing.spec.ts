@@ -172,24 +172,48 @@ describe('translation pairing switchers', () => {
 describe('translation pairing records', () => {
   const paths = translationPairPaths('docs/foo.md')
   const record = {
-    sourceHash: '1'.repeat(40),
-    zhHash: '2'.repeat(40),
+    en: '1'.repeat(40),
+    zh: '2'.repeat(40),
+    'zh-TW': '3'.repeat(40),
   }
 
-  it('round-trips the canonical two-hash record', () => {
+  it('derives every language side from the English anchor', () => {
+    expect(paths.source).toBe('docs/foo.md')
+    expect(paths.languages.en).toBe('docs/foo.md')
+    expect(paths.languages.zh).toBe('docs/foo.zh.md')
+    expect(paths.languages['zh-TW']).toBe('docs/foo.zh-tw.md')
+    expect(paths.meta).toBe('docs/foo.i18n.yaml')
+  })
+
+  it('round-trips the canonical three-hash record', () => {
     expect(parseTranslationPairingRecord(renderTranslationPairingRecord(paths, record), paths)).toEqual(record)
   })
 
   it('rejects duplicate or unexpected keys', () => {
     expect(parseTranslationPairingRecord([
       `foo.md: ${'1'.repeat(40)}`,
-      `foo.md: ${'3'.repeat(40)}`,
+      `foo.md: ${'4'.repeat(40)}`,
       `foo.zh.md: ${'2'.repeat(40)}`,
+      `foo.zh-tw.md: ${'3'.repeat(40)}`,
       '',
     ].join('\n'), paths)).toBeUndefined()
     expect(parseTranslationPairingRecord([
       `foo.md: ${'1'.repeat(40)}`,
       `bar.zh.md: ${'2'.repeat(40)}`,
+      `foo.zh-tw.md: ${'3'.repeat(40)}`,
+      '',
+    ].join('\n'), paths)).toBeUndefined()
+  })
+
+  it('rejects a record missing any language side', () => {
+    expect(parseTranslationPairingRecord([
+      `foo.md: ${'1'.repeat(40)}`,
+      `foo.zh.md: ${'2'.repeat(40)}`,
+      '',
+    ].join('\n'), paths)).toBeUndefined()
+    expect(parseTranslationPairingRecord([
+      `foo.md: ${'1'.repeat(40)}`,
+      `foo.zh-tw.md: ${'3'.repeat(40)}`,
       '',
     ].join('\n'), paths)).toBeUndefined()
   })
@@ -205,7 +229,6 @@ describe('translation scope discovery', () => {
     'future/subtree/readme.md',
     'packages/example/README.zh.md',
     'native/example/README.i18n.yaml',
-    '.agents/notes/proposed/feature.md',
     'docs/guide.md',
     'python/guide.md',
   ])('includes %s', (file) => {
@@ -224,6 +247,8 @@ describe('translation scope discovery', () => {
     'coverage/report/README.md',
     'python/sdk-runtime/src/deepseek_harness_runtime/runtime/dsh-jsonrpc-agent-macos-arm64/README.md',
     'python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/README.md',
+    '.agents/notes/proposed/feature.md',
+    '.agents/skills/example/README.md',
   ])('excludes non-source or non-README path %s', (file) => {
     expect(isTranslationScopeFile(file)).toBe(false)
   })

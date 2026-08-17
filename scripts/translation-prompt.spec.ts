@@ -26,12 +26,12 @@ const retainedExamples = [
   ['### Slang/jargon → Professional phrasing', 'The committed agent workflow lives in .agents/skills/dsh-translate-docs', '仓库内置的 agent 工作流见 .agents/skills/dsh-translate-docs'],
   ['### "For humans" — translate the intent, not the word', 'For humans, start with the development guide', '面向开发者：请先阅读开发指南'],
   ['### Code block comments — NEVER translate', '# full-screen TUI coding agent (needs DEEPSEEK_API_KEY)', 'keep exactly as-is, byte-for-byte'],
-  ['### Language switcher — flip direction', 'English | [中文](README.zh.md)', '[English](README.md) | 中文'],
+  ['### Language switcher — flip direction', 'English | [简体中文](README.zh.md) | [繁體中文](README.zh-tw.md)', '[English](README.md) | 简体中文'],
 ]
 
 describe('translation prompt rendering', () => {
   it('renders both directions with every placeholder resolved', () => {
-    const en = renderTranslationPrompt(document, { sourceLanguage: 'English', sourceFilename: 'guide.md', terminology })
+    const en = renderTranslationPrompt(document, { sourceLanguage: 'English', targetLanguage: 'Chinese', sourceFilename: 'guide.md', terminology })
     expect(en).toContain('from English to Chinese')
     expect(en).toContain(terminology)
     expect(en).not.toContain('{{')
@@ -40,7 +40,7 @@ describe('translation prompt rendering', () => {
     expect(en).toContain('does a Chinese target use an established Chinese rendering')
     expect(en).toContain('does an English target use the established English technical term')
     expect(en).toContain('The parser removes exactly one framing escape')
-    const zh = renderTranslationPrompt(document, { sourceLanguage: 'Chinese', sourceFilename: 'guide.zh.md', terminology })
+    const zh = renderTranslationPrompt(document, { sourceLanguage: 'Chinese', targetLanguage: 'English', sourceFilename: 'guide.zh.md', terminology })
     expect(zh).toContain('from Chinese to English')
   })
 
@@ -51,7 +51,7 @@ describe('translation prompt rendering', () => {
   })
 
   it('states the selected v7 safeguards', () => {
-    const rendered = renderTranslationPrompt(document, { sourceLanguage: 'English', sourceFilename: 'guide.md', terminology })
+    const rendered = renderTranslationPrompt(document, { sourceLanguage: 'English', targetLanguage: 'Chinese', sourceFilename: 'guide.md', terminology })
     expect(rendered).toContain('## Priority')
     expect(rendered).toContain('### Faithfulness')
     expect(rendered).toContain('do not invent a filename or switcher')
@@ -63,9 +63,9 @@ describe('translation prompt rendering', () => {
 
   it('rejects a template with unknown or missing placeholders', () => {
     const alien = document.replaceAll('{{terminology}}', '{{terms_prompt}}')
-    expect(() => renderTranslationPrompt(alien, { sourceLanguage: 'English', sourceFilename: 'guide.md', terminology })).toThrow(/unsupported placeholder/)
+    expect(() => renderTranslationPrompt(alien, { sourceLanguage: 'English', targetLanguage: 'Chinese', sourceFilename: 'guide.md', terminology })).toThrow(/unsupported placeholder/)
     const missing = document.replaceAll('{{terminology}}', '')
-    expect(() => renderTranslationPrompt(missing, { sourceLanguage: 'English', sourceFilename: 'guide.md', terminology })).toThrow(/required placeholder/)
+    expect(() => renderTranslationPrompt(missing, { sourceLanguage: 'English', targetLanguage: 'Chinese', sourceFilename: 'guide.md', terminology })).toThrow(/required placeholder/)
   })
 
   it('rejects unmatched placeholder delimiters', () => {
@@ -73,6 +73,7 @@ describe('translation prompt rendering', () => {
       const malformed = document.replace('Your task is to translate', `Your task ${delimiter} is to translate`)
       expect(() => renderTranslationPrompt(malformed, {
         sourceLanguage: 'English',
+        targetLanguage: 'Chinese',
         sourceFilename: 'guide.md',
         terminology,
       })).toThrow(/malformed placeholder syntax/)
@@ -82,6 +83,7 @@ describe('translation prompt rendering', () => {
   it('assembles bare few-shot turns before the real source document', () => {
     const request = renderTranslationRequest(document, {
       sourceLanguage: 'English',
+      targetLanguage: 'Chinese',
       sourceFilename: 'guide.md',
       sourceDocument: '# Guide\n\nNew source.',
       terminology,
@@ -97,6 +99,7 @@ describe('translation prompt rendering', () => {
 
     const reverse = renderTranslationRequest(document, {
       sourceLanguage: 'Chinese',
+      targetLanguage: 'English',
       sourceFilename: 'guide.zh.md',
       sourceDocument: '# 指南\n\n新源文。',
       terminology,
@@ -156,12 +159,12 @@ describe('translation response sections', () => {
     const response = renderTranslationResponse({
       translation: '# 指南\n\n初稿。',
       review: '- 无修正',
-      final: '# 指南\n\nEnglish | [中文](guide.zh.md)\n\n定稿。',
+      final: '# 指南\n\nEnglish | [简体中文](guide.zh.md)\n\n定稿。',
     })
-    expect(consumeTranslationResponse(response, { sourceLanguage: 'English', sourceFilename: 'guide.md' }).final).toBe([
+    expect(consumeTranslationResponse(response, { sourceLanguage: 'English', targetLanguage: 'Chinese', sourceFilename: 'guide.md' }).final).toBe([
       '# 指南',
       '',
-      '[English](guide.md) | 中文',
+      '[English](guide.md) | 简体中文',
       '',
       '定稿。',
       '',
@@ -182,14 +185,14 @@ describe('translation response sections', () => {
         '定稿。',
       ].join('\n'),
     })
-    expect(consumeTranslationResponse(response, { sourceLanguage: 'English', sourceFilename: 'guide.md' }).final).toBe([
+    expect(consumeTranslationResponse(response, { sourceLanguage: 'English', targetLanguage: 'Chinese', sourceFilename: 'guide.md' }).final).toBe([
       '---',
       'layout: home',
       '---',
       '',
       '# 指南',
       '',
-      '[English](guide.md) | 中文',
+      '[English](guide.md) | 简体中文',
       '',
       '定稿。',
       '',
@@ -204,6 +207,7 @@ describe('translation response sections', () => {
     })
     expect(() => consumeTranslationResponse(response, {
       sourceLanguage: 'English',
+      targetLanguage: 'Chinese',
       sourceFilename: 'guide.md',
     })).toThrow(/unterminated YAML frontmatter/)
   })
@@ -211,6 +215,7 @@ describe('translation response sections', () => {
   it('rejects a source filename that contradicts the translation direction', () => {
     expect(() => renderTranslationPrompt(document, {
       sourceLanguage: 'Chinese',
+      targetLanguage: 'English',
       sourceFilename: 'guide.md',
       terminology,
     })).toThrow(/does not match source language Chinese/)
@@ -224,7 +229,64 @@ describe('translation response sections', () => {
     })
     expect(consumeTranslationResponse(response, {
       sourceLanguage: 'Chinese',
+      targetLanguage: 'English',
       sourceFilename: 'guide.zh.md',
-    }).final).toContain('\n\nEnglish | [中文](guide.zh.md)\n\n')
+    }).final).toContain('\n\nEnglish | [简体中文](guide.zh.md) | [繁體中文](guide.zh-tw.md)\n\n')
+  })
+
+  it('inserts the Traditional Chinese target switcher for a zh-to-zh-TW transcription', () => {
+    const response = renderTranslationResponse({
+      translation: '# 指南\n\n初稿。',
+      review: '- 无修正',
+      final: '# 指南\n\nFinal.',
+    })
+    expect(consumeTranslationResponse(response, {
+      sourceLanguage: 'Chinese',
+      targetLanguage: 'Chinese-TW',
+      sourceFilename: 'guide.zh.md',
+    }).final).toContain('\n\n[English](guide.md) | [简体中文](guide.zh.md) | 繁體中文\n\n')
+  })
+
+  it('resolves the zh-tw target filename for a zh-to-zh-TW transcription', () => {
+    const request = renderTranslationRequest(document, {
+      sourceLanguage: 'Chinese',
+      targetLanguage: 'Chinese-TW',
+      sourceFilename: 'guide.zh.md',
+      sourceDocument: '# 指南\n\n新源文。',
+      terminology,
+      examples: [{ chinese: '# 示例\n\n简体。', chineseTw: '# 範例\n\n繁體。' }],
+    })
+    expect(request.targetFilename).toBe('guide.zh-tw.md')
+    expect(request.messages.slice(1).map(message => message.content)).toEqual([
+      '# 示例\n\n简体。',
+      '# 範例\n\n繁體。',
+      '# 指南\n\n新源文。',
+    ])
+  })
+
+  it('rejects an example lacking the requested direction sides', () => {
+    expect(() => renderTranslationRequest(document, {
+      sourceLanguage: 'Chinese',
+      targetLanguage: 'Chinese-TW',
+      sourceFilename: 'guide.zh.md',
+      sourceDocument: '# 指南\n\n新源文。',
+      terminology,
+      examples: [{ chinese: '# 示例\n\n简体。' }],
+    })).toThrow(/example lacks the Chinese or Chinese-TW side/)
+  })
+
+  it('rejects a same-language pair and a target-filename mismatch', () => {
+    expect(() => renderTranslationPrompt(document, {
+      sourceLanguage: 'Chinese',
+      targetLanguage: 'Chinese',
+      sourceFilename: 'guide.zh.md',
+      terminology,
+    })).toThrow(/target language must differ/)
+    expect(() => renderTranslationPrompt(document, {
+      sourceLanguage: 'Chinese-TW',
+      targetLanguage: 'English',
+      sourceFilename: 'guide.zh.md',
+      terminology,
+    })).toThrow(/does not match source language Chinese-TW/)
   })
 })
