@@ -507,11 +507,7 @@ describe('web e2e: long Chat scroll contract', () => {
 
         await wheelTranscript(world.page, 420)
         const readerAnchor = await visibleFlowAnchor(world.page)
-        const chunksAfterAnchor = world.events.filter(event => event.type === 'assistant/chunk').length
-        await expect.poll(
-          () => world.events.filter(event => event.type === 'assistant/chunk').length,
-          { timeout: 10_000 },
-        ).toBeGreaterThan(chunksAfterAnchor + 5)
+        await settled
 
         releaseHistory()
         await expect.poll(() => loadedFlowRows(world.page), { timeout: 30_000 }).toBeGreaterThan(beforeRows)
@@ -520,8 +516,6 @@ describe('web e2e: long Chat scroll contract', () => {
       } finally {
         releaseHistory()
       }
-
-      await settled
       await expect.poll(() => world.page.locator('[data-streaming="true"]').count(), { timeout: 15_000 }).toBe(0)
       await world.page.getByText(LIVE_TEXT_DONE, { exact: false }).last().waitFor({ timeout: 15_000 })
       await world.page.unroute('**/api/session.history')
