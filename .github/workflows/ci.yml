@@ -939,7 +939,64 @@ jobs:
           || 'ubuntu-latest' }}
     needs: [node-24, node-24-coverage, node-24-consumers, node-compat, python-sdk, python-runtime, windows]
     if: always() && github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
+      # Best effort: GITHUB_TOKEN is read-only on dependabot pull requests,
+      # so a failed post must not flip the verdict.
+      - name: Post CI summary comment
+        continue-on-error: true
+        uses: actions/github-script@v7
+        env:
+          NEEDS_CONTEXT: ${{ toJSON(needs) }}
+        with:
+          script: |
+            const marker = '<!-- dsh-ci-summary -->'
+            const icons = { success: '✅', failure: '❌', cancelled: '🚫', skipped: '⏭️' }
+            const labels = {
+              'node-24': 'node 24 / static',
+              'node-24-coverage': 'node 24 / coverage',
+              'node-24-consumers': 'node 24 / snapshots and artifacts',
+              'node-compat': 'node compatibility',
+              'python-sdk': 'python 3.10 / keyless SDK',
+              'python-runtime': 'python runtime / release-shaped',
+              'windows': 'windows node 24 / wine blocking',
+            }
+            const needs = JSON.parse(process.env.NEEDS_CONTEXT)
+            const rows = Object.entries(needs).map(([id, job]) =>
+              `| ${labels[id] ?? id} | ${icons[job.result] ?? job.result} |`)
+            const body = [
+              marker,
+              '### CI summary',
+              '',
+              '| Job | Result |',
+              '| --- | --- |',
+              ...rows,
+              '',
+              `[Run log](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+            ].join('\n')
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            })
+            const prior = comments.data.find((comment) => comment.body.includes(marker))
+            if (prior) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: prior.id,
+                body,
+              })
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              })
+            }
       - name: Fail if any needed job did not succeed
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
         run: |
