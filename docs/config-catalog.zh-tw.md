@@ -342,6 +342,86 @@ export interface Config {
 
 來源：[`packages/attachment/attachment-local/src/index.ts:24`](../packages/attachment/attachment-local/src/index.ts)
 
+<a id="deepseek-aidsh-auth-gateway-ldap"></a>
+
+## `@deepseek-ai/dsh-auth-gateway-ldap`
+
+需要：`credentials` · `ldapDirectory` · `localAccounts` · `webServer`
+
+```ts config-catalog
+/** LDAP gateway identity-cookie issuance configuration. */
+export interface Config {
+  /** Credential reference containing the gateway's Ed25519 PEM private key. */
+  privateKeyRef?: string
+  /** Credential reference containing the identity token issuer. */
+  issuerRef?: string
+  /** Credential reference containing the DSH token audience. */
+  audienceRef?: string
+  /** Browser cookie carrying the compact signed identity token. */
+  cookieName?: string
+  /** Identity token and cookie lifetime, capped at fifteen minutes. */
+  cookieExpireSeconds?: number
+  /** Whether the identity cookie carries the Secure attribute. */
+  cookieSecure?: boolean
+  /** Whether callers may create gateway-local DSH accounts. */
+  registrationEnabled?: boolean
+  /** Absolute DSH browser URL used after a successful form submission. */
+  appUrl?: string
+  /** Owner-only directory containing one revocable record per browser session. */
+  sessionDirectory?: string
+}
+```
+
+來源：[`packages/identity/auth-gateway-ldap/src/index.ts:11`](../packages/identity/auth-gateway-ldap/src/index.ts)
+
+<a id="deepseek-aidsh-auth-ldap"></a>
+
+## `@deepseek-ai/dsh-auth-ldap`
+
+需要：`credentials`
+
+```ts config-catalog
+/** LDAP authentication configuration for the external gateway. */
+export interface Config {
+  /** Credential reference containing the mandatory LDAPS server URL. */
+  urlRef?: string
+  /** Credential reference containing the LDAP subtree searched for identities. */
+  baseDnRef?: string
+  /** Credential reference containing the gateway service-account DN. */
+  bindDnRef?: string
+  /** Credential reference containing the gateway service-account password. */
+  bindPasswordRef?: string
+  /** Credential reference containing a filter template with `{{username}}`. */
+  userSearchFilterRef?: string
+  /** Credential reference naming the immutable LDAP identity attribute. */
+  userIdAttributeRef?: string
+  /** Credential reference naming the login and RDN attribute. */
+  usernameAttributeRef?: string
+  /** Maximum milliseconds allowed to establish an LDAP connection. */
+  connectTimeoutMs?: number
+  /** Maximum milliseconds allowed for one LDAP operation. */
+  operationTimeoutMs?: number
+}
+```
+
+來源：[`packages/identity/auth-ldap/src/index.ts:8`](../packages/identity/auth-ldap/src/index.ts)
+
+<a id="deepseek-aidsh-auth-local"></a>
+
+## `@deepseek-ai/dsh-auth-local`
+
+```ts config-catalog
+/** File-backed local-account configuration for the external gateway. */
+export interface Config {
+  /** Absolute or working-directory-relative owner-only account file. */
+  path: string
+  /** Minimum password length enforced before hashing a new account. */
+  minPasswordLength?: number
+}
+```
+
+來源：[`packages/identity/auth-local/src/index.ts:14`](../packages/identity/auth-local/src/index.ts)
+
 <a id="deepseek-aidsh-bash-local"></a>
 
 ## `@deepseek-ai/dsh-bash-local`
@@ -393,7 +473,7 @@ export type Config = LocalConfig
 
 ## `@deepseek-ai/dsh-client-connection`
 
-需要：`webServer`
+需要：`webServer` · `auth`
 
 ```ts config-catalog
 /** Plugin config: the deployment's non-loopback serving authorities. */
@@ -412,7 +492,7 @@ export interface ConnectionConfig {
 }
 ```
 
-來源：[`packages/client/connection/src/index.ts:50`](../packages/client/connection/src/index.ts)
+來源：[`packages/client/connection/src/index.ts:52`](../packages/client/connection/src/index.ts)
 
 <a id="deepseek-aidsh-client-hmr"></a>
 
@@ -756,6 +836,30 @@ export interface Config {
 ```
 
 來源：[`packages/host/apiproxy/src/index.ts:41`](../packages/host/apiproxy/src/index.ts)
+
+<a id="deepseek-aidsh-host-authentication"></a>
+
+## `@deepseek-ai/dsh-host-authentication`
+
+需要：`credentials`
+
+```ts config-catalog
+/** External identity-cookie verification configuration. */
+export interface Config {
+  /** Credential reference containing the gateway's Ed25519 PEM public key. */
+  publicKeyRef?: string
+  /** Credential reference containing the exact accepted token issuer. */
+  issuerRef?: string
+  /** Credential reference containing the exact DSH token audience. */
+  audienceRef?: string
+  /** Browser cookie carrying the compact signed identity token. */
+  cookieName?: string
+  /** Directory shared with the gateway's revocable file-session store. */
+  sessionDirectory?: string
+}
+```
+
+來源：[`packages/host/authentication/src/index.ts:9`](../packages/host/authentication/src/index.ts)
 
 <a id="deepseek-aidsh-host-directory-picker-browse"></a>
 
@@ -3098,6 +3202,7 @@ export interface Config {
 抽象服務類——部署時應改為載入具體的實作包（參見[能力 seam](../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)）。
 
 - `@deepseek-ai/dsh-attachment` — 抽象 `AttachmentStore`（[`packages/attachment/attachment/src/index.ts`](../packages/attachment/attachment/src/index.ts)）
+- `@deepseek-ai/dsh-auth` — 抽象 `AuthService`（[`packages/identity/auth/src/index.ts`](../packages/identity/auth/src/index.ts)）
 - `@deepseek-ai/dsh-code-runtime` — 抽象 `CodeRuntime`（[`packages/code-runtime/code-runtime/src/index.ts`](../packages/code-runtime/code-runtime/src/index.ts)）
 - `@deepseek-ai/dsh-compaction` — 抽象 `CompactionEngine`（[`packages/compaction/compaction/src/index.ts`](../packages/compaction/compaction/src/index.ts)）
 - `@deepseek-ai/dsh-credentials` — 抽象 `Credentials`（[`packages/credentials/credentials/src/index.ts`](../packages/credentials/credentials/src/index.ts)）

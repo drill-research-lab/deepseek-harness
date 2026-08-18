@@ -182,6 +182,15 @@ flowchart LR
   pkg_connection["connection"]
   pkg_modules["modules"]
   pkg_hmr["hmr"]
+  pkg_auth["auth"]
+  svc_auth["ctx.auth<br/>Verified request identity seam"]
+  pkg_host_authentication["host-authentication"]
+  pkg_auth_ldap["auth-ldap"]
+  svc_ldapDirectory["ctx.ldapDirectory<br/>LDAP gateway directory"]
+  pkg_auth_gateway_ldap["auth-gateway-ldap"]
+  pkg_auth_local["auth-local"]
+  svc_localAccounts["ctx.localAccounts<br/>DSH-local account store"]
+  svc_ldapAuthGateway["ctx.ldapAuthGateway<br/>LDAP authentication gateway"]
   svc_clientModules["ctx.clientModules<br/>Client plugin graph host"]
   pkg_workflow["workflow"]
   svc_workflowEngine["ctx.workflowEngine<br/>Workflow script engine"]
@@ -205,6 +214,10 @@ flowchart LR
   pkg_approval --> svc_approval
   pkg_attachment --> svc_attachments
   pkg_attachment_local --> svc_attachments
+  pkg_auth --> svc_auth
+  pkg_auth_gateway_ldap --> svc_ldapAuthGateway
+  pkg_auth_ldap --> svc_ldapDirectory
+  pkg_auth_local --> svc_localAccounts
   pkg_bash_local --> svc_shell
   pkg_bash_sandbox --> svc_shell
   pkg_code_runtime --> svc_codeRuntime
@@ -226,6 +239,7 @@ flowchart LR
   pkg_fs_local --> svc_fs
   pkg_fs_sandbox --> svc_fs
   pkg_goal --> svc_goals
+  pkg_host_authentication --> svc_auth
   pkg_invariants --> svc_invariants
   pkg_jobs --> svc_jobs
   pkg_jobs_local --> svc_jobs
@@ -307,6 +321,7 @@ flowchart LR
   svc_approval --> pkg_tools
   svc_attachments --> pkg_host_runtime
   svc_attachments --> pkg_llm_pi_ai
+  svc_auth --> pkg_connection
   svc_clientModules --> pkg_hmr
   svc_codeRuntime --> pkg_tools
   svc_compaction --> pkg_compaction_basic
@@ -327,8 +342,10 @@ flowchart LR
   svc_jobs --> pkg_tool_jobs
   svc_jobs --> pkg_tool_subagent
   svc_jobs --> pkg_tool_terminal
+  svc_ldapDirectory --> pkg_auth_gateway_ldap
   svc_llm --> pkg_agent_loop
   svc_llm --> pkg_compaction_basic
+  svc_localAccounts --> pkg_auth_gateway_ldap
   svc_lsp --> pkg_tool_lsp
   svc_sandbox --> pkg_bash_sandbox
   svc_sandbox --> pkg_terminal_bash
@@ -463,6 +480,10 @@ flowchart LR
 | `ctx.spillStore` | `seam` | [`spill`](../packages/spill/spill) | [`spill-local`](../packages/spill/spill-local) | [`spill-policy`](../packages/spill/spill-policy) | - | 後端保存過大的工具文字，並返回面向模型的定位資訊和取回提示；spill-policy 是 tools/post-execute 消費端，負責決定何時 spill。 |
 | `ctx.directoryPicker` | `seam` | `directory-picker` | `directory-picker-native`, `directory-picker-browse` | `apiproxy` | - | 帶判別標記的互動能力：原生後端在 Host 顯示設備上打開一個作業系統選擇器，瀏覽後端為應用內瀏覽器提供清單與建立原語；雙端後端透過其瀏覽器側填充 ui-workspace 目錄流程的 slot（不透過協定發布）。 |
 | `ctx.webServer` | `core` | `webserver` | - | `connection`, `modules`, `hmr` | - | 普通的 node:http 載體：具名路由登錄檔、索引轉換 tap，以及靜態 dist 回退；Web 傳輸外掛程式註冊自己的路由。 |
+| `ctx.auth` | `seam` | [`auth`](../packages/identity/auth) | [`host-authentication`](../packages/host/authentication) | `connection` | - | DSH 驗證外部簽名的身份 Cookie，並透過請求本機儲存攜帶其穩定使用者 id；憑證收集和斷言簽名保留在 DSH 行程之外。 |
+| `ctx.ldapDirectory` | `core` | [`auth-ldap`](../packages/identity/auth-ldap) | - | [`auth-gateway-ldap`](../packages/identity/auth-gateway-ldap) | - | 僅供閘道使用的 LDAPS 身分驗證；發布的 DSH Web 組合不掛載該服務。 |
+| `ctx.localAccounts` | `core` | [`auth-local`](../packages/identity/auth-local) | - | [`auth-gateway-ldap`](../packages/identity/auth-gateway-ldap) | - | 僅供閘道使用、以 scrypt 派生密碼的文件型帳戶；發布的 DSH Web 組合既不掛載也不讀取該儲存。 |
+| `ctx.ldapAuthGateway` | `core` | [`auth-gateway-ldap`](../packages/identity/auth-gateway-ldap) | - | - | - | 在獨立於 DSH 的行程和憑證目錄中負責主要 LDAP 登入、選填 DSH 本機登入與註冊，以及 Ed25519 斷言簽名。 |
 | `ctx.clientModules` | `core` | `modules` | - | `hmr` | - | 透過增量 `dsh.client` 掃描組合 __DSH_BOOT__ 入口圖，提供外掛程式組合包，並通知重建／圖變更訂閱方。 |
 | `ctx.workflowEngine` | `seam` | [`workflow`](../packages/workflow/workflow) | [`workflow-worker-thread`](../packages/workflow/workflow-worker-thread) | [`tool-workflow`](../packages/workflow/tool-workflow), [`tool-ralph`](../packages/workflow/tool-ralph) | - | 每個上下文使用一個引擎，與 bash 相同，且沒有具名提供方登錄檔；通用工作流程與固定 Ralph 消費端啟動執行，其中的 agent() 呼叫透過 ctx.subagents 扇出。 |
 | `ctx.lsp` | `seam` | [`lsp`](../packages/lsp/lsp) | `lsp-local` | [`tool-lsp`](../packages/lsp/tool-lsp) | - | 提供方註冊與選擇，加上恰好四種操作的標準化查詢執行；該 seam 不提供協定逃生口，後端必須轉換為標準化請求和結果。 |

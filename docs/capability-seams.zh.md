@@ -3,7 +3,7 @@
 
 # 能力 Seams 与核心服务
 
-[English](capability-seams.md) | 简体中文
+[English](capability-seams.md) | 简体中文 | [繁體中文](capability-seams.zh-tw.md)
 
 服务可以是核心主干服务、可替换的能力 seam，也可以是组合包／组合点。下图展示了拥有服务声明的包、已知实现包，以及直接消费该服务的包。
 
@@ -182,6 +182,15 @@ flowchart LR
   pkg_connection["connection"]
   pkg_modules["modules"]
   pkg_hmr["hmr"]
+  pkg_auth["auth"]
+  svc_auth["ctx.auth<br/>Verified request identity seam"]
+  pkg_host_authentication["host-authentication"]
+  pkg_auth_ldap["auth-ldap"]
+  svc_ldapDirectory["ctx.ldapDirectory<br/>LDAP gateway directory"]
+  pkg_auth_gateway_ldap["auth-gateway-ldap"]
+  pkg_auth_local["auth-local"]
+  svc_localAccounts["ctx.localAccounts<br/>DSH-local account store"]
+  svc_ldapAuthGateway["ctx.ldapAuthGateway<br/>LDAP authentication gateway"]
   svc_clientModules["ctx.clientModules<br/>Client plugin graph host"]
   pkg_workflow["workflow"]
   svc_workflowEngine["ctx.workflowEngine<br/>Workflow script engine"]
@@ -205,6 +214,10 @@ flowchart LR
   pkg_approval --> svc_approval
   pkg_attachment --> svc_attachments
   pkg_attachment_local --> svc_attachments
+  pkg_auth --> svc_auth
+  pkg_auth_gateway_ldap --> svc_ldapAuthGateway
+  pkg_auth_ldap --> svc_ldapDirectory
+  pkg_auth_local --> svc_localAccounts
   pkg_bash_local --> svc_shell
   pkg_bash_sandbox --> svc_shell
   pkg_code_runtime --> svc_codeRuntime
@@ -226,6 +239,7 @@ flowchart LR
   pkg_fs_local --> svc_fs
   pkg_fs_sandbox --> svc_fs
   pkg_goal --> svc_goals
+  pkg_host_authentication --> svc_auth
   pkg_invariants --> svc_invariants
   pkg_jobs --> svc_jobs
   pkg_jobs_local --> svc_jobs
@@ -307,6 +321,7 @@ flowchart LR
   svc_approval --> pkg_tools
   svc_attachments --> pkg_host_runtime
   svc_attachments --> pkg_llm_pi_ai
+  svc_auth --> pkg_connection
   svc_clientModules --> pkg_hmr
   svc_codeRuntime --> pkg_tools
   svc_compaction --> pkg_compaction_basic
@@ -327,8 +342,10 @@ flowchart LR
   svc_jobs --> pkg_tool_jobs
   svc_jobs --> pkg_tool_subagent
   svc_jobs --> pkg_tool_terminal
+  svc_ldapDirectory --> pkg_auth_gateway_ldap
   svc_llm --> pkg_agent_loop
   svc_llm --> pkg_compaction_basic
+  svc_localAccounts --> pkg_auth_gateway_ldap
   svc_lsp --> pkg_tool_lsp
   svc_sandbox --> pkg_bash_sandbox
   svc_sandbox --> pkg_terminal_bash
@@ -463,6 +480,10 @@ flowchart LR
 | `ctx.spillStore` | `seam` | [`spill`](../packages/spill/spill) | [`spill-local`](../packages/spill/spill-local) | [`spill-policy`](../packages/spill/spill-policy) | - | 后端保存过大的工具文本，并返回面向模型的定位信息和取回提示；spill-policy 是 tools/post-execute 消费方，负责决定何时 spill。 |
 | `ctx.directoryPicker` | `seam` | `directory-picker` | `directory-picker-native`, `directory-picker-browse` | `apiproxy` | - | 带判别标记的交互能力：原生后端在 Host 显示设备上打开一个操作系统选择器，浏览后端为应用内浏览器提供列表与创建原语；双端后端通过其浏览器侧填充 ui-workspace 目录流程的 slot（不通过协议发布）。 |
 | `ctx.webServer` | `core` | `webserver` | - | `connection`, `modules`, `hmr` | - | 普通的 node:http 载体：具名路由注册表、索引转换 tap，以及静态 dist 回退；Web 传输插件注册自己的路由。 |
+| `ctx.auth` | `seam` | [`auth`](../packages/identity/auth) | [`host-authentication`](../packages/host/authentication) | `connection` | - | DSH 验证外部签名的身份 Cookie，并通过请求本地存储携带其稳定用户 id；凭证收集和断言签名保留在 DSH 进程之外。 |
+| `ctx.ldapDirectory` | `core` | [`auth-ldap`](../packages/identity/auth-ldap) | - | [`auth-gateway-ldap`](../packages/identity/auth-gateway-ldap) | - | 仅供网关使用的 LDAPS 身份验证；发布的 DSH Web 组合不挂载该服务。 |
+| `ctx.localAccounts` | `core` | [`auth-local`](../packages/identity/auth-local) | - | [`auth-gateway-ldap`](../packages/identity/auth-gateway-ldap) | - | 仅供网关使用、以 scrypt 派生密码的文件型账户；发布的 DSH Web 组合既不挂载也不读取该存储。 |
+| `ctx.ldapAuthGateway` | `core` | [`auth-gateway-ldap`](../packages/identity/auth-gateway-ldap) | - | - | - | 在独立于 DSH 的进程和凭证目录中负责主要 LDAP 登录、可选 DSH 本机登录与注册，以及 Ed25519 断言签名。 |
 | `ctx.clientModules` | `core` | `modules` | - | `hmr` | - | 通过增量 `dsh.client` 扫描组合 __DSH_BOOT__ 入口图，提供插件组合包，并通知重建／图变更订阅方。 |
 | `ctx.workflowEngine` | `seam` | [`workflow`](../packages/workflow/workflow) | [`workflow-worker-thread`](../packages/workflow/workflow-worker-thread) | [`tool-workflow`](../packages/workflow/tool-workflow), [`tool-ralph`](../packages/workflow/tool-ralph) | - | 每个上下文使用一个引擎，与 bash 相同，且没有具名提供方注册表；通用工作流与固定 Ralph 消费方启动运行，其中的 agent() 调用通过 ctx.subagents 扇出。 |
 | `ctx.lsp` | `seam` | [`lsp`](../packages/lsp/lsp) | `lsp-local` | [`tool-lsp`](../packages/lsp/tool-lsp) | - | 提供方注册与选择，加上恰好四种操作的标准化查询执行；该 seam 不提供协议逃生口，后端必须转换为标准化请求和结果。 |

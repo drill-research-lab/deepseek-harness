@@ -42,6 +42,11 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
  * blocks. A package moves on or off this list with its context behavior.
  */
 const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
+  'packages/identity/auth': { kind: 'none', reason: 'Identity contracts and request-local state register no prompt, schema, tool, or provider request.' },
+  'packages/identity/auth-ldap': { kind: 'none', reason: 'The LDAP adapter runs only in the external authentication gateway and registers nothing model-facing.' },
+  'packages/identity/auth-local': { kind: 'none', reason: 'The local account store runs only in the external authentication gateway and registers nothing model-facing.' },
+  'packages/identity/auth-gateway-ldap': { kind: 'none', reason: 'The external authentication gateway is outside DSH and registers nothing model-facing.' },
+  'packages/host/authentication': { kind: 'none', reason: 'The verifier supplies request identity to the transport and registers nothing model-facing.' },
   'packages/attachment/attachment': { kind: 'indirect', reason: 'The storage seam delegates model request rendering to provider adapters.' },
   'packages/attachment/attachment-local': { kind: 'indirect', reason: 'The local backend delegates model request rendering to provider adapters.' },
   'packages/shell/shell': { kind: 'indirect', reason: 'The service interface delegates all model rendering to dsh-tool-bash.' },

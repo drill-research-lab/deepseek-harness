@@ -10,6 +10,8 @@ import { bridge, DEFAULT_MAX_REQUEST_BODY_BYTES } from './http-bridge.ts'
 import { assertTrustedAuthority, isTrustedApiRequest } from './api-request-trust.ts'
 import { HostConnectionService } from './rpc-host.ts'
 import { rejectWebSocketUpgrade, WebSocketDownlinks } from './websocket-downlink.ts'
+import { removeBrowserCookies } from './authenticated-request.ts'
+import type {} from '@deepseek-ai/dsh-auth'
 
 export type {
   ConnectionRpcAuthority,
@@ -22,6 +24,7 @@ export type {
 export { HostConnectionService } from './rpc-host.ts'
 
 export { API_PATH, HOST_EVENTS_PATH, MUX_EVENTS_PATH } from './api-path.ts'
+export { isTrustedApiRequest } from './api-request-trust.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'client-connection'
@@ -44,7 +47,7 @@ function assertImageBodyCapacity(ctx: Context, maxRequestBodyBytes: number): voi
 }
 
 /** Services required before providing Connection; API Proxy is an optional `/api` fallback. */
-export const inject = ['webServer']
+export const inject = ['webServer', 'auth']
 
 /** Plugin config: the deployment's non-loopback serving authorities. */
 export interface ConnectionConfig {
@@ -167,7 +170,14 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
         res.end('forbidden')
         return
       }
-      await bridge(req, res, fetchHandler, maxRequestBodyBytes)
+      const user = await ctx.auth.authenticateRequest(req)
+      if (user === undefined) {
+        res.writeHead(401, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+        res.end(JSON.stringify({ error: 'unauthorized' }))
+        return
+      }
+      removeBrowserCookies(req)
+      await ctx.auth.runAs(user, () => bridge(req, res, fetchHandler, maxRequestBodyBytes))
     },
   }
   ctx.effect(() => ctx.webServer.register(route), 'client-connection: /api route')
@@ -180,12 +190,18 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
     ): void => {
       apiCtx.effect(() => apiCtx.webServer.registerUpgrade({
         path,
-        handler: (req, socket, head) => {
+        handler: async (req, socket, head) => {
           if (!isTrustedApiRequest(req, trustedHosts)) {
             rejectWebSocketUpgrade(socket)
             return
           }
-          return handle(req, socket, head)
+          const user = await apiCtx.auth.authenticateRequest(req)
+          if (user === undefined) {
+            rejectWebSocketUpgrade(socket)
+            return
+          }
+          removeBrowserCookies(req)
+          return apiCtx.auth.runAs(user, () => handle(req, socket, head))
         },
       }), `client-connection: ${path} WebSocket`)
     }

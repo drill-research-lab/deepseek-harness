@@ -1,6 +1,6 @@
 # HTTP 服务器
 
-[English](web-server.md) | 简体中文
+[English](web-server.md) | 简体中文 | [繁體中文](web-server.zh-tw.md)
 
 [dsh-host-webserver](../../packages/host/webserver) 是 GUI 宿主的浏览器 HTTP 载体：它是一个提供 `ctx.webServer` 的 `node:http` 插件，包含具名路由注册表、index.html 转换回调，以及一个可由插件认领的回退处理器。它不属于 agent loop（智能体循环），也不是能力 seam；它不了解任何 harness 概念。其他插件负责注册所有功能路由，包括 `/api` 桥接、插件 bundle 和 HMR（热模块替换）事件流（[分层说明](../../.agents/notes/implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.md)）。该服务器只服务浏览器：Electron 通过 `file://` 加载已构建文件，并经 IPC 桥接发送 fetch 请求，不使用本服务器。
 
@@ -53,6 +53,88 @@ interface Config {
 ## Cordis API
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+
+<a id="ctxauth--authservice-abstract-seam"></a>
+
+### `ctx.auth` — `AuthService` (abstract seam)
+
+External-session verifier and AsyncLocalStorage-backed request identity scope.
+
+```ts cordis-catalog
+/**
+ * Recover and verify the authenticated user carried by a request.
+ * @param request - Request headers carrying the session cookie.
+ * @returns The verified user, or undefined when no valid session is present.
+ */
+abstract authenticateRequest(request: Pick<IncomingMessage, 'headers'>): Promise<AuthenticatedUser | undefined>
+
+/**
+ * Read the current request identity.
+ * @returns The user in the current authenticated asynchronous request scope, when present.
+ */
+currentUser(): AuthenticatedUser | undefined
+
+/**
+ * Run an operation inside an authenticated asynchronous scope.
+ * @param user - Identity made available to downstream consumers.
+ * @param operation - Work whose asynchronous continuations inherit the identity.
+ * @returns The operation's result.
+ */
+runAs<T>(user: AuthenticatedUser, operation: () => T): T
+```
+
+Source: [`packages/identity/auth/src/index.ts:26`](../../packages/identity/auth/src/index.ts)
+
+<a id="ctxldapauthgateway--ldapauthgateway"></a>
+
+### `ctx.ldapAuthGateway` — `LdapAuthGateway`
+
+Owns credential routes and identity-cookie signing in the authentication gateway process.
+
+Source: [`packages/identity/auth-gateway-ldap/src/index.ts:173`](../../packages/identity/auth-gateway-ldap/src/index.ts)
+
+<a id="ctxldapdirectory--ldapdirectory"></a>
+
+### `ctx.ldapDirectory` — `LdapDirectory`
+
+LDAP authentication for a separately deployed authentication gateway.
+
+```ts cordis-catalog
+/**
+ * Verify a password directly against LDAP inside the authentication gateway process.
+ * @param username - LDAP login name collected by the gateway.
+ * @param password - Password collected by the gateway and discarded after bind.
+ * @returns The stable LDAP identity, or undefined when the credentials do not match one entry.
+ */
+async authenticate(username: string, password: string): Promise<AuthenticatedUser | undefined>
+```
+
+Source: [`packages/identity/auth-ldap/src/index.ts:57`](../../packages/identity/auth-ldap/src/index.ts)
+
+<a id="ctxlocalaccounts--localaccountstore"></a>
+
+### `ctx.localAccounts` — `LocalAccountStore`
+
+Owner-only account store used solely by the separately deployed authentication gateway.
+
+```ts cordis-catalog
+/**
+ * Verify one gateway-local username and password.
+ * @param username - Login name collected by the gateway.
+ * @param password - Password collected by the gateway and discarded after derivation.
+ * @returns The stable local identity, or undefined when the credentials do not match.
+ */
+async authenticate(username: string, password: string): Promise<AuthenticatedUser | undefined>
+
+/**
+ * Create one gateway-local account with an scrypt-derived password hash.
+ * @param registration - Account fields collected only by the gateway.
+ * @returns The new stable local identity after the owner-only file commits.
+ */
+async create(registration: LocalAccountRegistration): Promise<AuthenticatedUser>
+```
+
+Source: [`packages/identity/auth-local/src/index.ts:80`](../../packages/identity/auth-local/src/index.ts)
 
 <a id="ctxwebserver--webserver"></a>
 

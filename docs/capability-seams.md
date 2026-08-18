@@ -180,6 +180,15 @@ flowchart LR
   pkg_connection["connection"]
   pkg_modules["modules"]
   pkg_hmr["hmr"]
+  pkg_auth["auth"]
+  svc_auth["ctx.auth<br/>Verified request identity seam"]
+  pkg_host_authentication["host-authentication"]
+  pkg_auth_ldap["auth-ldap"]
+  svc_ldapDirectory["ctx.ldapDirectory<br/>LDAP gateway directory"]
+  pkg_auth_gateway_ldap["auth-gateway-ldap"]
+  pkg_auth_local["auth-local"]
+  svc_localAccounts["ctx.localAccounts<br/>DSH-local account store"]
+  svc_ldapAuthGateway["ctx.ldapAuthGateway<br/>LDAP authentication gateway"]
   svc_clientModules["ctx.clientModules<br/>Client plugin graph host"]
   pkg_workflow["workflow"]
   svc_workflowEngine["ctx.workflowEngine<br/>Workflow script engine"]
@@ -203,6 +212,10 @@ flowchart LR
   pkg_approval --> svc_approval
   pkg_attachment --> svc_attachments
   pkg_attachment_local --> svc_attachments
+  pkg_auth --> svc_auth
+  pkg_auth_gateway_ldap --> svc_ldapAuthGateway
+  pkg_auth_ldap --> svc_ldapDirectory
+  pkg_auth_local --> svc_localAccounts
   pkg_bash_local --> svc_shell
   pkg_bash_sandbox --> svc_shell
   pkg_code_runtime --> svc_codeRuntime
@@ -224,6 +237,7 @@ flowchart LR
   pkg_fs_local --> svc_fs
   pkg_fs_sandbox --> svc_fs
   pkg_goal --> svc_goals
+  pkg_host_authentication --> svc_auth
   pkg_invariants --> svc_invariants
   pkg_jobs --> svc_jobs
   pkg_jobs_local --> svc_jobs
@@ -305,6 +319,7 @@ flowchart LR
   svc_approval --> pkg_tools
   svc_attachments --> pkg_host_runtime
   svc_attachments --> pkg_llm_pi_ai
+  svc_auth --> pkg_connection
   svc_clientModules --> pkg_hmr
   svc_codeRuntime --> pkg_tools
   svc_compaction --> pkg_compaction_basic
@@ -325,8 +340,10 @@ flowchart LR
   svc_jobs --> pkg_tool_jobs
   svc_jobs --> pkg_tool_subagent
   svc_jobs --> pkg_tool_terminal
+  svc_ldapDirectory --> pkg_auth_gateway_ldap
   svc_llm --> pkg_agent_loop
   svc_llm --> pkg_compaction_basic
+  svc_localAccounts --> pkg_auth_gateway_ldap
   svc_lsp --> pkg_tool_lsp
   svc_sandbox --> pkg_bash_sandbox
   svc_sandbox --> pkg_terminal_bash
@@ -461,6 +478,10 @@ flowchart LR
 | `ctx.spillStore` | `seam` | [`spill`](../packages/spill/spill) | [`spill-local`](../packages/spill/spill-local) | [`spill-policy`](../packages/spill/spill-policy) | - | The backend saves oversized tool text and returns a model-facing locator plus retrieval hint; spill-policy is the tools/post-execute consumer that decides when to spill. |
 | `ctx.directoryPicker` | `seam` | `directory-picker` | `directory-picker-native`, `directory-picker-browse` | `apiproxy` | - | Discriminated interaction capability: the native backend opens one OS chooser on the host display, the browse backend serves listing/creation primitives for the in-app browser; dual-face backends fill ui-workspace directory-flow slots from their browser halves (no wire advertisement). |
 | `ctx.webServer` | `core` | `webserver` | - | `connection`, `modules`, `hmr` | - | Plain node:http carrier: named-route registry, index transform taps, and the static dist fallback; web-transport plugins register their own routes. |
+| `ctx.auth` | `seam` | [`auth`](../packages/identity/auth) | [`host-authentication`](../packages/host/authentication) | `connection` | - | DSH verifies an externally signed identity cookie and carries its stable user id through request-local storage; credential collection and assertion signing remain outside the DSH process. |
+| `ctx.ldapDirectory` | `core` | [`auth-ldap`](../packages/identity/auth-ldap) | - | [`auth-gateway-ldap`](../packages/identity/auth-gateway-ldap) | - | Gateway-only LDAP authentication over LDAPS; the shipped DSH Web composition does not mount this service. |
+| `ctx.localAccounts` | `core` | [`auth-local`](../packages/identity/auth-local) | - | [`auth-gateway-ldap`](../packages/identity/auth-gateway-ldap) | - | Gateway-only file-backed accounts with scrypt password derivation; the shipped DSH Web composition neither mounts nor reads this store. |
+| `ctx.ldapAuthGateway` | `core` | [`auth-gateway-ldap`](../packages/identity/auth-gateway-ldap) | - | - | - | Owns primary LDAP login, optional DSH-local login and registration, and Ed25519 assertion signing in a process and credential home separate from DSH. |
 | `ctx.clientModules` | `core` | `modules` | - | `hmr` | - | Composes the __DSH_BOOT__ entry graph from an incremental dsh.client scan, serves plugin bundles, and notifies rebuilt/graph-changed subscribers. |
 | `ctx.workflowEngine` | `seam` | [`workflow`](../packages/workflow/workflow) | [`workflow-worker-thread`](../packages/workflow/workflow-worker-thread) | [`tool-workflow`](../packages/workflow/tool-workflow), [`tool-ralph`](../packages/workflow/tool-ralph) | - | One engine per context, as in bash, with no named-provider registry; the general workflow and fixed Ralph consumers start runs whose agent() calls fan out through ctx.subagents. |
 | `ctx.lsp` | `seam` | [`lsp`](../packages/lsp/lsp) | `lsp-local` | [`tool-lsp`](../packages/lsp/tool-lsp) | - | Provider registration and selection plus normalized query execution over exactly four operations; the seam offers no protocol escape hatch, so a backend translates into the normalized request and result. |

@@ -54,6 +54,10 @@ export const SERVICE_PAGE: Record<string, string> = {
   agentPresets: 'core.md',
   agents: 'core.md',
   apiProxy: 'typert.md',
+  auth: 'web-server.md',
+  ldapAuthGateway: 'web-server.md',
+  ldapDirectory: 'web-server.md',
+  localAccounts: 'web-server.md',
   approval: 'approval.md',
   attachments: 'attachment.md',
   shell: 'shell.md',
@@ -212,6 +216,8 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
  * appear on more than one page.
  */
 export const LINK_MAP: Readonly<Record<string, string>> = {
+  AuthenticatedUser: 'web-server.md',
+  LocalAccountRegistration: 'web-server.md',
   Agent: 'core.md',
   AgentCancelCause: 'core.md',
   AgentFactory: 'core.md',
@@ -492,6 +498,7 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
   'AbortSignal',
   'AsyncIterable',
   'Context',
+  'IncomingMessage',
   'Error',
   'Map',
   'Partial',
