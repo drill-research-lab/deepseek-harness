@@ -393,12 +393,12 @@ const reference = [
     order: order + 5,
   }))),
   ...pairedPages(([
-    ['adding-a-package.md', '新增 Package', 'Adding a package'],
-    ['adding-a-tool.md', '新增 Tool', 'Adding a tool'],
-    ['adding-an-llm-adapter.md', '新增 LLM Adapter', 'Adding an LLM adapter'],
-    ['adding-a-settings-card.md', '新增设置卡片', 'Adding a settings card'],
-    ['extension-cookbook.md', '扩展模式', 'Extension patterns'],
-  ] as const).map(([file, rootLabel, enLabel], order): PairedPage => ({
+    ['adding-a-package.md', '新增 Package', '新增 Package', 'Adding a package'],
+    ['adding-a-tool.md', '新增 Tool', '新增 Tool', 'Adding a tool'],
+    ['adding-an-llm-adapter.md', '新增 LLM Adapter', '新增 LLM Adapter', 'Adding an LLM adapter'],
+    ['adding-a-settings-card.md', '新增设置卡片', '新增設定卡片', 'Adding a settings card'],
+    ['extension-cookbook.md', '扩展模式', '擴充模式', 'Extension patterns'],
+  ] as const).map(([file, rootLabel, traditionalLabel, enLabel], order): PairedPage => ({
     source: `docs/cookbook/${file}`,
     route: `reference/cookbook/${file}`,
     label: { root: rootLabel, 'zh-TW': traditionalLabel, en: enLabel },
@@ -409,9 +409,9 @@ const reference = [
   ...pairedPages([{
     source: 'docs/cookbook/adding-a-conversation-node.md',
     route: 'reference/cookbook/adding-a-conversation-node.md',
-    label: { root: '新增 Conversation Node', en: 'Adding a Conversation Node' },
-    sidebar: { root: 'zh-reference', en: 'en-reference' },
-    section: { root: '开发手册', en: 'Cookbook' },
+    label: { root: '新增 Conversation Node', 'zh-TW': '新增 Conversation Node', en: 'Adding a Conversation Node' },
+    sidebar: { root: 'zh-reference', 'zh-TW': 'zh-TW-reference', en: 'en-reference' },
+    section: { root: '开发手册', 'zh-TW': '開發手冊', en: 'Cookbook' },
     order: 5,
   }]),
 ]
