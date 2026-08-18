@@ -42,7 +42,7 @@
 
 ## 排版
 
-現有排版規則約束繁體中文一側；zh-TW 遵循包括教育部《重訂標點符號手冊》在內的臺灣規範。以下混合文字間距規則由兩種中文共同遵守。
+現有排版規則約束簡體中文一側；zh-TW 遵循包括教育部《重訂標點符號手冊》在內的臺灣規範。以下混合文字間距規則由兩種中文共同遵守。
 
 本節規則約束中文一側；英文一側遵循倉庫常規的 Markdown 約定（根 `AGENTS.md`）。以下中西文混排規則遵循 [MDN 簡體中文翻譯指南](https://github.com/mdn/translated-content/blob/main/docs/zh-cn/translation-guide.md)、[Kubernetes 中文在地化指南](https://kubernetes.io/zh-cn/docs/contribute/localization_zh/)、[Vue.js 中文翻譯須知](https://github.com/vuejs-translations/docs-zh-cn/wiki/%E7%BF%BB%E8%AF%91%E9%A1%BB%E7%9F%A5) 與[中文文案排版指北](https://github.com/sparanoid/chinese-copywriting-guidelines)的跨項目共識，其根據是 [W3C clreq](https://www.w3.org/TR/clreq/) 與 GB/T 15834—2011：
 
@@ -69,5 +69,5 @@
 - [Kubernetes 中文在地化指南](https://kubernetes.io/zh-cn/docs/contribute/localization_zh/)：最大的中文在地化團隊的術語首現與標點實踐。
 - [Vue.js docs-zh-cn 翻譯須知](https://github.com/vuejs-translations/docs-zh-cn/wiki/%E7%BF%BB%E8%AF%91%E9%A1%BB%E7%9F%A5)：逐術語的譯／留決策與語氣。
 - [zh-style-guide](https://zh-style-guide.readthedocs.io)：社區中文技術文件寫作規範，本文借用了它的規則等級分類體系（與 RFC 2119 關鍵字分級）；它聚合了 GB/T 15834/15835、clreq 與各廠商指南。
-- [W3C clreq](https://www.w3.org/TR/clreq/) 與[微軟繁體中文風格指南](https://learn.microsoft.com/en-us/globalization/reference/microsoft-style-guides)：排版學與廠商本機化的正式基線。
+- [W3C clreq](https://www.w3.org/TR/clreq/) 與[微軟簡體中文風格指南](https://learn.microsoft.com/en-us/globalization/reference/microsoft-style-guides)：排版學與廠商在地化的正式基線。
 - GB/T 19682-2005《翻譯服務譯文質量要求》：國家標準；本文「忠實性」與「術語」兩節將其三項基本要求（忠實原文、術語統一、行文通順）落實為可操作的規則。

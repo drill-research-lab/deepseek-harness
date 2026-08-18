@@ -122,7 +122,7 @@ ask_user_question 會暫停工具呼叫，直到當前 UI 提供方返回人類�
 
 ### `run_code`
 
-針對可用工具執行 TypeScript 程序。接受兩個必填參數：`code`，即非同步函式的**函式體**（僅使用可擦除文法；支援頂層 `await` 和 `return`）；以及 `description`，簡要說明該程序做什麼。請根據系統提示詞中的聲明，以 `await tools.name(args)` 形式呼叫工具。只有列印或返回的內容會傳回，請謹慎篩選。
+針對可用工具執行 TypeScript 程序。接受兩個必填參數：`code`，即非同步函式的**函式體**（僅使用可擦除文法；支援頂層 `await` 和 `return`）；以及 `description`，簡要說明該程序做什麼。請根據系統提示詞中的聲明，以 `await tools.name(args)` 形式呼叫工具。只有列印或返回的內容屬於程序輸出，請謹慎篩選。含圖片的子工具結果會在執行結束後附加。
 
 ```json
 {

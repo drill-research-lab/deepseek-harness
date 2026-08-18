@@ -27,6 +27,15 @@ uv run --project python/sdk pytest
 
 `python/sdk/tests/test_bundled_runtime.py` 會執行可用的內建載體；某個載體的產物尚未建置時，會跳過該載體。倉庫級測試政策見 [測試](../docs/testing.md)。
 
+該套件面向的是偽造的執行時期對端。`scripts/smoke-python-runtime.py` 面向真實的打包執行時期；必需的 `python-runtime` CI 任務會用新建置的可執行文件執行全部場景：
+
+```sh
+uv run --project python/sdk python scripts/smoke-python-runtime.py \
+  --scenario sdk-minimal --exe dist-exe/dsh-jsonrpc-agent-pkg-macos-arm64
+```
+
+其中兩個場景會比對 `scripts/snapshots/python-sdk-single-exe/` 下已提交的期望輸出。`minimal/model-visible.json` 固定了簽入的極簡組合所組裝的系統提示詞、對外公佈的工具 schema 以及模型可見訊息，因此外掛程式一旦貢獻出計畫外的系統分段或 user 訊息，該任務即失敗；它會丟棄動態執行時期上下文快照——同一組合在 macOS 上會發出它，在 Linux 上不會（[#2488](https://github.com/deepseek-harness/deepseek-harness/issues/2488)）。`advanced/` 固定 SDK 結果與持久化的工作階段日誌。重新執行對應場景時加上 `--update-snapshots`，並在提交前審閱該差異。
+
 互動式冒煙測試需要環境變數或倉庫根目錄 `.env` 中存在 `DEEPSEEK_API_KEY`：
 
 ```python

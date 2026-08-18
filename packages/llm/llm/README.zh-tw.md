@@ -53,7 +53,7 @@
 
 訊息內容是類型化內容區塊陣列：`text`、`reasoning`、`tool-call`、`tool-result`。聯合從可合併擴充的 `ContentBlockMap` 派生，因此外掛程式可以透過 declaration merging 新增塊類型。assistant 訊息使用模型來源，其中攜帶生成該訊息的提供方和模型，以及選填的配接器私有重播狀態。dispatch 前，`LlmRuntime` 只在歷史提供方路由與目標提供方路由當前由完全相同的配接器實例擁有時才保留該狀態；隨後由配接器判定能否在模型／提供方間復原或轉換該狀態。核心塊集只包含每條已發布路徑都支援的塊。多模態內容（影像、音訊等）沒有核心塊類型；需要它的功能會透過 map 新增，並一並新增相應的配接器／UI／壓縮（compaction）支援。
 
-流式輸出是原始區塊協定（`block-start`、`text-delta`、`reasoning-delta`、`tool-call-delta`、`block-end`、`usage`、`finish`）。每個配接器結果都以一個終止 `finish` 到達消費端；執行故障使用 `error` 或 `aborted` 作為結束原因，而不會跨流 API 拋出。`BlockAssembler` 是將區塊組裝為塊／訊息的唯一共享實作。
+流式輸出是原始區塊協定（`block-start`、`text-delta`、`reasoning-delta`、`tool-call-delta`、`block-end`、`usage`、`finish`）。每個配接器結果都以一個終止 `finish` 到達消費端；執行故障使用 `error` 或 `aborted` 作為結束原因，而不會跨流 API 拋出。`BlockAssembler` 是將區塊組裝為塊／訊息的唯一共享實作。成功的 `finish` 可以攜帶 `ReplayEnvelope`——不透明的回應級重播中繼資料，加上與發射塊序列對齊的選填逐塊條目。組裝對內容與中繼資料只做一次保留/丟棄決定：`max-tokens` 結束會丟棄可能被截斷的工具呼叫，資料在每個被丟棄的位置同步失去對應條目，因此儲存的中繼資料始終描述儲存的內容。
 
 ### 呼叫設定（`call-config.ts`）
 

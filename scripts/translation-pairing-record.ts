@@ -9,7 +9,7 @@ export const PAIRED_LANGUAGES = ['en', 'zh', 'zh-TW'] as const
 export type PairedLanguage = (typeof PAIRED_LANGUAGES)[number]
 
 /** File suffix applied to the English source basename for each language. */
-export const LANGUAGE_SUFFIX: Record<PairedLanguage, string> = {
+const LANGUAGE_SUFFIX: Record<PairedLanguage, string> = {
   en: '',
   zh: '.zh',
   'zh-TW': '.zh-tw',

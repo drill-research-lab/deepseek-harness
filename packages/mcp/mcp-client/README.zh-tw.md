@@ -65,7 +65,7 @@ MCP 用戶端橋接外掛程式：連線外部 [Model Context Protocol](https://
 - 監聽 `notifications/tools/list_changed` → 重新同步；取得階段失敗時保留上一世代的註冊，註冊衝突則會回滾本次嘗試的世代，並且不保留該伺服器的任何工具。
 - 工具執行：`client.callTool({ name: rawName, arguments }, { signal })`，支援逾時 + 中止；公開名稱絕不會發給伺服器。
 - 規範成功值是 `{ content: JsonValue[], structuredContent? }`；完整的 JSON MCP 塊會保留給程式設計呼叫方。受支援且已聲明的 `outputSchema` 會驗證 `structuredContent`；不受支援的 schema 詞彙會回退為不受約束的 `JsonValue`。
-- Native／模型算繪保留現有文字投影：文字塊以換行連線，圖片、音訊、資源和不受支援的塊會變成預留位置。
+- Native／模型算繪會保留 MCP 塊順序。文字類連續塊以換行連線；資源連結以文字保留名稱和 URI；只有掛載 `ctx.attachments` 且確切呼叫模型路由明確聲明支援圖片輸入時，受支援的圖片才會成為持久核心圖片塊。整個圖片批次會先完成解碼與准入，再保存任一成員。格式錯誤或被拒絕的圖片批次、音訊、嵌入資源和不受支援的塊會成為明確診斷文字，而不會消失。
 - 中斷連線／崩潰時：supervisor 以指數退避（`reconnect.initialDelayMs` 逐次翻倍，上限 `reconnect.maxDelayMs`）重新啟動原始伺服器設定，成功後重新執行發現——復原的世代會替換前一個，因此工具既不會重複也不會洩漏。中斷期間最後一個正常世代保持註冊；針對它的呼叫在復原前會失敗。
 - 重連按中斷預算控制：連續失敗達到 `reconnect.maxAttempts` 次後，該伺服器的工具會被註銷，重連停止，直到 HMR 重載或重新啟動 Host。連線存活超過 `maxDelayMs` 會重設預算，因此偶爾崩潰的伺服器可以無限復原，而崩潰迴圈的伺服器——即使短暫連線成功——仍會耗盡上限而非永遠重新啟動。
 - 重連狀態在日誌中對使用者可見：reconnecting（warn，含嘗試次數和延遲）、recovered（info）、最終失敗和 disabled-loss（error）。dispose（資源釋放）會取消任何待執行的重連。設定 `reconnect.enabled: false` 時，連線丟失後工具保持註冊但呼叫失敗，直到重載——即手動復原行為。
@@ -75,6 +75,8 @@ MCP 用戶端橋接外掛程式：連線外部 [Model Context Protocol](https://
 | 服務 | 用途 |
 |---|---|
 | `ctx.tools` | 註冊／註銷 MCP 工具 |
+| `ctx.attachments` | 選填；在模型投影前校驗並持久保存圖片結果批次 |
+| `ctx.llm` | 選填；證明確切呼叫路由明確支援圖片輸入 |
 
 ## 模型體驗
 
@@ -96,11 +98,11 @@ MCP 用戶端橋接外掛程式：連線外部 [Model Context Protocol](https://
 
 #### 模型看到的內容
 
-公開工具名稱和 JSON 參數會保留在 assistant 歷史中。文字結果塊會以換行連線為一個保留的 Native 文字結果；圖片、音訊、資源和不受支援的塊在其中變為簡短預留位置。它們的完整 JSON 塊及選填結構化內容保留在執行區域性的規範值中；MCP `isError` 會透過登錄檔的錯誤路徑拒絕呼叫。
+公開工具名稱和 JSON 參數會保留在 assistant 歷史中。執行區域性的規範值始終為程序化呼叫方和 Code Mode 保留完整 JSON MCP 塊及選填結構化內容。在 Native 上下文中，受支援的圖片塊會在確切路由能力得到證明後，按原始順序與文字一起持久投影；Code Mode 還會經外層 `run_code` 結果轉運這份已經結帳的豐富投影，而不改變規範綁定值。被拒絕的圖片、音訊、嵌入資源、資源連結和未知塊會繼續以有界文字診斷可見；MCP `isError` 會在持久化圖片前拒絕呼叫。
 
 #### Token 影響
 
-參數和對映後的文字會保留到壓縮（compaction）發生時。二進位與資源載荷會被丟棄，而不會加入上下文。
+參數、對映後的文字和持久圖片引用會保留到壓縮（compaction）發生時。內聯 MCP base64 只存在於執行區域性的規範值中，絕不會複製進工作階段事件；提供方會從附件儲存讀取經過校驗的位元組。音訊和嵌入資源載荷仍不會進入模型上下文。
 
 #### KV Cache 影響
 
@@ -111,5 +113,5 @@ MCP 用戶端橋接外掛程式：連線外部 [Model Context Protocol](https://
 - **只橋接 MCP 的工具能力**：資源和提示詞沒有 harness 消費介面，暫緩實作。
 - **啟動逾時繼承自 MCP SDK**：DSH 尚未公開連線／發現逾時。每次 initialize 請求或分頁 `tools/list` 請求都使用 SDK 預設的 60 秒，因此在初始同步完成期間，無回應的 server 或 cursor chain 可能同時延遲啟用與 teardown。
 - **重連在傳輸關閉時觸發**：崩潰的 stdio 子行程會觸發重連；Streamable HTTP 失敗透過每次請求以及 SDK 傳輸自身的 SSE（Server-Sent Events）流復原機制暴露，因此不可達的 HTTP 伺服器會按呼叫重試，而非由 supervisor 重新 spawn。
-- **Native 非文字算繪有損**：圖片、音訊與資源載荷在模型上下文中會變成預留位置，即使執行區域性的規範值保留了其 JSON 塊。更豐富的 Native 多媒體投影暫緩實作。
+- **圖片是唯一的持久豐富結果橋接**：PNG、JPEG、WebP 和 GIF 可以在確切能力得到證明後進入 Native 上下文。音訊和嵌入資源載荷仍只存在於執行區域性，並配有明確診斷；資源連結只以文字保留名稱和 URI。
 - **不強制執行不受支援的 MCP 輸出 schema**：已聲明 schema 使用 harness 子集之外的詞彙時，`structuredContent` 會回退到 `JsonValue`。

@@ -72,6 +72,9 @@ describe('CI workflow', () => {
     expect(windowsNative['runs-on']).toContain('dsh-windows-2025-16core')
     expect(windowsNative.name).toBe('windows node 24 / native complete')
     expect(windowsNative.if).toBe("github.event_name == 'pull_request'")
+    expect(windowsNative.env).toMatchObject({
+      DSH_COVERAGE_TEST_TIMEOUT_MS: '30000',
+    })
     const nativeCommandSteps = (windowsNative.steps as unknown[]).filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
     ))
@@ -339,7 +342,11 @@ describe('Python release workflows', () => {
     expect(plan.if).toContain('inputs.release')
     expect(JSON.stringify(plan.steps)).toContain('pep440_version')
     expect(JSON.stringify(workflow)).toContain('macosx_14_0_arm64')
+    if (!isRecord(manylinuxAddon) || typeof manylinuxAddon.run !== 'string') {
+      throw new TypeError('Python wheel builder must define the Linux addon install step')
+    }
     expect(manylinuxAddon).toMatchObject({ if: "runner.os == 'Linux'" })
+    expect(manylinuxAddon.run).toContain('(cd "$addon_dir" && npm_config_build_from_source=true pnpm run install)')
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_x86_64')
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_aarch64')
     expect(JSON.stringify(manylinuxAddon)).toContain('$HOME/setup-pnpm:$HOME/setup-pnpm:ro')

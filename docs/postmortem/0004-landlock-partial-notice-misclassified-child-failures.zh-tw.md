@@ -42,7 +42,7 @@ stderr 仍是帶內歸因通道。受限子行程可以故意復現 runner 的�
 
 - [`RunnerFailureRule`](../subsystems/sandbox.md#wrapped-argv-and-classification-dialects) 攜帶選填的允許結束碼、不區分大小寫的逐行致命簽名，以及按不區分大小寫的整行精確匹配排除的資訊性行。
 - [`dsh-sandbox-local`](../../packages/sandbox/sandbox-local/) 把 Landlock 對映為結束碼 125 加一行非通知的 `landlock-run:` 診斷，而 bwrap、Seatbelt 和自訂 runner 仍僅依據簽名。
-- [`dsh-bash-sandbox`](../../packages/shell/bash-sandbox/) 直接 spawn 提供方 argv，因此啟動前遭拒時使用 spawn 錯誤通道，而非本機化的 shell 診斷。已結帳的前臺與後臺執行共用一個返回證據的分類器；致命證據優先於拒絕，前臺錯誤會報告匹配到的致命行，同時保持捕獲的 stderr 不變。
+- [`dsh-bash-sandbox`](../../packages/shell/bash-sandbox/) 直接 spawn 提供方 argv，因此啟動前遭拒時使用 spawn 錯誤通道，而非在地化的 shell 診斷。已結帳的前臺與後臺執行共用一個返回證據的分類器；致命證據優先於拒絕，前臺錯誤會報告匹配到的致命行，同時保持捕獲的 stderr 不變。
 - [`dsh-tool-fs-search`](../../packages/fs/tool-fs-search/) 透過 `ctx.subprocess` 執行打包的 ripgrep，並繼續位於沙盒化 bash seam 之外。
 - 原生邊界回歸用例位於 [`partial-landlock.spec.ts`](../../packages/shell/bash-sandbox/tests/partial-landlock.spec.ts)，包括資訊性通知、致命證據和前臺／後臺分類。
 - 組裝後的產品路徑由 [`partial-landlock` 快照組合](../../examples/acp-agent/partial-landlock.cordis.snapshot.yml)固定，獨立於檔案系統搜尋的實作選擇。

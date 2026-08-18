@@ -17,7 +17,7 @@ harness LLM（大型語言模型）seam 的 DeepSeek chat-completions 配接器�
     apiKeyEnv: DEEPSEEK_API_KEY  # default; resolved per request via ctx.credentials, then the environment
     baseURL: https://api.deepseek.com # optional; $DEEPSEEK_BASE_URL then the public API when omitted
     thinking: enabled        # optional; provider default is enabled
-    reasoningEffort: high    # optional; off | high | max — omitted ⇒ high
+    reasoningEffort: high    # optional; off | low | high | max — omitted ⇒ high
     maxTokens: 256000        # optional positive per-request output cap; this is the default
     streamIdleTimeoutMs: 300000 # optional; positive finite Node timer delay; five-minute default
     retryPolicy:             # optional; omission uses bounded normal defaults
@@ -41,9 +41,9 @@ harness LLM（大型語言模型）seam 的 DeepSeek chat-completions 配接器�
 
 `maxTokens` 是配接器為對話請求設定的輸出上限，預設值為 256,000。Catalog 設定項可以自帶 `maxTokens`，它對該模型勝出；不含該上限的設定項以及任何未列出原樣傳遞 id 都解析為 profile 值，因此新增按模型的上限只改變一個模型，而非整條路由。確切模型解析會將勝出值公開為 `defaultMaxTokens`；`LlmRuntime` 會在 agent loop（代理循環）寫入 `request/header` 前，將該值填入 `GenerateOptions.maxTokens`，從而仍可根據持久記錄重建協定請求。顯式的請求值或 `AgentOptions.maxTokens` 值優先，並會序列化為 `max_tokens`。配接器不會根據 `contextWindow` 自動調低該請求預算；上下文或提供方輸出上限較小的部署必須設定與其相容的 `maxTokens`。
 
-同一確切模型結果會在部署策略允許思考時，為每個原樣傳遞模型在 `reasoning` 下公開有序的 `off`、`high` 和 `max` 推理（reasoning）強度。`reasoningEffort` 選擇部署預設值，省略時回退為 `high`。`agent/request` 可以在每個工作階段步驟替換它；解析後的值會記錄在 `request/header`。`high` 和 `max` 會啟用思考，並序列化為官方頂層 `reasoning_effort`；配接器持有的 `off` 則序列化為 `thinking.type: disabled`，且省略 `reasoning_effort`。不支援的值會在網路 I/O 前以 `UNSUPPORTED_REASONING_EFFORT` 失敗。
+同一確切模型結果會在部署策略允許思考時，為每個原樣傳遞模型在 `reasoning` 下公開有序的 `off`、`low`、`high` 和 `max` 推理（reasoning）強度。`reasoningEffort` 選擇部署預設值，省略時回退為 `high`。`agent/request` 可以在每個工作階段步驟替換它；解析後的值會記錄在 `request/header`。`low`、`high` 和 `max` 會啟用思考，並以同名值序列化為官方頂層 `reasoning_effort`；配接器持有的 `off` 則序列化為 `thinking.type: disabled`，且省略 `reasoning_effort`。不支援的值會在網路 I/O 前以 `UNSUPPORTED_REASONING_EFFORT` 失敗。
 
-`thinking: disabled` 是部署鎖定：它只公佈 `off`，並以 `off` 為預設值。省略 `reasoningEffort` 或將其設定為 `off` 均有效；設定 `high` 或 `max` 會使外掛程式載入失敗，直接按請求啟用思考也會在網路 I/O 前失敗。攜帶 `GenerateOptions.purpose: 'session-title'` 的請求也會強制停用思考並省略已解析的推理強度，將有界輸出保留給可見標題文字，不改變工作階段或壓縮（compaction）預設值。
+`thinking: disabled` 是部署鎖定：它只公佈 `off`，並以 `off` 為預設值。省略 `reasoningEffort` 或將其設定為 `off` 均有效；設定 `low`、`high` 或 `max` 會使外掛程式載入失敗，直接按請求啟用思考也會在網路 I/O 前失敗。攜帶 `GenerateOptions.purpose: 'session-title'` 的請求也會強制停用思考並省略已解析的推理強度，將有界輸出保留給可見標題文字，不改變工作階段或壓縮（compaction）預設值。
 
 `streamIdleTimeoutMs` 會限制每次未完成提供方讀取，包括初始 `fetch`，但不計入消費端在區塊間花費的時間。DeepSeek SSE 註解會作為傳輸活動使尚未完成的讀取重新佈防，但絕不會成為 `StreamChunk` 值或工作階段日誌事件。同一個穩定的 abort 訊號會在整個呼叫期間傳遞給請求與 body reader；過期會停止傳輸並拋出 `LlmError('TIMEOUT')`，較早的呼叫方 abort 則拋出 `LlmError('ABORTED')`。配接器每次 `stream()` 呼叫恰好發起一次提供方請求；它把已設定策略註冊為提供方中繼資料，再由 `dsh-llm-retry` 在持久化的 agent（代理）步驟邊界單獨執行該策略。
 

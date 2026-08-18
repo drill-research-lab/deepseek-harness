@@ -4,7 +4,7 @@
 
 Plan mode 狀態徽章，純瀏覽器 surface 外掛程式。瀏覽器側佔用工作階段聲明的 `conversation.input.plan` 單實例 seat（位於 access 模式控制元件右側）；node 側是空 apply（roster 行）。plan 行為本身——`/plan` 命令、邊界或空閒即時提交的 `plan/mode` 狀態、`plan` 投影單元與 policy 段——歸 [`@deepseek-ai/dsh-plan-mode`](../../plan/plan-mode/README.md) 所有，由 host roster 獨立組合。
 
-plan mode 經 `/plan` 命令路徑進入：使用者可以從 composer 的 `+` Command 選單選擇 Plan，也可以輸入 `/plan`，而本包不算繪未啟用態 plan 控制元件。當 host 計算的 `plan` 投影有效目標為 plan mode 時（`pending ? !active : active`——摺疊的 host 值而非用戶端樂觀態，幀到達即自動糾正），座位算繪 warn 色的 "Plan ×" 狀態按鈕，該按鈕經 `command.execute` 執行 `/plan off`；否則座位保持為空——未組合 plan-mode 的 host（或尚無工作階段的 Draft）不顯示任何內容。plan mode 為有效目標期間，composer 文字方塊的 placeholder 切換為 plan 任務提示——"describe your task to generate plan"（中文「描述你的任務以生成計畫」），經 ui-conversation 的 `conversation` locale 命名空間（`placeholder.plan` / `hint.plan` 鍵）本機化，並與已認領 `/plan` 命令的提示逐字共用同一份文案（由 composer 從同一投影算繪；owner 提供的 placeholder 優先）。
+plan mode 經 `/plan` 命令路徑進入：使用者可以從 composer 的 `+` Command 選單選擇 Plan，也可以輸入 `/plan`，而本包不算繪未啟用態 plan 控制元件。當 host 計算的 `plan` 投影有效目標為 plan mode 時（`pending ? !active : active`——摺疊的 host 值而非用戶端樂觀態，幀到達即自動糾正），座位算繪 warn 色的 "Plan ×" 狀態按鈕，該按鈕經 `command.execute` 執行 `/plan off`；否則座位保持為空——未組合 plan-mode 的 host（或尚無工作階段的 Draft）不顯示任何內容。plan mode 為有效目標期間，composer 文字方塊的 placeholder 切換為 plan 任務提示——"describe your task to generate plan"（中文「描述你的任務以生成計畫」），經 ui-conversation 的 `conversation` locale 命名空間（`placeholder.plan` / `hint.plan` 鍵）在地化，並與已認領 `/plan` 命令的提示逐字共用同一份文案（由 composer 從同一投影算繪；owner 提供的 placeholder 優先）。
 
 chip 攜帶無障礙描述 "Plan mode on, press to turn off"。准入失敗（`matched: false`、業務錯誤、傳輸故障）以內聯錯誤呈現，chip 保持顯示直至投影確認結束。
 

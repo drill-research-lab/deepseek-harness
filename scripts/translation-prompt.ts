@@ -17,7 +17,7 @@ export const TRANSLATION_PROMPT_PLACEHOLDERS = ['source_lang', 'target_lang', 't
 type TranslationPromptPlaceholder = (typeof TRANSLATION_PROMPT_PLACEHOLDERS)[number]
 
 /** Languages accepted by the bidirectional prompt. */
-export type TranslationLanguage = 'English' | 'Chinese' | 'Chinese-TW'
+type TranslationLanguage = 'English' | 'Chinese' | 'Chinese-TW'
 
 /** Inputs that vary for one rendered translation request. */
 export interface TranslationPromptInput {

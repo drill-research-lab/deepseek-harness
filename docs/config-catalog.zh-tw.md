@@ -31,7 +31,7 @@ export interface AcpConfig {
 
 相依性：`Stream`（`@agentclientprotocol/sdk`）
 
-來源：[`packages/acp/acp/src/index.ts:70`](../packages/acp/acp/src/index.ts)
+來源：[`packages/acp/acp/src/index.ts:71`](../packages/acp/acp/src/index.ts)
 
 <a id="deepseek-aidsh-acp-demo"></a>
 
@@ -861,7 +861,7 @@ export interface Config {
   /** Deployment thinking policy; `disabled` limits every conversation request to `off`. */
   thinking?: 'enabled' | 'disabled'
   /** Default thinking effort (default `high`); `off` disables thinking per request. */
-  reasoningEffort?: 'off' | 'high' | 'max'
+  reasoningEffort?: 'off' | 'low' | 'high' | 'max'
   /** Default per-request output cap (default 256,000); a model's own cap and explicit request values win. */
   maxTokens?: number
   /** Positive context capacity used when the selected model has no exact value (default 1,000,000). */
@@ -2372,7 +2372,7 @@ export interface Config {
 }
 ```
 
-來源：[`packages/shell/tool-bash-persistent/src/index.ts:405`](../packages/shell/tool-bash-persistent/src/index.ts)
+來源：[`packages/shell/tool-bash-persistent/src/index.ts:400`](../packages/shell/tool-bash-persistent/src/index.ts)
 
 <a id="deepseek-aidsh-tool-fs"></a>
 

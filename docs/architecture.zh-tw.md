@@ -130,4 +130,4 @@ seam 正是替換一個提供方就能改變整個產品的原因。檔案系統
 | fork 活躍工作階段 | `ctx.sessions.fork(source, boundary?, childSessionId?)` |
 | 將註冊項限定到單個 agent | 使用該 agent 的 `agent.ctx` |
 
-[擴充實作手冊](cookbook/extension-cookbook.md)將功能對映到能力，並索引[包](cookbook/adding-a-package.md)、[工具](cookbook/adding-a-tool.md)、[LLM（大型語言模型）配接器](cookbook/adding-an-llm-adapter.md)和 [Chat 節點](cookbook/adding-a-conversation-node.md)的分步指南。
+[擴充實作手冊](cookbook/extension-cookbook.md)將功能對映到能力，並索引[包](cookbook/adding-a-package.md)、[工具](cookbook/adding-a-tool.md)、[LLM（大型語言模型）配接器](cookbook/adding-an-llm-adapter.md)、[Chat 節點](cookbook/adding-a-conversation-node.md)和[設定卡片](cookbook/adding-a-settings-card.md)的分步指南。
