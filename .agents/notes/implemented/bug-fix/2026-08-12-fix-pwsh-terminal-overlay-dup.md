@@ -26,7 +26,6 @@ Replace the overlay's `insert` of `tool-pwsh` with a top-level id-targeted overr
 
 ```yaml
 - id: tool-pwsh
-  name: '@deepseek-ai/dsh-tool-pwsh'
   disabled: false
 ```
 
