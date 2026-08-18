@@ -101,7 +101,12 @@ describe('CI workflow', () => {
       'continue-on-error': true,
       uses: 'actions/github-script@v7',
     })
-    expect(JSON.stringify(summary)).toContain('<!-- dsh-ci-summary -->')
+    const summaryStep = JSON.stringify(summary)
+    expect(summaryStep).toContain('<!-- dsh-ci-summary -->')
+    // The marker must be findable past the first page of pull-request
+    // comments, or the step posts a duplicate summary instead of updating.
+    expect(summaryStep).toContain('github.paginate(github.rest.issues.listComments')
+    expect(summaryStep).toContain('comments.find(')
 
     // Linux failover is a separate switch: the three required Linux workers
     // and the verdict job resolve their pool through DSH_CI_FAILOVER_LINUX,
@@ -117,6 +122,20 @@ describe('CI workflow', () => {
     expect(aggregate['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')
     expect(aggregate['runs-on']).not.toContain('DSH_CI_FAILOVER_WINDOWS')
     expect(aggregate['runs-on']).toContain('vm-backup')
+  })
+
+  it('owner-scopes every failover-derived expression so forks keep hosted behavior', () => {
+    const failoverExpressions = collectFailoverExpressions(loadWorkflow('.github/workflows/ci.yml'))
+
+    // A fork cannot allocate the enterprise or in-house pools and may copy
+    // upstream repository variables while doing so. Every expression that
+    // branches on a failover variable must also branch on the owning
+    // organization, or the fork would mix failover worker counts and step
+    // gates into its hosted fallback.
+    expect(failoverExpressions.length).toBeGreaterThan(0)
+    for (const expression of failoverExpressions) {
+      expect(expression).toMatch(/github\.repository_owner [!=]= 'deepseek-harness'/)
+    }
   })
 
   it('exempts push from cancellation, so one master merge does not cancel the running drill', () => {
@@ -427,6 +446,17 @@ describe('Git hooks', () => {
     }
   })
 })
+
+function collectFailoverExpressions(node: unknown, out: string[] = []): string[] {
+  if (typeof node === 'string') {
+    if (node.includes('DSH_CI_FAILOVER_')) out.push(node)
+  } else if (Array.isArray(node)) {
+    for (const item of node) collectFailoverExpressions(item, out)
+  } else if (isRecord(node)) {
+    for (const value of Object.values(node)) collectFailoverExpressions(value, out)
+  }
+  return out
+}
 
 function loadWorkflow(path: string): Record<string, unknown> {
   const workflow: unknown = yaml.load(readFileSync(resolve(root, path), 'utf8'))
