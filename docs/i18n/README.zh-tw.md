@@ -50,7 +50,7 @@
 
 - [cordis-api/inherited.md](../cordis-api/inherited.md)：該生成文件沒有經評審的中文對側，因此網站的兩個 locale 都投影英文原始檔。
 - `docs/AGENTS.md` 及指向它的 `CLAUDE.md` 指令符號連結：agent 指令，與根 `AGENTS.md` 一樣只以英文維護。
-- `.agents/**`：agent 側目錄樹（工作流程、技能與 Agent Note）只以英文維護，閘門拒絕其下任何翻譯側檔案或 `.i18n.yaml`。下方凍結的 `.agents/notes/archived/` 三檔案配對早於此規則，仍由專用校驗器封存。
+- `.agents/**`：agent 側目錄樹（工作流程、技能與 Agent Note）只以英文維護，閘門拒絕其下任何翻譯側文件或 `.i18n.yaml`。下方凍結的 `.agents/notes/archived/` 三文件配對早於此規則，仍由專用校驗器封存。
 - `docs/i18n/terminology.md` 與 [style-samples.md](style-samples.md)：二者本身即為中英對照文件。
 - [terminology-zh-tw.md](terminology-zh-tw.md)：繁體轉換術語表本身即為簡繁對照文件（zh-CN → zh-TW），與 `terminology.md` 一樣排除在配對之外；它是 EN↔zh-CN 真源術語表的轉換側對應物。
 - [translation-prompt.md](translation-prompt.md)：自動翻譯管線的提示詞樣板；正文逐字進入模型請求，配對翻譯會改變管線行為。

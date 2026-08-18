@@ -4,4 +4,4 @@
 #   pnpm run verify-translation-pairing --write packages/client/ui-plan/README.md
 README.md: f5656984824781f61d6fea58f666127c6c675dd6
 README.zh.md: 9f320f722ced784eb20ced0159dc6bc43b40ad78
-README.zh-tw.md: d1d9771cded8510323490089d8a9437a07eb3e9a
+README.zh-tw.md: 83ed245dec4a929fba309ad8711462dad53227a4

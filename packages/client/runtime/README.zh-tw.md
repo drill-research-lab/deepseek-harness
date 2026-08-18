@@ -68,7 +68,7 @@ Trajectory Definition 組裝出一條按時間順序排列、以用途為判別�
 
 Host 所屬的 LLM（大型語言模型）retry invariant 會在持久追加邊界驗證按提供方路由的 `llm/retry` 與 `llm/retry-started` 記錄，包括標識、順序、計時器、整數、狀態、提供方延遲和非空診斷欄位約定。用戶端的 Retry、Assistant 與 Turn Error Definition 把這些記錄和 Assistant、Turn／Step 事件一起摺疊：失敗步驟的流式輸出片段會被移除，並在 retry 事件的序列位置插入一條持久重試提示。該提示在匹配的 started 記錄到達前為 `scheduled`；如果所屬 Step 或 Turn 先關閉，則標記為 `cancelled`，started 記錄到達後則標記為 `started`。normal mode 提示攜帶其有限上限；always mode 提示保持顯式無界。沒有重試的終態 `turn/end` 錯誤會從持久訊息與選填錯誤碼投影出一個 `turn-error` 節點；AUTH 投影會把可能回顯憑據片段的提供方文案替換為 `API key is invalid`，原始診斷仍保留在工作階段日誌中。進入重試的失敗只保留該次嘗試的重試提示。視窗重建與歷史重播使用同一組 Definition，因此刷新既不會讓已丟棄的區塊重新出現，也不會丟失終態失敗回饋。可見但尚未定稿的輸出會在終態錯誤旁凍結為中斷的 Assistant 節點。
 
-reason 為 `max-tokens` 的 `turn/end` 會在該輪位置投影出一個 `turn-max-tokens` 節點：一條 warning 樣式的本機化提示，說明回答在單次請求的輸出 token 上限處停止，已截斷的輸出保留在對話流中，並提示傳送“繼續”可在新一輪接著輸出。事件本身不攜帶 token 數量，提示因此不顯示任何數字。視窗重建與歷史重播使用同一 Definition 重建該節點，刷新和復原後結束原因保持一致。
+reason 為 `max-tokens` 的 `turn/end` 會在該輪位置投影出一個 `turn-max-tokens` 節點：一條 warning 樣式的在地化提示，說明回答在單次請求的輸出 token 上限處停止，已截斷的輸出保留在對話流中，並提示傳送“繼續”可在新一輪接著輸出。事件本身不攜帶 token 數量，提示因此不顯示任何數字。視窗重建與歷史重播使用同一 Definition 重建該節點，刷新和復原後結束原因保持一致。
 
 ## 工作階段 fork
 

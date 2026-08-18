@@ -138,9 +138,9 @@ profile 的 `models` 清單是*替換*該路由已安裝 catalog，而不是擴�
 
 所選模型 descriptor 提供協定實作。這包括原生 API 差異，例如 descriptor 使用 Responses API 而非 Chat Completions 的 OpenAI 模型；harness 配接器不會按模型名稱硬編碼端點選擇。
 
-成功的 assistant 回應會將經版本化的無損 JSON 重播狀態與生成該回應的提供方和模型一同儲存。請求時，`LlmRuntime` 只有在歷史提供方路由與目標提供方路由當前由同一個 `PiAiAdapter` 實例擁有時，才會傳遞重播狀態。即使目標提供方或模型改變，配接器也會驗證狀態並復原 pi-ai 回應 id 與提供方 signature；隨後由 pi-ai 判定目標 API 可以複用哪些中繼資料。沒有重播狀態的歷史會被轉換為外來的、與提供方無關的內容，絕不偽裝為原生 pi-ai 回應。
+成功的 assistant 回應會將經版本化的無損 JSON 重播狀態與生成該回應的提供方和模型一同儲存，其形式是 `ReplayEnvelope`：一個回應級半區（kind、版本、API、路由、回應 id、原生停止原因），加上每個流式塊一條、攜帶該塊 signature 的逐塊條目。逐塊對齊正是 `BlockAssembler` 在組裝丟棄某個塊（`max-tokens` 下的工具呼叫）時裁剪的對象，因此儲存的條目始終描述儲存的內容——保留的塊保有其 signature。請求時，`LlmRuntime` 只有在歷史提供方路由與目標提供方路由當前由同一個 `PiAiAdapter` 實例擁有時，才會傳遞重播狀態。即使目標提供方或模型改變，配接器也會驗證狀態並復原 pi-ai 回應 id 與提供方 signature；隨後由 pi-ai 判定目標 API 可以複用哪些中繼資料。沒有重播狀態的歷史會被轉換為外來的、與提供方無關的內容，絕不偽裝為原生 pi-ai 回應。
 
-如果 listener 改寫已組裝 assistant 內容，loop 會在記錄訊息前丟棄重播狀態，因為其提供方中繼資料不再描述該內容。無效版本、格式錯誤中繼資料、訊息與重播狀態之間的提供方／模型不匹配，以及內容／塊不匹配都會顯式以 `LlmError('INVALID_REPLAY_STATE')` 失敗。
+持久化內容是權威記錄；重播狀態只負責復原原生保真度。當前建置無法使用的已存狀態——其他配接器的 kind、其他版本（包括舊日誌攜帶的平鋪前信封形式）、格式錯誤的中繼資料、訊息與重播狀態之間的提供方／模型不匹配，或內容／塊不匹配——會把這一條 assistant 訊息降級為同樣的外來提供方無關轉換而不是讓請求失敗，外掛程式透過其 `onReplayDegrade` 掛鉤記錄 `INVALID_REPLAY_STATE` 診斷。
 
 ## 詞彙差異
 

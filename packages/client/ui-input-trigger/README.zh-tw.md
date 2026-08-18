@@ -6,7 +6,7 @@
 
 分層：`src/core/` 是純核心——`detectTrigger`、`menuReduce`／`seedGroups`／`MENU_CLOSED`、`exactMatch`，零 React／DOM／cordis；`src/client/service.ts` 是殼層，把核心接到選單快照 store、逐 hit 候選拉取（以 generation 把關、後繼請求經 `AbortSignal` 取代舊請求、失敗的 source 靜默丟棄並留一條 console 記錄）和三條 pick 路徑上。`src/types.ts` 與兩個 `contract.ts` 文件是凍結的跨包約定；變更需經主線程仲裁。
 
-MenuView 把選單 store 算繪進 `conversation.input.overlay` slot（清單類，工作階段 scope），選單關閉期間算繪 null。鍵入式 trigger 會 seed 為該 trigger 註冊的所有 source；程序化 launcher 只 seed 所請求的 source，並在選單關閉或重新開始鍵入式 tracking 前，透過 controller 的 `launcher` 快照 store 發布該 source 名稱。分組按選填的 `InputTriggerSource.order` 排序（越小越靠前，預設 0，同值保持註冊序），組標題行經 `inputTriggers.menu` locale 命名空間本機化（未知 source 顯示其原名）；清單高度受限於 composer 上方的可用空間，指針落在選單與所在 composer 卡片之外即關閉選單。該 slot 由 ui-conversation 的組合器條目擁有（錨點、children 聲明、生命週期）；其 SlotMap 類型合併放在本包的 `src/client/slots.ts`，因為相依性方向（ui-conversation → ui-input-trigger）不允許反向的類型匯入。combobox 模式：焦點始終留在 textarea，行在 mousedown 時完成 pick，高亮由 `aria-activedescendant` 承載。
+MenuView 把選單 store 算繪進 `conversation.input.overlay` slot（清單類，工作階段 scope），選單關閉期間算繪 null。鍵入式 trigger 會 seed 為該 trigger 註冊的所有 source；程序化 launcher 只 seed 所請求的 source，並在選單關閉或重新開始鍵入式 tracking 前，透過 controller 的 `launcher` 快照 store 發布該 source 名稱。分組按選填的 `InputTriggerSource.order` 排序（越小越靠前，預設 0，同值保持註冊序），組標題行經 `inputTriggers.menu` locale 命名空間在地化（未知 source 顯示其原名）；清單高度受限於 composer 上方的可用空間，指針落在選單與所在 composer 卡片之外即關閉選單。該 slot 由 ui-conversation 的組合器條目擁有（錨點、children 聲明、生命週期）；其 SlotMap 類型合併放在本包的 `src/client/slots.ts`，因為相依性方向（ui-conversation → ui-input-trigger）不允許反向的類型匯入。combobox 模式：焦點始終留在 textarea，行在 mousedown 時完成 pick，高亮由 `aria-activedescendant` 承載。
 
 `/client` 匯出介面是外掛程式主體（`apply`／`inject`）、`InputTriggerService`、`MenuViewInjected` 與約定類型。MenuView 本身是內部實作——slot 註冊以閉包持有它。
 
