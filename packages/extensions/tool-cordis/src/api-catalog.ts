@@ -970,6 +970,32 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'ownership',
+    summary: 'Trusted principal and per-owner home resolver.',
+    description: 'Trusted principal and per-owner home resolver.',
+    methods: [
+      {
+        signature: 'abstract currentPrincipal(): OwnerPrincipal',
+        description: 'Read the principal for the verified authenticated request scope.',
+        parameters: [],
+        returns: 'The current request principal.',
+        throws: ['when called outside an authenticated request scope.'],
+      },
+      {
+        signature: 'abstract backgroundPrincipal(userId: AuthenticatedUserId): OwnerPrincipal',
+        description: 'Rehydrate a principal from a durable, server-trusted owner id.',
+        parameters: [{ name: 'userId', description: 'Branded owner id previously read from trusted persistence.' }],
+        returns: 'A background principal.',
+      },
+      {
+        signature: 'abstract resolveUserHome(principal: OwnerPrincipal): Promise<UserHome>',
+        description: 'Open or create the filesystem namespace for a trusted principal.',
+        parameters: [{ name: 'principal', description: 'Server-trusted owner identity.' }],
+        returns: 'A validated owner-scoped home.',
+      },
+    ],
+  },
+  {
     key: 'permissionPresets',
     summary: 'Owns the deployment\'s permission presets and their write path.',
     description: 'Owns the deployment\'s permission presets and their write path. Requires a confining `ctx.shell` executor and `ctx.approval`; unmatched knob values are reported as CUSTOM_PRESET, not an error.',
@@ -3549,6 +3575,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface OneShotSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: \'one-shot\';\n    readonly label?: string;\n}',
   },
   {
+    name: 'OwnerPrincipal',
+    declaration: 'export interface OwnerPrincipal {\n    readonly userId: AuthenticatedUserId;\n    readonly source: OwnerPrincipalSource;\n}',
+  },
+  {
+    name: 'OwnerPrincipalSource',
+    declaration: 'export type OwnerPrincipalSource = \'request\' | \'background\';',
+  },
+  {
     name: 'PermissionSelect',
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
   },
@@ -4595,6 +4629,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TypertTypeModel',
     declaration: 'export interface TypertTypeModel {\n    readonly name: string;\n    readonly declaration: string;\n}',
+  },
+  {
+    name: 'UserHome',
+    declaration: 'export class UserHome {\n    constructor(readonly owner: OwnerPrincipal, readonly identity: UserHomeIdentity, private readonly root: string);\n    path(...segments: readonly string[]): UserHomePath;\n}',
+  },
+  {
+    name: 'UserHomeIdentity',
+    declaration: 'export interface UserHomeIdentity {\n    readonly schemaVersion: 1;\n    readonly userId: AuthenticatedUserId;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'UserHomePath',
+    declaration: 'export type UserHomePath = Branded<\'UserHomePath\'>;',
   },
   {
     name: 'UserMessage',

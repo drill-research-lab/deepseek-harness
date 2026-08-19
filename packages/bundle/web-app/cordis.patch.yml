@@ -40,6 +40,25 @@
     # once the web UI owns the choice per session.
     mode: !!js process.env.DSH_TOOLS_MODE
 
+# These owner-aware base-layer writers stay pending until the ownership service
+# is available. The launcher already holds the deployment lease; injection is
+# the owner-context availability barrier. Credentials must activate first
+# because authentication reads them before it can establish ownership.
+- id: settings
+  inject: [ownership]
+
+- id: session-persistence-jsonl
+  inject: [ownership]
+
+- id: attachment-local
+  inject: [ownership]
+
+- id: session-telemetry-otel
+  inject: [ownership]
+
+- id: spill-local
+  inject: [ownership]
+
 # ── web-only host rows, the transport layer, and the browser roster ─────────
 
 # `dsh.client` rows are the browser roster the modules node half scans into
@@ -53,16 +72,19 @@
 
     - id: storage-json
       name: '@deepseek-ai/dsh-storage-json'
+      inject: [ownership]
       config:
         root: !!js dshHomePath('storages')
 
     - id: storage-domain
       name: '@deepseek-ai/dsh-storage-domain'
+      inject: [ownership]
       config:
         backend: json
 
     - id: message-feedback
       name: '@deepseek-ai/dsh-message-feedback'
+      inject: [ownership]
       config:
         maxNoteBytes: 8192
 
@@ -72,9 +94,11 @@
 
     - id: workspace
       name: '@deepseek-ai/dsh-workspace'
+      inject: [ownership]
 
     - id: session-projection-cache
       name: '@deepseek-ai/dsh-session-projection-cache'
+      inject: [ownership]
       config:
         writeEveryEvents: 200
         writeIntervalMs: 5000
@@ -98,6 +122,7 @@
     # shares. The base layer's agent-default-model service owns the default model.
     - id: api-gateway
       name: '@deepseek-ai/dsh-host-apiproxy'
+      inject: [ownership]
 
     - id: cordis-host-runner
       name: '@deepseek-ai/dsh-cordis-host-runner'
@@ -126,6 +151,13 @@
       name: '@deepseek-ai/dsh-host-authentication'
       config:
         sessionDirectory: !!js process.env.DSH_AUTH_SESSION_DIRECTORY ?? '.dsh-auth/sessions'
+
+    # Establish the trusted owner namespace. The bootstrap-held DSH_HOME lease
+    # already excludes another deployment writer before this row can mount.
+    - id: ownership
+      name: '@deepseek-ai/dsh-host-ownership-file'
+      config:
+        usersRoot: !!js process.env.DSH_USERS_HOME
 
     # Web glue owned by this bundle: resolves the built frontend dist (an
     # assembly fact of dsh-web-app, never user config), mounts the
@@ -428,5 +460,6 @@
 - insert:
     - id: agent-presets
       name: '@deepseek-ai/dsh-agent-presets'
+      inject: [ownership]
       config:
         default: standard
