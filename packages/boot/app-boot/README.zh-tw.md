@@ -9,6 +9,7 @@
 | `resolveConfigPath(path, snapshotMode, cwd?)` | 生成絕對設定路徑；當 `snapshotMode === 'replay'` 時，把 basename 為 `cordis.yml`/`.yaml` 的文件替換為同級 `cordis.snapshot.yml` |
 | `loadEnv(binName, dir?, warn?)` | 載入已被 git 忽略的 `.env`（Node `process.loadEnvFile`）；文件不存在不影響啟動，文件無法載入時輸出一行帶標籤的警告（預設寫入 stderr） |
 | `loadLayeredEnv(binName, cwd?, warn?)` | 建置產品 CLI（命令列介面）凍結的「繼承環境 > 項目 `.env` > 使用者 `.env`」快照，拒絕文件中的 bootstrap-only 變數，並在不替換繼承值的前提下物化其餘文件值 |
+| `acquireDeploymentWriterLease(deploymentRoot)` | 為一個 resolved DSH home 取得 Linux process-lifetime `flock`；爭用會明確失敗，釋放具有冪等性，過時 lock file 不帶有 ownership |
 | `installFailLoud(binName, proc?, release?)` | 將啟動期或後續未處理的 Loader 拒絕轉換為一行帶標籤的 stderr 訊息並執行 `exit(1)`；兩者之間會等待選填的 `release` 清理掛鉤（以 `FAIL_LOUD_RELEASE_TIMEOUT_MS` 為上限），使持有終端機的介面能在結束前復原終端機；返回解除安裝函式 |
 | `FAIL_LOUD_RELEASE_TIMEOUT_MS` | `installFailLoud` 等待其 `release` 回呼的時長；卡死的 disposer 只會延遲致命結束，而不會取消它 |
 | `assertEntriesLoaded(ctx, binName)` | 樹結帳後，如果其中存在已啟用但沒有 fiber 的條目，則拋出例外，並以 Cordis 啟動故障的形式報告每個未解析外掛程式的名稱 |
@@ -35,6 +36,8 @@ Loader 並行掛載各個條目，因此當其他環節失敗時，某個介面�
 
 ## Profiles
 
+產品 profile launcher 在初始化 profile 或修復 module fallback 前解析 `DSH_HOME` 並取得 deployment writer lease。它在 config entry 掛載前把釋放操作附加到 root Cordis context，因此 lease 會貫穿 application lifetime，並在正常 dispose 或 startup error 時釋放；異常終止後由 kernel process cleanup 釋放。競爭 launcher 會在能夠修改 shared profile state 前失敗，即使它選擇不同的 `DSH_USERS_HOME` 也是如此。
+
 profile 是位於 `$DSH_HOME/profiles/<name>` 下的目錄（harness home 由 [`resolveDshHome`](../../util/home-paths/README.md) 解析：先取 `$DSH_HOME`，否則取 `~/.dsh`），其中包含一個 `package.json`（樹外外掛程式 `dependencies`，加上 profile manifest `dsh.profile` 及其有序的 `bundles` 層清單）和使用者自己的 `cordis.patch.yml`。組合包是在 manifest 中聲明 `"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }` 的 npm 包；`loadProfile` 以雙錨點解析每個 `dsh.profile.bundles` 名稱（先從 dsh 安裝目錄，再從 profile 目錄），列出的包若沒有組合包聲明則明確報錯。`composeEntries` 透過 include 自己的 `applyEntryPatches` 在空條目清單之上應用各 patch 層，因此組合、標志推導和設定 dump 絕不會與實際啟動內容發生偏離。`healProfilesModuleFallback` 維護扁平的 `$DSH_HOME/profiles/node_modules` 目錄（安裝目錄的應用與各組合包相依性的每個包對應一個符號連結），使任意 profile 中的裸外掛程式名都能經 Node 常規的逐級向上尋找解析，而無需由 pnpm 管理隨安裝內建的包。`PROFILE_TEMPLATES`（`web`、`headless`）在首次使用時自動初始化；其他名稱在 `initProfile` 建立之前都會明確報錯（即 `dsh plugin` 路徑）。`loadProfile` 會將與安裝自有組合包元組完全一致的清單規範化為隨發行版交付的樣板，同時保留 manifest 中其他所有欄位；一旦條目有任何額外、缺失或重排，該清單就歸使用者所有並保持不變。
 
 使用者級的機器本機偏好同樣位於 harness home 中：
@@ -57,4 +60,5 @@ profile 是位於 `$DSH_HOME/profiles/<name>` 下的目錄（harness home 由 [`
 - **裸包 specifier 相依性 Loader 內部機制**：生產 bin 需要 Loader 的選填原生輔助元件；沒有該輔助元件的行程內呼叫方必須使用可解析的相對／file specifier，或提供自己的模組解析掛鉤。
 - **快照重播替換僅識別特定 basename**：只有以 `cordis.yml` 或 `cordis.yaml` 結尾的設定會對映到同級 `cordis.snapshot.yml`；自訂設定名稱需要呼叫方自行選擇。
 - **環境發現以啟動為界**：`loadLayeredEnv` 只讀取一次呼叫目錄與 harness home 中的 `.env`；它不搜尋父目錄，也不跟隨之後選擇的 workspace。`loadEnv` 仍是非產品 bin 使用的單目錄 helper。
+- **Deployment exclusion 僅限本機 Linux**：profile launcher 使用 `flock` 保護一個 resolved DSH home；它不協調跨 host 的 deployment。
 - **使用者 patch 會替換匹配到的整個設定**：按 id 定位的 patch 不做深度合併，因此 profile 覆蓋必須重述需要保留的組合包欄位。

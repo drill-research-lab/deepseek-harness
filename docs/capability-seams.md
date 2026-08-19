@@ -183,6 +183,9 @@ flowchart LR
   pkg_auth["auth"]
   svc_auth["ctx.auth<br/>Verified request identity seam"]
   pkg_host_authentication["host-authentication"]
+  pkg_ownership["ownership"]
+  svc_ownership["ctx.ownership<br/>Trusted owner and UserHome seam"]
+  pkg_host_ownership_file["host-ownership-file"]
   pkg_auth_ldap["auth-ldap"]
   svc_ldapDirectory["ctx.ldapDirectory<br/>LDAP gateway directory"]
   pkg_auth_gateway_ldap["auth-gateway-ldap"]
@@ -238,6 +241,7 @@ flowchart LR
   pkg_fs_sandbox --> svc_fs
   pkg_goal --> svc_goals
   pkg_host_authentication --> svc_auth
+  pkg_host_ownership_file --> svc_ownership
   pkg_invariants --> svc_invariants
   pkg_jobs --> svc_jobs
   pkg_jobs_local --> svc_jobs
@@ -249,6 +253,7 @@ flowchart LR
   pkg_lsp_local --> svc_lsp
   pkg_message_feedback --> svc_messageFeedback
   pkg_modules --> svc_clientModules
+  pkg_ownership --> svc_ownership
   pkg_permission_presets --> svc_permissionPresets
   pkg_plan_mode --> svc_planMode
   pkg_pwsh_local --> svc_shell
@@ -479,6 +484,7 @@ flowchart LR
 | `ctx.directoryPicker` | `seam` | `directory-picker` | `directory-picker-native`, `directory-picker-browse` | `apiproxy` | - | Discriminated interaction capability: the native backend opens one OS chooser on the host display, the browse backend serves listing/creation primitives for the in-app browser; dual-face backends fill ui-workspace directory-flow slots from their browser halves (no wire advertisement). |
 | `ctx.webServer` | `core` | `webserver` | - | `connection`, `modules`, `hmr` | - | Plain node:http carrier: named-route registry, index transform taps, and the static dist fallback; web-transport plugins register their own routes. |
 | `ctx.auth` | `seam` | [`auth`](../packages/identity/auth) | [`host-authentication`](../packages/host/authentication) | `connection` | - | DSH verifies an externally signed identity cookie and carries its stable user id through request-local storage; credential collection and assertion signing remain outside the DSH process. |
+| `ctx.ownership` | `seam` | [`ownership`](../packages/identity/ownership) | [`host-ownership-file`](../packages/host/ownership-file) | - | - | The Host provider derives request principals from verified authentication, validates hashed per-owner homes, and enforces one Linux writer; A1 deliberately leaves resource consumers to the ownership migration. |
 | `ctx.ldapDirectory` | `core` | [`auth-ldap`](../packages/identity/auth-ldap) | - | [`auth-gateway-ldap`](../packages/identity/auth-gateway-ldap) | - | Gateway-only LDAP authentication over LDAPS; the shipped DSH Web composition does not mount this service. |
 | `ctx.localAccounts` | `core` | [`auth-local`](../packages/identity/auth-local) | - | [`auth-gateway-ldap`](../packages/identity/auth-gateway-ldap) | - | Gateway-only file-backed accounts with scrypt password derivation; the shipped DSH Web composition neither mounts nor reads this store. |
 | `ctx.ldapAuthGateway` | `core` | [`auth-gateway-ldap`](../packages/identity/auth-gateway-ldap) | - | - | - | Owns primary LDAP login, optional DSH-local login and registration, and Ed25519 assertion signing in a process and credential home separate from DSH. |

@@ -185,6 +185,9 @@ flowchart LR
   pkg_auth["auth"]
   svc_auth["ctx.auth<br/>Verified request identity seam"]
   pkg_host_authentication["host-authentication"]
+  pkg_ownership["ownership"]
+  svc_ownership["ctx.ownership<br/>Trusted owner and UserHome seam"]
+  pkg_host_ownership_file["host-ownership-file"]
   pkg_auth_ldap["auth-ldap"]
   svc_ldapDirectory["ctx.ldapDirectory<br/>LDAP gateway directory"]
   pkg_auth_gateway_ldap["auth-gateway-ldap"]
@@ -240,6 +243,7 @@ flowchart LR
   pkg_fs_sandbox --> svc_fs
   pkg_goal --> svc_goals
   pkg_host_authentication --> svc_auth
+  pkg_host_ownership_file --> svc_ownership
   pkg_invariants --> svc_invariants
   pkg_jobs --> svc_jobs
   pkg_jobs_local --> svc_jobs
@@ -251,6 +255,7 @@ flowchart LR
   pkg_lsp_local --> svc_lsp
   pkg_message_feedback --> svc_messageFeedback
   pkg_modules --> svc_clientModules
+  pkg_ownership --> svc_ownership
   pkg_permission_presets --> svc_permissionPresets
   pkg_plan_mode --> svc_planMode
   pkg_pwsh_local --> svc_shell
@@ -481,6 +486,7 @@ flowchart LR
 | `ctx.directoryPicker` | `seam` | `directory-picker` | `directory-picker-native`, `directory-picker-browse` | `apiproxy` | - | 帶判別標記的互動能力：原生後端在 Host 顯示設備上打開一個作業系統選擇器，瀏覽後端為應用內瀏覽器提供清單與建立原語；雙端後端透過其瀏覽器側填充 ui-workspace 目錄流程的 slot（不透過協定發布）。 |
 | `ctx.webServer` | `core` | `webserver` | - | `connection`, `modules`, `hmr` | - | 普通的 node:http 載體：具名路由登錄檔、索引轉換 tap，以及靜態 dist 回退；Web 傳輸外掛程式註冊自己的路由。 |
 | `ctx.auth` | `seam` | [`auth`](../packages/identity/auth) | [`host-authentication`](../packages/host/authentication) | `connection` | - | DSH 驗證外部簽名的身份 Cookie，並透過請求本機儲存攜帶其穩定使用者 id；憑證收集和斷言簽名保留在 DSH 行程之外。 |
+| `ctx.ownership` | `seam` | [`ownership`](../packages/identity/ownership) | [`host-ownership-file`](../packages/host/ownership-file) | - | - | Host provider 從 verified authentication 衍生 request principal、驗證 hashed per-owner home，並強制一個 Linux writer；A1 特意把 resource consumer 留給後續 ownership migration。 |
 | `ctx.ldapDirectory` | `core` | [`auth-ldap`](../packages/identity/auth-ldap) | - | [`auth-gateway-ldap`](../packages/identity/auth-gateway-ldap) | - | 僅供閘道使用的 LDAPS 身分驗證；發布的 DSH Web 組合不掛載該服務。 |
 | `ctx.localAccounts` | `core` | [`auth-local`](../packages/identity/auth-local) | - | [`auth-gateway-ldap`](../packages/identity/auth-gateway-ldap) | - | 僅供閘道使用、以 scrypt 派生密碼的文件型帳戶；發布的 DSH Web 組合既不掛載也不讀取該儲存。 |
 | `ctx.ldapAuthGateway` | `core` | [`auth-gateway-ldap`](../packages/identity/auth-gateway-ldap) | - | - | - | 在獨立於 DSH 的行程和憑證目錄中負責主要 LDAP 登入、選填 DSH 本機登入與註冊，以及 Ed25519 斷言簽名。 |
