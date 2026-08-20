@@ -49,8 +49,8 @@ describe('CI workflow', () => {
     const node24Coverage = workflow.jobs['node-24-coverage']
     const node24Consumers = workflow.jobs['node-24-consumers']
     const aggregate = workflow.jobs['all-checks-passed']
-    if (!Array.isArray(windows.steps) || !Array.isArray(aggregate.needs)) {
-      throw new TypeError('Windows job must define steps and the aggregate must define needs')
+    if (!Array.isArray(windows.steps) || !Array.isArray(aggregate.needs) || !Array.isArray(aggregate.steps)) {
+      throw new TypeError('Windows and aggregate jobs must define steps, and the aggregate must define needs')
     }
     const commandSteps = windows.steps.filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
@@ -70,6 +70,8 @@ describe('CI workflow', () => {
     expect(windowsNative['runs-on']).toContain('self-hosted')
     expect(windowsNative['runs-on']).toContain('dsh-win-ci')
     expect(windowsNative['runs-on']).toContain('dsh-windows-2025-16core')
+    expect(windowsNative['runs-on']).toContain("github.repository_owner == 'deepseek-harness'")
+    expect(windowsNative['runs-on']).toContain('windows-2025')
     expect(windowsNative.name).toBe('windows node 24 / native complete')
     expect(windowsNative.if).toBe("github.event_name == 'pull_request'")
     const nativeCommandSteps = (windowsNative.steps as unknown[]).filter((step): step is Record<string, unknown> & { run: string } => (
@@ -82,7 +84,7 @@ describe('CI workflow', () => {
     expect(wineAptCache['runs-on']).toBe('ubuntu-latest')
 
     // serial-windows: master-only standby, self-hosted, non-blocking.
-    expect(serialWindows.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
+    expect(serialWindows.if).toBe("github.repository_owner == 'deepseek-harness' && github.event_name == 'push' && github.ref == 'refs/heads/master'")
     expect(serialWindows['runs-on']).toEqual(['self-hosted', 'dsh-win-ci', 'windows'])
     expect(serialWindows.name).toBe('serial / windows (self-hosted standby)')
 
@@ -90,6 +92,18 @@ describe('CI workflow', () => {
     expect(aggregate.needs).toContain('windows')
     expect(aggregate.needs).not.toContain('windows-native')
     expect(aggregate.needs).not.toContain('serial-windows')
+    expect(aggregate.permissions).toEqual({ contents: 'read', 'pull-requests': 'write' })
+    const summary = aggregate.steps.find(step => isRecord(step) && step.name === 'Post CI summary comment')
+    expect(summary).toMatchObject({
+      'continue-on-error': true,
+      uses: 'actions/github-script@v7',
+    })
+    const summaryStep = JSON.stringify(summary)
+    expect(summaryStep).toContain('<!-- dsh-ci-summary -->')
+    // The marker must be findable past the first page of pull-request
+    // comments, or the step posts a duplicate summary instead of updating.
+    expect(summaryStep).toContain('github.paginate(github.rest.issues.listComments')
+    expect(summaryStep).toContain('comments.find(')
 
     // Linux failover is a separate switch: the three required Linux workers
     // and the verdict job resolve their pool through DSH_CI_FAILOVER_LINUX,
@@ -99,10 +113,26 @@ describe('CI workflow', () => {
       expect(job['runs-on'], `${jobName} runs-on must use the Linux failover switch`).toContain('DSH_CI_FAILOVER_LINUX')
       expect(job['runs-on'], `${jobName} runs-on must not use the Windows failover switch`).not.toContain('DSH_CI_FAILOVER_WINDOWS')
       expect(job['runs-on']).toContain('vm-backup')
+      expect(job['runs-on']).toContain("github.repository_owner == 'deepseek-harness'")
+      expect(job['runs-on']).toContain('ubuntu-latest')
     }
     expect(aggregate['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')
     expect(aggregate['runs-on']).not.toContain('DSH_CI_FAILOVER_WINDOWS')
     expect(aggregate['runs-on']).toContain('vm-backup')
+  })
+
+  it('owner-scopes every failover-derived expression so forks keep hosted behavior', () => {
+    const failoverExpressions = collectFailoverExpressions(loadWorkflow('.github/workflows/ci.yml'))
+
+    // A fork cannot allocate the enterprise or in-house pools and may copy
+    // upstream repository variables while doing so. Every expression that
+    // branches on a failover variable must also branch on the owning
+    // organization, or the fork would mix failover worker counts and step
+    // gates into its hosted fallback.
+    expect(failoverExpressions.length).toBeGreaterThan(0)
+    for (const expression of failoverExpressions) {
+      expect(expression).toMatch(/github\.repository_owner [!=]= 'deepseek-harness'/)
+    }
   })
 
   it('exempts push from cancellation, so one master merge does not cancel the running drill', () => {
@@ -129,7 +159,7 @@ describe('CI workflow', () => {
       if (!isRecord(job)) throw new TypeError(`${name} must be defined`)
       expect(job.concurrency).toBeUndefined()
       // Both stay master-push-only; that is what makes the push carve-out safe.
-      expect(job.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
+      expect(job.if).toBe("github.repository_owner == 'deepseek-harness' && github.event_name == 'push' && github.ref == 'refs/heads/master'")
     }
 
     // What bounds the cost of exempting push: a master push may only carry the
@@ -379,13 +409,15 @@ describe('Issue lifecycle workflow', () => {
     const lifecycleJob = workflowJob(lifecycle, 'lifecycle')
     const policy = loadWorkflow('.github/workflows/issue-policy.yml')
     const policyPullRequest = workflowEvent(policy, 'pull_request')
+    const policyJob = workflowJob(policy, 'policy')
 
     expect(lifecyclePullRequest.types).not.toContain('ready_for_review')
     expect(lifecyclePullRequest.types).toContain('review_requested')
     expect(lifecycleReview.types).toEqual(['submitted'])
     expect(lifecycleJob.if).toBe(
-      "${{ github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'changes_requested') }}",
+      "${{ github.repository_owner == 'deepseek-harness' && (github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'changes_requested')) }}",
     )
+    expect(policyJob.if).toBe("github.repository_owner == 'deepseek-harness'")
     expect(policyPullRequest.types).toContain('ready_for_review')
   })
 })
@@ -407,6 +439,17 @@ describe('Git hooks', () => {
     }
   })
 })
+
+function collectFailoverExpressions(node: unknown, out: string[] = []): string[] {
+  if (typeof node === 'string') {
+    if (node.includes('DSH_CI_FAILOVER_')) out.push(node)
+  } else if (Array.isArray(node)) {
+    for (const item of node) collectFailoverExpressions(item, out)
+  } else if (isRecord(node)) {
+    for (const value of Object.values(node)) collectFailoverExpressions(value, out)
+  }
+  return out
+}
 
 function loadWorkflow(path: string): Record<string, unknown> {
   const workflow: unknown = yaml.load(readFileSync(resolve(root, path), 'utf8'))
