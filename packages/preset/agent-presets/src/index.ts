@@ -90,6 +90,10 @@ export class AgentPresets extends Service {
       trust: z.union(['system', 'user'] as const).default('user'),
     })).default([]),
     includeUserRoot: z.boolean().default(true),
+    // Explicit `undefined` default: schemastery arrays otherwise default to
+    // `[]`, which would make an unconfigured deployment approve nothing
+    // instead of leaving the upstream roster unrestricted.
+    approvedIds: z.array(z.string()).default(undefined as unknown as string[]),
   }) as z<Config>
 
   /**
@@ -193,11 +197,17 @@ export class AgentPresets extends Service {
   }
 
   /**
-   * Every preset the configured roots currently supply.
+   * Every preset the configured roots currently supply, narrowed to
+   * {@link Config.approvedIds} when the deployment set one. `resolve()` and
+   * `mount()` read this method, so the production capability policy applies
+   * uniformly across every entry point — there is no "list hides it, mount
+   * still accepts it" gap.
    * @returns the presets, first-root-wins per id.
    */
   async list(): Promise<AgentPreset[]> {
-    return await discoverPresets(this.resolvedRoots)
+    const presets = await discoverPresets(this.resolvedRoots)
+    const approved = this.config.approvedIds
+    return approved === undefined ? presets : presets.filter(preset => approved.includes(preset.id))
   }
 
   /**

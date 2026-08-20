@@ -137,7 +137,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: 'async list(): Promise<AgentPreset[]>',
-        description: 'Every preset the configured roots currently supply.',
+        description: 'Every preset the configured roots currently supply, narrowed to Config.approvedIds when the deployment set one. `resolve()` and `mount()` read this method, so the production capability policy applies uniformly across every entry point — there is no "list hides it, mount still accepts it" gap.',
         parameters: [],
         returns: 'the presets, first-root-wins per id.',
       },
