@@ -28,7 +28,7 @@
 // and does not affect the correctness of the policy check itself.
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -62,6 +62,13 @@ async function temporaryRoot(): Promise<string> {
   return root
 }
 
+/** Write a throwaway `--patch` overlay file and return its path. */
+async function writeOverlayPatch(root: string, filename: string, contents: string): Promise<string> {
+  const file = join(root, filename)
+  await writeFile(file, contents, 'utf8')
+  return file
+}
+
 interface BootReady {
   type: 'ready'
   port: number
@@ -77,13 +84,16 @@ interface BootReady {
  * boots it, with `packages/bundle/drill-production/cordis.patch.yml` as an
  * extra `--patch` overlay.
  */
-function spawnWebProfile(home: string, usersRoot: string, extraEnv: Record<string, string>) {
+function spawnWebProfile(
+  home: string, usersRoot: string, extraEnv: Record<string, string>, extraPatchFiles: readonly string[] = [],
+) {
+  const patchFiles = [DRILL_PRODUCTION_PATCH, ...extraPatchFiles].map(file => resolve(file))
   const program = [
     'import { loadLayeredEnv } from \'./packages/boot/app-boot/src/index.ts\'',
     'import { runProfile } from \'./apps/cli/src/profile-boot.ts\'',
     'try {',
     '  const { ctx } = await runProfile({',
-    `    environment: loadLayeredEnv('dsh'), profile: 'web', patchFiles: ${JSON.stringify([resolve(DRILL_PRODUCTION_PATCH)])}, args: ['--port', '0'],`,
+    `    environment: loadLayeredEnv('dsh'), profile: 'web', patchFiles: ${JSON.stringify(patchFiles)}, args: ['--port', '0'],`,
     '  })',
     '  const webServer = ctx.get(\'webServer\')',
     '  const handle = await ctx.agents.create({',
@@ -244,6 +254,70 @@ describe.runIf(process.platform === 'linux')('A3: Drill production capability cl
         ops: [{ op: 'set', path: ['defaultPreset'], value: 'danger-full-access' }],
       }, aliceCookie)
       expect(fullAccessAttempt.result.ok).toBe(false)
+    },
+    90_000,
+  )
+
+  it(
+    'fails loud, before serving, when a later patch layer re-enables cordis-host-runner',
+    async () => {
+      const root = await temporaryRoot()
+      const home = join(root, 'deployment')
+      const usersRoot = join(root, 'users')
+      const authSessionDirectory = join(root, 'auth-sessions')
+      const keys = generateKeyPairSync('ed25519')
+      const publicKeyPem = keys.publicKey.export({ type: 'spki', format: 'pem' }).toString()
+
+      const reenablePatch = await writeOverlayPatch(root, 'reenable-cordis-host-runner.patch.yml', [
+        '- id: cordis-host-runner',
+        '  disabled: false',
+        '',
+      ].join('\n'))
+
+      const child = spawnWebProfile(home, usersRoot, {
+        AUTH_COOKIE_PUBLIC_KEY: publicKeyPem,
+        AUTH_COOKIE_ISSUER: ISSUER,
+        AUTH_COOKIE_AUDIENCE: AUDIENCE,
+        DSH_AUTH_SESSION_DIRECTORY: authSessionDirectory,
+        DEEPSEEK_API_KEY: 'sk-e2e-drill-production-boot-fake-key-000000000000000000',
+      }, [reenablePatch])
+      const outcome = await nextMessage(child)
+      expect(typeof outcome).toBe('string')
+      expect(outcome as string).toMatch(/^failed:/)
+      expect(outcome as string).toMatch(/cordis-host-runner must not be mounted/)
+    },
+    90_000,
+  )
+
+  it(
+    'fails loud, before serving, when a later patch layer reopens session-query-sqlite\'s openAt phase',
+    async () => {
+      const root = await temporaryRoot()
+      const home = join(root, 'deployment')
+      const usersRoot = join(root, 'users')
+      const authSessionDirectory = join(root, 'auth-sessions')
+      const keys = generateKeyPairSync('ed25519')
+      const publicKeyPem = keys.publicKey.export({ type: 'spki', format: 'pem' }).toString()
+
+      const reopenPatch = await writeOverlayPatch(root, 'reopen-session-query-sqlite.patch.yml', [
+        '- id: session-query-sqlite',
+        '  config:',
+        '    path: \':memory:\'',
+        '    openAt: startup',
+        '',
+      ].join('\n'))
+
+      const child = spawnWebProfile(home, usersRoot, {
+        AUTH_COOKIE_PUBLIC_KEY: publicKeyPem,
+        AUTH_COOKIE_ISSUER: ISSUER,
+        AUTH_COOKIE_AUDIENCE: AUDIENCE,
+        DSH_AUTH_SESSION_DIRECTORY: authSessionDirectory,
+        DEEPSEEK_API_KEY: 'sk-e2e-drill-production-boot-fake-key-000000000000000000',
+      }, [reopenPatch])
+      const outcome = await nextMessage(child)
+      expect(typeof outcome).toBe('string')
+      expect(outcome as string).toMatch(/^failed:/)
+      expect(outcome as string).toMatch(/session-query-sqlite\.openAt must be "never"/)
     },
     90_000,
   )

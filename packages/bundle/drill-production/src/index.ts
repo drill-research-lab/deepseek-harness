@@ -7,16 +7,27 @@
  * FAIL LOUD) that the resolved production policy still holds after every
  * later patch layer (an operator's `$DSH_HOME/cordis.patch.yml`, a
  * `--patch` overlay) has applied — so a later layer that accidentally
- * re-widens the roster or the permission table fails the whole boot with a
- * named diagnostic instead of silently shipping an unsafe composition.
+ * re-widens the roster, the permission table, re-enables `cordis-host-runner`,
+ * or reopens `session-query-sqlite`'s `openAt` phase fails the whole boot
+ * with a named diagnostic instead of silently shipping an unsafe composition.
  * @module @deepseek-ai/dsh-drill-production
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-// Side-effect type imports: declaration-merge `ctx.agentPresets`/`ctx.permissionPresets`
-// (the capability facts this check reads), without a value dependency on either seam.
+// Side-effect type imports: declaration-merge `ctx.agentPresets`/`ctx.permissionPresets`/
+// `ctx.sessionQuery` (the capability facts this check reads), without a value
+// dependency on any of those three seams.
 import type {} from '@deepseek-ai/dsh-agent-presets'
+// Side-effect type import: declaration-merges `ctx.dynamicCordisRunner`, read
+// through `ctx.get` below so this check observes whichever mount state (absent,
+// or reopened by a later patch layer) the fully-patched composition resolves to.
+import type {} from '@deepseek-ai/dsh-cordis-host-runner'
 import type {} from '@deepseek-ai/dsh-permission-presets'
+import type {} from '@deepseek-ai/dsh-session-query'
+// Value import: the check narrows `ctx.sessionQuery` to this concrete engine
+// before reading its sqlite-specific `openAt` field, which the abstract
+// `SessionQueryEngine` service does not declare.
+import { SqliteSessionQueryEngine } from '@deepseek-ai/dsh-session-query-sqlite'
 
 /** Cordis plugin name. */
 export const name = 'drill-production-startup-check'
@@ -29,13 +40,21 @@ const PRODUCTION_PERMISSION_SPECS = new Map([
   ['workspace-write', { sandbox: 'workspace-write', approval: 'ask' }],
 ] as const)
 
-/** Values read from the composed preset and permission services at startup. */
+/** Values read from the composed preset, permission, and host-plane services at startup. */
 export interface DrillProductionPolicy {
   approvedIds: readonly string[] | undefined
   defaultId: string
   includeUserRoot: boolean
   permissionNames: readonly string[]
   resolvePermission(name: string): { sandbox: string; approval: string }
+  /** Whether `ctx.dynamicCordisRunner` is mounted in the fully-patched composition. */
+  dynamicCordisRunnerMounted: boolean
+  /**
+   * `session-query-sqlite`'s resolved `openAt` phase, or `undefined` when no
+   * sqlite session-query engine is mounted (a different or absent
+   * `sessionQuery` provider is outside this check's concern).
+   */
+  sessionQuerySqliteOpenAt: string | undefined
 }
 
 /**
@@ -77,23 +96,42 @@ export function validateDrillProductionPolicy(policy: DrillProductionPolicy): vo
       )
     }
   }
+
+  if (policy.dynamicCordisRunnerMounted) {
+    throw new Error(
+      'dsh-drill-production: cordis-host-runner must not be mounted; '
+      + 'a patch layer re-enabled the "cordis-host-runner" row',
+    )
+  }
+  if (policy.sessionQuerySqliteOpenAt !== undefined && policy.sessionQuerySqliteOpenAt !== 'never') {
+    throw new Error(
+      'dsh-drill-production: session-query-sqlite.openAt must be "never"; received '
+      + JSON.stringify(policy.sessionQuerySqliteOpenAt),
+    )
+  }
 }
 
 /**
  * Assert the production capability policy at startup: the preset roster is
- * explicitly approved (not merely "matches what this file shipped"), and no
- * permission preset offers `danger-full-access`. Throws — never silently
- * clamps a security-sensitive value — because a later patch layer widening
- * either is a deployment misconfiguration this bundle exists to catch, not
- * a supported override.
+ * explicitly approved (not merely "matches what this file shipped"), no
+ * permission preset offers `danger-full-access`, `cordis-host-runner` is not
+ * mounted, and `session-query-sqlite` (when mounted) keeps `openAt: 'never'`.
+ * Throws — never silently clamps a security-sensitive value — because a
+ * later patch layer widening any of these is a deployment misconfiguration
+ * this bundle exists to catch, not a supported override.
  * @param ctx - Cordis context carrying the injected services.
  */
 export function apply(ctx: Context): void {
+  const sessionQuery = ctx.get('sessionQuery')
   validateDrillProductionPolicy({
     approvedIds: ctx.agentPresets.config.approvedIds,
     defaultId: ctx.agentPresets.defaultId,
     includeUserRoot: ctx.agentPresets.config.includeUserRoot,
     permissionNames: ctx.permissionPresets.names,
     resolvePermission: presetName => ctx.permissionPresets.resolve(presetName),
+    dynamicCordisRunnerMounted: ctx.get('dynamicCordisRunner') !== undefined,
+    sessionQuerySqliteOpenAt: sessionQuery instanceof SqliteSessionQueryEngine
+      ? sessionQuery.config.openAt
+      : undefined,
   })
 }

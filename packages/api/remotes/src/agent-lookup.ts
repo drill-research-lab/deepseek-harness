@@ -3,6 +3,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { ownedAgent } from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentOptions, AgentSetup } from '@deepseek-ai/dsh-agent'
+import { UnknownPresetError } from '@deepseek-ai/dsh-agent-presets'
 import { ownedSession } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-ownership'
@@ -14,6 +15,11 @@ import type {} from '@deepseek-ai/dsh-typert-registry'
 export type ApiRemoteLookupError =
   | { readonly code: 'agent-busy'; readonly message: string; readonly details: { readonly reason: string } }
   | { readonly code: 'session-not-found'; readonly message: string; readonly details: { readonly sessionId: SessionId } }
+  | {
+    readonly code: 'agent-preset-not-found'
+    readonly message: string
+    readonly details: { readonly agentPreset: string; readonly available: string[] }
+  }
   | { readonly code: 'internal'; readonly message: string; readonly details: Record<never, never> }
 
 /** Result of resolving one session identity to its live Agent. */
@@ -199,6 +205,15 @@ export function createApiRemoteAgentResolver(
       }
       if (error instanceof ApiRemoteSubagentSessionOwnership) {
         return { error: apiRemoteSubagentOwnershipError(error.sessionId) }
+      }
+      if (error instanceof UnknownPresetError) {
+        return {
+          error: {
+            code: 'agent-preset-not-found',
+            message: error.message,
+            details: { agentPreset: error.presetId, available: [...error.available] },
+          },
+        }
       }
       const fenced = fencedLiveAgent(sessionId)
       if (fenced !== undefined) return fenced

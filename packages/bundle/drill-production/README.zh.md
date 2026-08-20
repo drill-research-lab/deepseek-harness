@@ -26,12 +26,12 @@ Drill 多用户生产组合闭包。此 bundle 必须在 profile 中依次叠加
 - 生产 preset 不提供 Bash、PowerShell、通用文件系统、workflow、Ralph 或外部进程 subagent。
 - permission preset 严格为 `read-only` 与 `workspace-write`；服务端不存在 `danger-full-access`。
 - directory picker 使用 disabled provider；所有真实 picker RPC 返回 `directory-picker-unavailable`。
-- `cordis-host-runner` 被停用，动态 Cordis 执行不可用。
-- `session-query-sqlite` 保持 `openAt: never`。
+- `cordis-host-runner` 被停用，动态 Cordis 执行不可用；启动检查同时断言 `dynamicCordisRunner` 未挂载。
+- `session-query-sqlite` 保持 `openAt: never`；启动检查会重新核实这一点。
 
 ## Startup policy check
 
-启动与单元测试共用纯验证器。所有 patch 应用后，它验证精确的 preset、默认值、用户根开关和 permission 映射；偏移会让启动以明确诊断失败，不会静默降级。
+启动与单元测试共用纯验证器。所有 patch 应用后，它验证精确的 preset、默认值、用户根开关、permission 映射、`dynamicCordisRunner` 未挂载，以及（当 sqlite session-query 引擎已挂载时）`openAt: 'never'`；偏移会让启动以明确诊断失败，不会静默降级。
 
 ## Model Experience
 
@@ -53,4 +53,4 @@ Drill 多用户生产组合闭包。此 bundle 必须在 profile 中依次叠加
 
 - A3 不实现操作系统级沙箱。文件读取、网络、Unix socket、进程/PID 和资源限制属于 Issue #5。
 - 用户自定义 preset 完全关闭；未来若开放，必须验证其中每个插件，而不只是 preset id。
-- SQLite 查询索引不是 host 执行路径，因此未纳入启动验证器。
+- 启动验证器不单独核实 `session-persistence-sqlite`：该后端在此组合中从不挂载，也没有 `openAt` 一类的可漂移设置；只有 `session-query-sqlite`（一个独立的读取／全文索引套件）会被重新核实。

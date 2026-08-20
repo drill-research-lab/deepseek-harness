@@ -26,12 +26,12 @@ Drill 多使用者生產組合閉包。此 bundle 必須在 profile 中依序疊
 - 生產 preset 不提供 Bash、PowerShell、通用檔案系統、workflow、Ralph 或外部行程 subagent。
 - permission preset 嚴格為 `read-only` 與 `workspace-write`；伺服器端不存在 `danger-full-access`。
 - directory picker 使用 disabled provider；所有真實 picker RPC 返回 `directory-picker-unavailable`。
-- `cordis-host-runner` 被停用，動態 Cordis 執行不可用。
-- `session-query-sqlite` 保持 `openAt: never`。
+- `cordis-host-runner` 被停用，動態 Cordis 執行不可用；啟動檢查同時斷言 `dynamicCordisRunner` 未掛載。
+- `session-query-sqlite` 保持 `openAt: never`；啟動檢查會重新核實這一點。
 
 ## Startup policy check
 
-啟動與單元測試共用純驗證器。所有 patch 套用後，它驗證精確的 preset、預設值、使用者根開關和 permission 對映；偏移會讓啟動以明確診斷失敗，不會靜默降級。
+啟動與單元測試共用純驗證器。所有 patch 套用後，它驗證精確的 preset、預設值、使用者根開關、permission 對映、`dynamicCordisRunner` 未掛載，以及（當 sqlite session-query 引擎已掛載時）`openAt: 'never'`；偏移會讓啟動以明確診斷失敗，不會靜默降級。
 
 ## Model Experience
 
@@ -53,4 +53,4 @@ Drill 多使用者生產組合閉包。此 bundle 必須在 profile 中依序疊
 
 - A3 不實作作業系統級沙盒。檔案讀取、網路、Unix socket、行程/PID 和資源限制屬於 Issue #5。
 - 使用者自訂 preset 完全關閉；未來若開放，必須驗證其中每個外掛程式，而不只是 preset id。
-- SQLite 查詢索引不是 host 執行路徑，因此未納入啟動驗證器。
+- 啟動驗證器不單獨核實 `session-persistence-sqlite`：該後端在此組合中從不掛載，也沒有 `openAt` 一類的可漂移設定；只有 `session-query-sqlite`（一個獨立的讀取／全文索引套件）會被重新核實。

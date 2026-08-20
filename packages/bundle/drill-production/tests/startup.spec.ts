@@ -61,6 +61,8 @@ describe('drill-production startup policy check', () => {
     includeUserRoot: false,
     permissionNames: ['read-only', 'workspace-write'],
     resolvePermission: name => ({ sandbox: name, approval: 'ask' }),
+    dynamicCordisRunnerMounted: false,
+    sessionQuerySqliteOpenAt: 'never',
   }
 
   it.each([
@@ -90,6 +92,24 @@ describe('drill-production startup policy check', () => {
         ? { sandbox: 'danger-full-access', approval: 'ask' }
         : { sandbox: 'workspace-write', approval: 'ask' },
     }) }).toThrow(/permission preset "read-only" must use sandbox "read-only"/)
+  })
+
+  it('rejects a mounted cordis-host-runner even when the preset and permission policy are otherwise exact', () => {
+    expect(() => { validateDrillProductionPolicy({ ...validPolicy, dynamicCordisRunnerMounted: true }) })
+      .toThrow(/cordis-host-runner must not be mounted/)
+  })
+
+  it.each([
+    ['startup'],
+    ['first-search'],
+  ] as const)('rejects session-query-sqlite openAt drift: %j', (sessionQuerySqliteOpenAt) => {
+    expect(() => { validateDrillProductionPolicy({ ...validPolicy, sessionQuerySqliteOpenAt }) })
+      .toThrow(/session-query-sqlite\.openAt must be "never"/)
+  })
+
+  it('accepts session-query-sqlite being unmounted (no sqlite engine to check)', () => {
+    expect(() => { validateDrillProductionPolicy({ ...validPolicy, sessionQuerySqliteOpenAt: undefined }) })
+      .not.toThrow()
   })
 
   it('accepts the exact production policy', () => {

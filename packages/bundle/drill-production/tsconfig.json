@@ -22,6 +22,15 @@
     },
     {
       "path": "../../host/directory-picker"
+    },
+    {
+      "path": "../../extensions/cordis-host-runner"
+    },
+    {
+      "path": "../../session-query/session-query"
+    },
+    {
+      "path": "../../session-query/session-query-sqlite"
     }
   ]
 }

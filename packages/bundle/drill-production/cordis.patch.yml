@@ -78,16 +78,22 @@
 # approved preset, but this additionally removes the HOST-plane service
 # itself, so "cordis-host-runner absent" holds unconditionally, not only
 # "unreachable through every preset this deployment currently ships."
+# `dsh-drill-production/index.ts`'s startup check reads `ctx.get('dynamicCordisRunner')`
+# after every patch layer and fails boot if a later patch layer (an operator's
+# own `$DSH_HOME/cordis.patch.yml` or a `--patch` overlay) flips this row back
+# to `disabled: false`.
 - id: cordis-host-runner
   disabled: true
 
-# ── session-query-sqlite: explicit lock, not a new fix (5.9) ─────────────────
+# ── session-query-sqlite: explicit lock, checked at startup (5.9) ────────────
 #
 # Already dormant in the layers below (`openAt: never`); restated here,
 # unchanged, as a self-documenting invariant this bundle asserts rather than
 # assumes. `dsh-drill-production/index.ts`'s startup check additionally
-# refuses to boot if a later patch layer (an operator's own
-# `$DSH_HOME/cordis.patch.yml` or a `--patch` overlay) changes it.
+# narrows the mounted `ctx.sessionQuery` to `SqliteSessionQueryEngine` and
+# asserts `config.openAt === 'never'` after every patch layer, so it refuses
+# to boot if a later patch layer (an operator's own `$DSH_HOME/cordis.patch.yml`
+# or a `--patch` overlay) changes it.
 - id: session-query-sqlite
   config:
     path: ':memory:'
