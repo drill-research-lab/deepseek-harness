@@ -153,9 +153,16 @@ Source: [`packages/host/directory-picker/src/index.ts:131`](../../packages/host/
 
 ### `ctx.workspaceRegistry` — `WorkspaceRegistry`
 
-Durable workspace registry. Startup waits for `sessionPersistence`, builds one canonical-cwd header index, and completes the one-time history bootstrap before the service becomes active. The persistence dependency is mandatory so an unavailable peer can never be mistaken for an empty history and commit the initialized marker.
+Durable workspace registry. Deployments without ownership complete history bootstrap at startup. Ownership deployments load each authenticated principal's history lazily from that principal's persistence namespace.
 
 ```ts cordis-catalog
+/**
+ * Load and index the current authenticated owner's persisted history once.
+ * Concurrent first operations for the same owner share one preparation.
+ * @returns resolution after this owner's workspace projection is ready.
+ */
+async prepareOwner(): Promise<void>
+
 /**
  * Create or reuse a workspace for an existing directory. The path is
  * canonicalized through `fs.realpath`; a nonexistent path rejects with the
@@ -175,6 +182,15 @@ async create(path: string, title?: string): Promise<Workspace>
  * @returns the workspace, or `undefined` when unknown.
  */
 get(id: WorkspaceId): Workspace | undefined
+
+/**
+ * Resolve a workspace for a server-captured principal after request scope
+ * has ended, such as a long-lived transport subscription callback.
+ * @param principal - Principal captured from verified request authority.
+ * @param id - Workspace id selected by a durable change event.
+ * @returns the owned workspace, or `undefined` for a foreign or missing id.
+ */
+getForPrincipal(principal: OwnerPrincipal, id: WorkspaceId): Workspace | undefined
 
 /**
  * Synchronous workspace projection in durable registry order. Every
@@ -204,6 +220,13 @@ delete(id: WorkspaceId): Promise<boolean>
 insertBefore(id: WorkspaceId, beforeId?: WorkspaceId): Promise<readonly WorkspaceId[]>
 
 /**
+ * Read archived sessions for authority captured by a long-lived server operation.
+ * @param principal - Principal captured from verified request authority.
+ * @returns archived session ids owned by that principal, in archive order.
+ */
+archivedSessionIdsForPrincipal(principal: OwnerPrincipal): readonly SessionId[]
+
+/**
  * Archive one session durably. The session must exist (live or in session
  * persistence); its workspace accounting — or lack of one — is irrelevant.
  * An already archived id resolves without writing.
@@ -222,7 +245,7 @@ archiveSession(sessionId: SessionId): Promise<void>
 async resolveByPath(path: string): Promise<Workspace | undefined>
 ```
 
-Types: [SessionId](core.md)
+Types: [OwnerPrincipal](ownership.md) · [SessionId](core.md)
 
-Source: [`packages/workspace/workspace/src/index.ts:92`](../../packages/workspace/workspace/src/index.ts)
+Source: [`packages/workspace/workspace/src/index.ts:93`](../../packages/workspace/workspace/src/index.ts)
 <!-- END GENERATED cordis-surface -->

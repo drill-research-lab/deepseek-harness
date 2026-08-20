@@ -162,7 +162,7 @@ export interface Config {
 
 Depends on: [`AgentOptions`](subsystems/core.md) · [`SessionId`](subsystems/core.md)
 
-Source: [`packages/core/agent-loop/src/index.ts:255`](../packages/core/agent-loop/src/index.ts)
+Source: [`packages/core/agent-loop/src/index.ts:256`](../packages/core/agent-loop/src/index.ts)
 
 <a id="deepseek-aidsh-agent-presets"></a>
 
@@ -338,7 +338,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/attachment/attachment-local/src/index.ts:24`](../packages/attachment/attachment-local/src/index.ts)
+Source: [`packages/attachment/attachment-local/src/index.ts:25`](../packages/attachment/attachment-local/src/index.ts)
 
 <a id="deepseek-aidsh-auth-gateway-ldap"></a>
 
@@ -645,7 +645,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/credentials/credentials-local/src/index.ts:55`](../packages/credentials/credentials-local/src/index.ts)
+Source: [`packages/credentials/credentials-local/src/index.ts:56`](../packages/credentials/credentials-local/src/index.ts)
 
 <a id="deepseek-aidsh-e2b"></a>
 
@@ -1415,7 +1415,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/feedback/message-feedback/src/index.ts:49`](../packages/feedback/message-feedback/src/index.ts)
+Source: [`packages/feedback/message-feedback/src/index.ts:50`](../packages/feedback/message-feedback/src/index.ts)
 
 <a id="deepseek-aidsh-permission-presets"></a>
 
@@ -1705,7 +1705,7 @@ export interface Config {
 export type JsonlCompression = 'zstd' | 'none'
 ```
 
-Source: [`packages/session/session-persistence-jsonl/src/index.ts:60`](../packages/session/session-persistence-jsonl/src/index.ts)
+Source: [`packages/session/session-persistence-jsonl/src/index.ts:63`](../packages/session/session-persistence-jsonl/src/index.ts)
 
 <a id="deepseek-aidsh-session-persistence-sqlite"></a>
 
@@ -1773,7 +1773,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/session/session-projection-cache/src/index.ts:42`](../packages/session/session-projection-cache/src/index.ts)
+Source: [`packages/session/session-projection-cache/src/index.ts:43`](../packages/session/session-projection-cache/src/index.ts)
 
 <a id="deepseek-aidsh-session-query-sqlite"></a>
 
@@ -1819,7 +1819,7 @@ export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
 
 Depends on: [`SessionQueryConfig`](../packages/session-query/session-query/src/index.ts)
 
-Source: [`packages/session-query/session-query-sqlite/src/index.ts:89`](../packages/session-query/session-query-sqlite/src/index.ts)
+Source: [`packages/session-query/session-query-sqlite/src/index.ts:90`](../packages/session-query/session-query-sqlite/src/index.ts)
 
 <a id="deepseek-aidsh-session-reference"></a>
 
@@ -1955,7 +1955,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/settings/settings-file/src/index.ts:21`](../packages/settings/settings-file/src/index.ts)
+Source: [`packages/settings/settings-file/src/index.ts:29`](../packages/settings/settings-file/src/index.ts)
 
 <a id="deepseek-aidsh-shell-env"></a>
 
@@ -2039,7 +2039,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/spill/spill-local/src/index.ts:22`](../packages/spill/spill-local/src/index.ts)
+Source: [`packages/spill/spill-local/src/index.ts:25`](../packages/spill/spill-local/src/index.ts)
 
 <a id="deepseek-aidsh-spill-policy"></a>
 

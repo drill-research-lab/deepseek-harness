@@ -15,8 +15,7 @@
 - `ctx.sessions.create(id?, { seed?, meta? }?)` 校驗持久種子／頭部資料並生成脫離副本，補齊版本和 id，在未提供 `createdAt` 時使用當前時間，發布工作階段並將其綁定到呼叫方 fiber。持久化重建會提供原始的 `createdAt`、`seedLength` 和 `delegationDepth`。
 - `ctx.sessions.flush(session)` 透過工作階段捕獲的作用域分發一個需等待完成的平行持久性檢查點。每個監聽器都會啟動；呼叫會等待全部結帳後才報告失敗。未發布、已脫離和過時的對象會被拒絕。
 - `ctx.sessions.fork(source, boundary?, childSessionId?): Session`：解析即時工作階段對象或 id，選取截至 `boundary` 事件序號（含該事件）的種子（預設為當前最後一個事件），要求所選前綴結束時沒有開放輪次，再建立帶譜系中繼資料的即時子工作階段。
-- `ctx.sessions.get(id: SessionId): Session | undefined`
-- `ctx.sessions.list(): Session[]`
+- `ctx.sessions.get(id: SessionId, access: 'trusted-internal'): Session | undefined` 和 `ctx.sessions.list(access: 'trusted-internal'): Session[]` 不做過濾——回傳行程中所有 owner 的全部即時會話。字面量標記 `'trusted-internal'` 在每個呼叫點都是必需參數，因此解析 client 提供 id 的呼叫方必須改用 `ownedSession(ctx, id)` / `ownedSessions(ctx)`：它們執行同樣的查找，並將結果收窄到目前 request 或 background principal（ownership 已掛載但 scope 內沒有 principal 時 fail closed；未掛載任何 ownership 服務時則原樣放行，不做過濾）。
 
 #### 進階：有序清理生命週期原語
 

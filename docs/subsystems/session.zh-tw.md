@@ -717,17 +717,30 @@ announce(session: Session): void
 async flush(session: Session): Promise<boolean>
 
 /**
- * Look up a live session.
+ * Look up a live session. Unfiltered: trusted internal machinery (the
+ * persistence coordinator, title/checkpoint/projection identity checks,
+ * autonomous goal/schedule continuation, and lineage checks on a session
+ * the caller already holds) relies on this seeing every live session in
+ * the process regardless of the current request's owner. The caller MUST
+ * pass the literal `'trusted-internal'` marker, declaring — at every call
+ * site, checked by the compiler — that it is one of those trusted
+ * internal callers. A caller resolving a client-supplied id for an
+ * authenticated request MUST narrow the result through {@link ownedSession}
+ * instead, which performs this trusted lookup and the owner check together.
  * @param id - the session id to look up.
+ * @param access - must be the literal `'trusted-internal'`, naming this
+ *   call site as trusted internal machinery rather than a request-facing
+ *   caller resolving a client-supplied id.
  * @returns the session, or undefined when no live session has that id.
  */
-get(id: SessionId): Session | undefined
+get(id: SessionId, access: 'trusted-internal'): Session | undefined
 
 /**
- * All live sessions, in creation order.
+ * All live sessions, in creation order. Unfiltered — see {@link get}.
+ * @param access - must be the literal `'trusted-internal'` — see {@link get}.
  * @returns a fresh array; mutating it does not affect the store.
  */
-list(): Session[]
+list(access: 'trusted-internal'): Session[]
 
 /**
  * Create a live child session from a stable prefix of a live source.
@@ -748,7 +761,7 @@ fork(source: SessionForkSource, boundary?: number, childSessionId?: SessionId): 
 
 Types: [CreateSessionOptions](persistence.md) · [PrepareSessionOptions](persistence.md) · [SessionId](core.md)
 
-Source: [`packages/core/session/src/index.ts:792`](../../packages/core/session/src/index.ts)
+Source: [`packages/core/session/src/index.ts:797`](../../packages/core/session/src/index.ts)
 
 <a id="session-events"></a>
 
@@ -777,7 +790,7 @@ Creation announcement during session publication. A synchronous throw vetoes and
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/session/src/index.ts:54`](../../packages/core/session/src/index.ts)
+Source: [`packages/core/session/src/index.ts:55`](../../packages/core/session/src/index.ts)
 
 <a id="sessiondisposed--emit"></a>
 
@@ -800,7 +813,7 @@ Emitted once when an announced session leaves the store, including publication r
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/session/src/index.ts:64`](../../packages/core/session/src/index.ts)
+Source: [`packages/core/session/src/index.ts:65`](../../packages/core/session/src/index.ts)
 
 <a id="sessionevent--emit"></a>
 
@@ -825,7 +838,7 @@ Post-commit, fire-and-forget append feed. The listener snapshot resolves before 
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/session/src/index.ts:76`](../../packages/core/session/src/index.ts)
+Source: [`packages/core/session/src/index.ts:77`](../../packages/core/session/src/index.ts)
 
 <a id="sessionflush--parallel"></a>
 
@@ -847,5 +860,5 @@ Awaited parallel durability checkpoint: every listener runs and the caller await
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/session/src/index.ts:85`](../../packages/core/session/src/index.ts)
+Source: [`packages/core/session/src/index.ts:86`](../../packages/core/session/src/index.ts)
 <!-- END GENERATED cordis-surface -->
