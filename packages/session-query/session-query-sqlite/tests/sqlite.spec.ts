@@ -1037,7 +1037,7 @@ describe('SQLite reconciliation and source lifecycle', () => {
           identity: Symbol(),
         }
       }
-      return originalList()
+      return originalList('trusted-internal')
     })
 
     await expect(ctx.sessionQuery.searchSessions({ query: 'needle' }))

@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import { installModelSelection } from '@deepseek-ai/dsh-agent'
+import { installModelSelection, ownedAgent, ownedAgents } from '@deepseek-ai/dsh-agent'
 import type { Agent, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
 import { AttachmentError } from '@deepseek-ai/dsh-attachment'
@@ -15,7 +15,7 @@ import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { contentHasImage, createUserMessage, freezeMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { errorChain } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
-import { isAppendSurfaceEvent, isJsonValue } from '@deepseek-ai/dsh-session'
+import { isAppendSurfaceEvent, isJsonValue, ownedSession, ownedSessions } from '@deepseek-ai/dsh-session'
 import type { JsonValue, Session, SessionEvent, SessionEventMap, SessionHeader, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import { SessionQueryError, type SessionSearchCursor } from '@deepseek-ai/dsh-session-query'
@@ -678,6 +678,7 @@ interface ToolCallData { callId: string; name: string; arguments: string }
  */
 interface PendingApproval {
   rpcId: RpcId
+  session: Session
   sessionId: SessionId
   approvalId: ApprovalRequestId
   toolName: string
@@ -704,6 +705,7 @@ function requestedFrame(pending: PendingApproval): RpcRequest<MuxFrame> {
 /** One host-owned question wait, addressed by the stable server-request id. */
 interface PendingQuestion {
   rpcId: RpcId
+  session: Session
   sessionId: SessionId
   questions: AskUserQuestionItem[]
   resolve: (answer: AskUserQuestionAnswer) => void
@@ -1129,7 +1131,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   let workspaceCreationChain = Promise.resolve()
   const pendingQuestions = new Map<RpcId, PendingQuestion>()
   const pendingApprovals = new Map<RpcId, PendingApproval>()
-  const muxQueues = new Set<FrameQueue<RpcRequest<MuxFrame>>>()
+  const muxQueues = new Map<FrameQueue<RpcRequest<MuxFrame>>, (session: Session) => boolean>()
   const imageAdmissionChains = new WeakMap<Agent, Promise<void>>()
 
   /** Serialize image admission with model selection for one agent. */
@@ -1270,10 +1272,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       (await composeAgent(resolveSessionPreset({ header: meta, events }))).setup,
   })
 
-  /** Send one transient frame to every connected mux consumer. */
-  function broadcast(payload: MuxFrame): void {
+  /** Send one session-owned frame only to consumers authorized for that session. */
+  function broadcast(session: Session, payload: MuxFrame): void {
     const envelope = frame(payload)
-    for (const queue of muxQueues) queue.push(envelope)
+    for (const [queue, visible] of muxQueues) {
+      if (visible(session)) queue.push(envelope)
+    }
   }
 
   // Projection change feed → session/projection push frames. The carrier
@@ -1282,7 +1286,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   // subscription unwinds with this gateway's fiber.
   ctx.inject(['sessionProjections'], (projectionCtx) => {
     projectionCtx.sessionProjections.onChanged((session, key, value, seq) => {
-      broadcast({ type: 'session/projection', sessionId: session.id, key, value, seq })
+      broadcast(session, { type: 'session/projection', sessionId: session.id, key, value, seq })
     })
   })
 
@@ -1349,9 +1353,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
   ctx.on('session/event', (session, event) => {
     if (event.type !== 'agent/inbox/spliced') return
-    const agent = ctx.agents.get(session.id)
+    const agent = ctx.agents.get(session.id, 'trusted-internal')
     if (agent?.session !== session) return
-    broadcast({ type: 'session/queue', sessionId: session.id, items: queueItems(agent, event.data) })
+    broadcast(session, { type: 'session/queue', sessionId: session.id, items: queueItems(agent, event.data) })
   })
 
   /** Remove a wait before settling it: synchronous deletion makes the first claimant win. */
@@ -1360,7 +1364,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     if (pending.signal !== undefined && pending.onAbort !== undefined) {
       pending.signal.removeEventListener('abort', pending.onAbort)
     }
-    broadcast({
+    broadcast(pending.session, {
       type: 'question/resolved', sessionId: pending.sessionId,
       questionRpcId: pending.rpcId, outcome,
     })
@@ -1368,15 +1372,16 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
   const disposeProvider = ctx.userQuestions.registerProvider({
     ask(request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer> {
-      const sessionId = request.agent?.id
-      if (sessionId === undefined) {
+      const agent = request.agent
+      if (agent === undefined) {
         return Promise.reject(new UserQuestionError(
           'web user interaction requires an agent-owned session', 'ASK_MISSING_AGENT'))
       }
+      const sessionId = agent.id
       return new Promise<AskUserQuestionAnswer>((resolve, reject) => {
         const rpcId = RpcId(randomUUID())
         const pending: PendingQuestion = {
-          rpcId, sessionId, questions: request.questions, resolve, reject,
+          rpcId, session: agent.session, sessionId, questions: request.questions, resolve, reject,
           ...(request.signal === undefined ? {} : { signal: request.signal }),
         }
         const onAbort = (): void => {
@@ -1391,7 +1396,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           rpcId,
           payload: { type: 'question/requested', sessionId, questions: request.questions },
         }
-        for (const queue of muxQueues) queue.push(envelope)
+        for (const [queue, visible] of muxQueues) {
+          if (visible(pending.session)) queue.push(envelope)
+        }
       })
     },
   })
@@ -1464,7 +1471,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
              reachable path settles twice; kept against future settle callers. */
           if (!pendingApprovals.delete(pending.rpcId)) return
           req.signal?.removeEventListener('abort', onAbort)
-          broadcast({ type: 'approval/resolved', sessionId: pending.sessionId, approvalId: id, outcome })
+          broadcast(pending.session, { type: 'approval/resolved', sessionId: pending.sessionId, approvalId: id, outcome })
           // A cancelled ask was already settled by the service's own signal
           // race, which discards this late resolution; resolving is a no-op
           // there and keeps this promise from dangling forever.
@@ -1473,6 +1480,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const onAbort = (): void => { settle('cancelled') }
         const pending: PendingApproval = {
           rpcId: RpcId(randomUUID()),
+          session: req.agent.session,
           sessionId: req.agent.session.id,
           approvalId: id,
           toolName: req.toolName,
@@ -1483,7 +1491,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         pendingApprovals.set(pending.rpcId, pending)
         req.signal?.addEventListener('abort', onAbort, { once: true })
         const envelope = requestedFrame(pending)
-        for (const queue of muxQueues) queue.push(envelope)
+        for (const [queue, visible] of muxQueues) {
+          if (visible(pending.session)) queue.push(envelope)
+        }
       })
     })
   }
@@ -1496,7 +1506,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
   /** Read one stable session prefix without acquiring an Agent owner. */
   async function readSessionState(sessionId: SessionId): Promise<SessionReadState> {
-    const attached = ctx.sessions.get(sessionId)
+    const attached = ownedSession(ctx, sessionId)
     if (attached !== undefined) {
       return {
         id: attached.id,
@@ -1510,6 +1520,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
   /** Resolve the Workspace inherited by a fork without making ordinary loose lineage grouped. */
   async function forkWorkspace(source: Pick<Session, 'id' | 'header'>): Promise<Workspace | undefined> {
+    await ctx.workspaceRegistry.prepareOwner()
     const workspaces = ctx.workspaceRegistry.list()
     const direct = workspaces.find(workspace => workspace.sessionIds.includes(source.id))
     if (direct !== undefined || source.header.origin !== 'subagent') return direct
@@ -1531,7 +1542,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
    * @throws {@link ApiRemoteSessionNotFound} when no project-backed session has that identity.
    */
   async function historySourceFor(sessionId: SessionId): Promise<HistorySource> {
-    const attached = ctx.sessions.get(sessionId)
+    const attached = ownedSession(ctx, sessionId)
     if (attached !== undefined) return { kind: 'attached', session: attached }
     const inspected = await inspectServable(sessionId)
     return { kind: 'detached', header: inspected.meta, events: inspected.events }
@@ -1597,7 +1608,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     sessionId: SessionId,
     session: PresetBearingSession,
   ): Promise<ScopeKey | undefined> {
-    const live = ctx.get('agents')?.get(sessionId)
+    const live = ctx.get('agents')?.get(sessionId, 'trusted-internal')
     if (live !== undefined) return live
     const presets = ctx.get('agentPresets')
     if (presets === undefined) return undefined
@@ -1624,8 +1635,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     let creation = sessionCreations.get(sessionId)
     if (creation === undefined) {
       creation = (async () => {
-        const attached = ctx.sessions.get(sessionId)
-        const live = ctx.agents.get(sessionId)
+        const attached = ownedSession(ctx, sessionId)
+        const live = ownedAgent(ctx, sessionId)
         if (attached !== undefined && hasSubagentOwner(attached, live)) {
           throw new SubagentSessionOwnership(sessionId)
         }
@@ -1679,12 +1690,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       })().catch((error: unknown) => {
         // Another Host entry path may have published the same identity while
         // this operation crossed an asynchronous persistence/filesystem step.
-        const live = ctx.agents.get(sessionId)
+        const live = ownedAgent(ctx, sessionId)
         if (live !== undefined) {
           if (hasSubagentOwner(live.session, live)) throw new SubagentSessionOwnership(sessionId)
           return live
         }
-        const attached = ctx.sessions.get(sessionId)
+        const attached = ownedSession(ctx, sessionId)
         if (attached !== undefined && hasSubagentOwner(attached, undefined)) {
           throw new SubagentSessionOwnership(sessionId)
         }
@@ -1725,14 +1736,14 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   async function listVisibleSessionSummaries(signal?: AbortSignal): Promise<SessionSummary[]> {
     signal?.throwIfAborted()
     const summarizeAttached = (session: Session): SessionSummary => {
-      const agent = ctx.agents.get(session.id)
+      const agent = ctx.agents.get(session.id, 'trusted-internal')
       const projections = listProjectionsFor(ctx, session.header, session)
       return {
         ...summarize(session, agent?.status === 'running'),
         ...projections === undefined ? {} : { projections },
       }
     }
-    const items = ctx.sessions.list().map(summarizeAttached)
+    const items = ownedSessions(ctx).map(summarizeAttached)
     signal?.throwIfAborted()
     const attached = new Set(items.map(item => item.sessionId))
     const persistence = ctx.get('sessionPersistence')
@@ -1756,7 +1767,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               coldBlankProbeMaxBytes,
               signal,
             )
-            const attachedSession = ctx.sessions.get(meta.id)
+            const attachedSession = ctx.sessions.get(meta.id, 'trusted-internal')
             if (attachedSession !== undefined) return summarizeAttached(attachedSession)
             return {
               ...summary,
@@ -2008,13 +2019,13 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     }
     if (!exposedNamespaces().has(ns)) return notExposed(request, ns)
     try {
-      if (mode === 'update') await settings.update(branded, section, expectedRevision)
-      else if (mode === 'replace') await settings.replace(branded, section, expectedRevision)
-      else await settings.mutate(branded, section as SettingsPathOp[], expectedRevision)
+      if (mode === 'update') await settings.updateOwned(branded, section, expectedRevision)
+      else if (mode === 'replace') await settings.replaceOwned(branded, section, expectedRevision)
+      else await settings.mutateOwned(branded, section as SettingsPathOp[], expectedRevision)
     } catch (error: unknown) {
       return rejected(error)
     }
-    const descriptor = settings.describe({ redactSecrets: true }).find(candidate => candidate.ns === branded)
+    const descriptor = (await settings.describeOwned({ redactSecrets: true })).find(candidate => candidate.ns === branded)
     if (descriptor === undefined) {
       // The write committed but the namespace vanished before this read: only
       // a concurrent registrant disposal can produce it.
@@ -2168,6 +2179,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const sessionId = request.payload.sessionId ?? `session-${randomUUID()}` as SessionId
         let workspace: Workspace | undefined
         if (request.payload.workspaceId !== undefined) {
+          await ctx.workspaceRegistry.prepareOwner()
           workspace = ctx.workspaceRegistry.get(brandWorkspaceId(request.payload.workspaceId))
           if (workspace === undefined) {
             return err(request, {
@@ -2234,7 +2246,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         // switched while blank runs a preset its header no longer names, so
         // echoing the header would contradict both the adoption this call just
         // allowed and the row `session.list` serves for the same session.
-        const created = ctx.agents.get(sessionId)
+        const created = ctx.agents.get(sessionId, 'trusted-internal')
         const createdPreset = created === undefined ? undefined : resolveSessionPreset(created.session)
         return ok(request, { sessionId, ...createdPreset === undefined ? {} : { agentPreset: createdPreset } })
       },
@@ -2574,7 +2586,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             details: { reason: 'QUEUE_EDIT_NON_TEXT' },
           }))
         }
-        const agent = ctx.agents.get(sessionId)
+        const agent = ownedAgent(ctx, sessionId)
         if (agent !== undefined && hasSubagentOwner(agent.session, agent)) {
           return Promise.resolve(err(request, subagentOwnershipError(sessionId)))
         }
@@ -2617,7 +2629,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       cancel(request) {
         const { sessionId } = request.payload
-        const agent = ctx.agents.get(sessionId)
+        const agent = ownedAgent(ctx, sessionId)
         if (agent === undefined) {
           return Promise.resolve(err(request, {
             code: 'session-not-found',
@@ -2641,10 +2653,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             entries: entries.map(entry => entry.kind === 'child'
               ? {
                 ...entry,
-                activity: ctx.agents.get(entry.id)?.status === 'running' ? 'running' : 'inactive',
+                activity: ctx.agents.get(entry.id, 'trusted-internal')?.status === 'running' ? 'running' : 'inactive',
               }
               : entry),
-            parentAvailable: ctx.agents.get(request.payload.parentSessionId) !== undefined,
+            parentAvailable: ownedAgent(ctx, request.payload.parentSessionId) !== undefined,
           })
         } catch (error: unknown) {
           if (signal?.aborted || (error instanceof SubagentError && error.code === 'CANCELLED')) {
@@ -2679,7 +2691,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         let header: SessionHeader
         let events: SessionEvent[]
         let projections: SessionProjectionsBlock | undefined
-        const attached = ctx.sessions.get(childSessionId)
+        // Independent of catalogChild()'s own owner-scoped listChildren() call
+        // above: this is the second, deliberately redundant check on the raw
+        // session lookup, so a future regression in the catalog path alone
+        // cannot reopen cross-owner history reads here.
+        const attached = ownedSession(ctx, childSessionId)
         if (attached !== undefined) {
           header = attached.header
           events = [...attached.events]
@@ -2746,7 +2762,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             details: { value: clientTimeZone },
           })
         }
-        const parent = ctx.agents.get(parentSessionId)
+        const parent = ownedAgent(ctx, parentSessionId)
         if (parent === undefined) {
           return err(request, {
             code: 'subagent-parent-unavailable',
@@ -2800,11 +2816,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     },
 
     workspace: {
-      list(request) {
-        return Promise.resolve(ok(request, {
+      async list(request) {
+        await ctx.workspaceRegistry.prepareOwner()
+        return ok(request, {
           items: ctx.workspaceRegistry.list().map(workspaceView),
           archivedSessionIds: [...ctx.workspaceRegistry.archivedSessionIds],
-        }))
+        })
       },
 
       async create(request) {
@@ -2825,6 +2842,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       },
 
       async rename(request) {
+        await ctx.workspaceRegistry.prepareOwner()
         const { payload } = request
         const workspace = ctx.workspaceRegistry.get(brandWorkspaceId(payload.workspaceId))
         if (workspace === undefined) return workspaceNotFound(request, payload.workspaceId)
@@ -2857,6 +2875,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       },
 
       async delete(request) {
+        await ctx.workspaceRegistry.prepareOwner()
         const { workspaceId } = request.payload
         const operation = workspaceCreationChain.then(() =>
           ctx.workspaceRegistry.delete(brandWorkspaceId(workspaceId)))
@@ -2866,6 +2885,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       },
 
       async insertBefore(request) {
+        await ctx.workspaceRegistry.prepareOwner()
         const { workspaceId, beforeWorkspaceId } = request.payload
         try {
           const workspaceIds = await ctx.workspaceRegistry.insertBefore(
@@ -2880,6 +2900,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       },
 
       async insertSessionBefore(request) {
+        await ctx.workspaceRegistry.prepareOwner()
         const { payload } = request
         const workspace = ctx.workspaceRegistry.get(brandWorkspaceId(payload.workspaceId))
         if (workspace === undefined) return workspaceNotFound(request, payload.workspaceId)
@@ -2903,6 +2924,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       },
 
       async archiveSession(request) {
+        await ctx.workspaceRegistry.prepareOwner()
         const { sessionId } = request.payload
         try {
           await ctx.workspaceRegistry.archiveSession(sessionId)
@@ -2933,7 +2955,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           // start from, so a saved default has to be what it reports.
           provider: selection.provider,
           model: selection.model,
-          attachedSessions: ctx.agents.list().length,
+          attachedSessions: ownedAgents(ctx).length,
           canOpenPath: canOpenPaths(),
         }))
       },
@@ -3208,7 +3230,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       // the view scope is the live agent or the preset's standing key.
       async list(request) {
         const { sessionId } = request.payload
-        const session = ctx.sessions.get(sessionId)
+        const session = ownedSession(ctx, sessionId)
         if (session === undefined) {
           return err(request, {
             code: 'session-not-found',
@@ -3226,7 +3248,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         // composition may still realm-mount its own registry instead; that
         // instance is invisible to host contexts, so address it through the
         // live agent (`agents.get` keeps the no-side-effect stance above).
-        const live = ctx.agents.get(sessionId)
+        const live = ctx.agents.get(sessionId, 'trusted-internal')
         const presets = ctx.get('agentPresets')
         const scoped = live === undefined ? undefined : presets?.serviceFor(live, 'skills')
         // Same stance as the commands domain: a missing service means no
@@ -3258,17 +3280,17 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     },
 
     settings: {
-      describe(request) {
+      async describe(request) {
         const settings = ctx.get('settings')
-        if (settings === undefined) return Promise.resolve(err(request, settingsAbsent()))
+        if (settings === undefined) return err(request, settingsAbsent())
         const exposed = exposedNamespaces()
-        return Promise.resolve(ok(request, {
+        return ok(request, {
           writable: settings.writable,
           hasDocument: settings.documentPath !== undefined,
-          namespaces: settings.describe({ redactSecrets: true })
+          namespaces: (await settings.describeOwned({ redactSecrets: true }))
             .filter(descriptor => exposed.has(String(descriptor.ns)))
             .map(namespaceView),
-        }))
+        })
       },
       async openDocument(request, signal) {
         const settings = ctx.get('settings')
@@ -3428,12 +3450,17 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
     events: {
       mux(_request, signal) {
+        const streamPrincipal = ctx.root.get('ownership')?.currentPrincipal()
+        const visibleSession = (session: Session): boolean => streamPrincipal === undefined
+          || session.header.ownerUserId === streamPrincipal.userId
         const queue = new FrameQueue<RpcRequest<MuxFrame>>()
-        muxQueues.add(queue)
-        for (const session of ctx.sessions.list()) {
+        muxQueues.set(queue, visibleSession)
+        for (const session of ctx.sessions.list('trusted-internal')) {
+          if (!visibleSession(session)) continue
           subscribeSession(queue, session)
         }
         for (const pending of pendingQuestions.values()) {
+          if (!visibleSession(pending.session)) continue
           queue.push({
             rpcId: pending.rpcId,
             payload: {
@@ -3444,12 +3471,15 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         }
         // Refresh recovery: still-pending approval questions replay with their
         // stable rpcId so a reconnecting client can still answer them.
-        for (const pending of pendingApprovals.values()) queue.push(requestedFrame(pending))
+        for (const pending of pendingApprovals.values()) {
+          if (visibleSession(pending.session)) queue.push(requestedFrame(pending))
+        }
         // Queue snapshot baseline (pendingQuestions precedent): frames replayed
         // in arrival order per session; a reconnecting client rebuilds its
         // queue view from these alone.
-        for (const session of ctx.sessions.list()) {
-          const agent = ctx.agents.get(session.id)
+        for (const session of ctx.sessions.list('trusted-internal')) {
+          if (!visibleSession(session)) continue
+          const agent = ctx.agents.get(session.id, 'trusted-internal')
           if (agent?.session === session && agent.inbox.hasPending) {
             queue.push(frame({ type: 'session/queue', sessionId: session.id, items: queueItems(agent) }))
           }
@@ -3460,8 +3490,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         // set sends nothing — absence is how the client reads "no tasks".
         const jobs = ctx.get('jobs')
         if (jobs !== undefined) {
-          for (const session of ctx.sessions.list()) {
-            const views = jobViews(jobs.list(ctx.agents.get(session.id)))
+          for (const session of ctx.sessions.list('trusted-internal')) {
+            if (!visibleSession(session)) continue
+            const views = jobViews(jobs.list(ctx.agents.get(session.id, 'trusted-internal')))
             if (views.length > 0) {
               queue.push(frame({ type: 'session/jobs', sessionId: session.id, jobs: views }))
             }
@@ -3473,6 +3504,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const openCalls = new Map<SessionId, Map<string, { name: string; args: unknown }>>()
         const disposers = [
           ctx.on('session/event', (session: Session, event: SessionEvent) => {
+            if (!visibleSession(session)) return
             if (event.type === 'tool/call') {
               const data = event.data as ToolCallData
               try {
@@ -3488,26 +3520,29 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             const view = viewFor(
               ctx, event,
               callId => openCalls.get(session.id)?.get(callId) ?? backscanArgs(session.events, callId),
-              ctx.agents.get(session.id),
+              ctx.agents.get(session.id, 'trusted-internal'),
             )
             queue.push(frame({ type: 'session/event', sessionId: session.id, event, ...view === undefined ? {} : { view } }))
           }),
           ctx.on('session/created', (session: Session) => {
+            if (!visibleSession(session)) return
             subscribeSession(queue, session)
             // The subscribe frame clears the client's task mirror, and a
             // session born after the stream opened missed the baseline loop.
             // Unowned tasks are visible to it from birth, so without this it
             // would show none until the next registry change.
-            const views = jobs === undefined ? [] : jobViews(jobs.list(ctx.agents.get(session.id)))
+            const views = jobs === undefined ? [] : jobViews(jobs.list(ctx.agents.get(session.id, 'trusted-internal')))
             if (views.length > 0) {
               queue.push(frame({ type: 'session/jobs', sessionId: session.id, jobs: views }))
             }
           }),
           ctx.on('session/disposed', (session: Session) => {
+            if (!visibleSession(session)) return
             openCalls.delete(session.id)
           }),
           ...jobs === undefined ? [] : [jobs.onJobsChanged((owner) => {
             if (owner !== undefined) {
+              if (!visibleSession(owner.session)) return
               // The exact owner instance the fence compares against, so the
               // push stays correct even while that Agent's scope is tearing
               // down and a lookup by id would already miss.
@@ -3516,11 +3551,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             }
             // An unowned task is visible to every caller, so every subscribed
             // session's set changed with it.
-            for (const session of ctx.sessions.list()) {
+            for (const session of ctx.sessions.list('trusted-internal')) {
+              if (!visibleSession(session)) continue
               queue.push(frame({
                 type: 'session/jobs',
                 sessionId: session.id,
-                jobs: jobViews(jobs.list(ctx.agents.get(session.id))),
+                jobs: jobViews(jobs.list(ctx.agents.get(session.id, 'trusted-internal'))),
               }))
             }
           })],
@@ -3531,7 +3567,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         })
       },
 
-      host(_request, signal) {
+      async *host(_request, signal) {
+        const streamPrincipal = ctx.root.get('ownership')?.currentPrincipal()
+        const visibleSession = (session: Session): boolean => streamPrincipal === undefined
+          || session.header.ownerUserId === streamPrincipal.userId
+        if (ctx.root.get('ownership') !== undefined) await ctx.workspaceRegistry.prepareOwner()
         const queue = new FrameQueue<RpcRequest<HostFrame>>()
         const committedWorkspaces = ctx.workspaceRegistry.list()
         const committedWorkspaceIds = new Set(
@@ -3544,6 +3584,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         let archivedSessionIds = ctx.workspaceRegistry.archivedSessionIds
         const disposers = [
           ctx.on('session/created', (session: Session) => {
+            if (!visibleSession(session)) return
             queue.push(frame({
               type: 'host/session-added',
               sessionId: session.id,
@@ -3555,44 +3596,66 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             }))
           }),
           ctx.on('session/disposed', (session: Session) => {
+            if (!visibleSession(session)) return
             queue.push(frame({ type: 'host/session-removed', sessionId: session.id }))
           }),
           ctx.on('agent/status', ({ agent, status }: { agent: Agent; status: AgentStatus }) => {
+            if (!visibleSession(agent.session)) return
             queue.push(frame({ type: 'host/session-status', sessionId: agent.id, running: status === 'running' }))
           }),
           ctx.on('agent/error', ({ agent, error }: { agent: Agent; error: unknown }) => {
+            if (!visibleSession(agent.session)) return
             queue.push(frame({ type: 'host/agent-error', sessionId: agent.id, message: errorChain(error) }))
           }),
+          ...streamPrincipal === undefined || ctx.get('settings') === undefined ? [] : [
+            ctx.settings.onOwnedDocumentUpdated((ownerUserId, ns, revision) => {
+              if (ownerUserId !== streamPrincipal.userId) return
+              queue.push(frame({
+                type: 'host/remote-event',
+                event: 'settings/document-updated',
+                args: [ns, revision],
+              }))
+            }),
+          ],
           ctx.on('domain/changed', (change) => {
             if (change.domain !== 'workspace') return
             if (change.table === '') {
               if (change.operation !== 'put') return
               const state = workspaceDomainState.parse(change.value)
-              const orderChanged = state.workspaceIds.length === committedWorkspaceOrder.length
-                && state.workspaceIds.every(workspaceId => committedWorkspaceIds.has(String(workspaceId)))
-                && state.workspaceIds.some((workspaceId, index) => workspaceId !== committedWorkspaceOrder[index])
+              const visibleWorkspaceIds = streamPrincipal === undefined
+                ? state.workspaceIds
+                : state.workspaceIds.filter(workspaceId =>
+                  ctx.workspaceRegistry.getForPrincipal(streamPrincipal, workspaceId) !== undefined)
+              const orderChanged = visibleWorkspaceIds.length === committedWorkspaceOrder.length
+                && visibleWorkspaceIds.every(workspaceId => committedWorkspaceIds.has(String(workspaceId)))
+                && visibleWorkspaceIds.some((workspaceId, index) => workspaceId !== committedWorkspaceOrder[index])
               for (const workspaceId of state.workspaceIds) {
                 if (committedWorkspaceIds.has(workspaceId)) continue
-                const workspace = ctx.workspaceRegistry.get(workspaceId)
+                const workspace = streamPrincipal === undefined
+                  ? ctx.workspaceRegistry.get(workspaceId)
+                  : ctx.workspaceRegistry.getForPrincipal(streamPrincipal, workspaceId)
                 if (workspace === undefined) {
-                  throw new Error(`committed workspace registry references missing workspace "${workspaceId}"`)
+                  continue
                 }
                 committedWorkspaceIds.add(workspaceId)
                 queue.push(frame({ type: 'host/workspace-changed', workspace: workspaceView(workspace) }))
               }
-              committedWorkspaceOrder = [...state.workspaceIds]
+              committedWorkspaceOrder = [...visibleWorkspaceIds]
               if (orderChanged) {
                 queue.push(frame({
                   type: 'host/workspace-order-changed',
-                  workspaceIds: [...state.workspaceIds],
+                  workspaceIds: [...visibleWorkspaceIds],
                 }))
               }
-              if (state.archivedSessionIds.length !== archivedSessionIds.length
-                || state.archivedSessionIds.some((id, index) => id !== archivedSessionIds[index])) {
-                archivedSessionIds = state.archivedSessionIds
+              const visibleArchivedSessionIds = streamPrincipal === undefined
+                ? state.archivedSessionIds
+                : ctx.workspaceRegistry.archivedSessionIdsForPrincipal(streamPrincipal)
+              if (visibleArchivedSessionIds.length !== archivedSessionIds.length
+                || visibleArchivedSessionIds.some((id, index) => id !== archivedSessionIds[index])) {
+                archivedSessionIds = visibleArchivedSessionIds
                 queue.push(frame({
                   type: 'host/archived-sessions-changed',
-                  archivedSessionIds: [...state.archivedSessionIds],
+                  archivedSessionIds: [...visibleArchivedSessionIds],
                 }))
               }
               return
@@ -3606,7 +3669,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               }))
               return
             }
-            if (!committedWorkspaceIds.has(change.key)) return
+            const changedRecord = workspaceRecord.parse(change.value)
+            if (!committedWorkspaceIds.has(change.key)
+              || (streamPrincipal !== undefined && changedRecord.ownerUserId !== streamPrincipal.userId)) return
             // Existing-entity table writes are complete attach/touch commits.
             // A new entity's first put waits for the global registry write above.
             queue.push(frame({
@@ -3624,6 +3689,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             // satisfies every member of the union `on` accepts here;
             // assertJsonArgs proves the payload is JSON-safe before it queues.
             ((...args: unknown[]) => {
+              if (name === 'credentials/updated' && streamPrincipal !== undefined) {
+                const eventPrincipal = ctx.root.get('ownership')?.currentPrincipalOrUndefined()
+                if (eventPrincipal !== undefined && eventPrincipal.userId !== streamPrincipal.userId) return
+              }
               queue.push(frame({
                 type: 'host/remote-event',
                 event: name,
@@ -3632,7 +3701,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             }),
           )),
         ]
-        return queue.iterate(signal, () => { for (const dispose of disposers) dispose() })
+        yield* queue.iterate(signal, () => { for (const dispose of disposers) dispose() })
       },
     },
 
@@ -3659,6 +3728,16 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           sessionPersistence: deps.sessionPersistence,
           attachments: deps.attachments,
           sessions: deps.sessions,
+        }
+        // `flushLiveSessionLog` takes a minimal `{ sessions }` capability and
+        // has no owner concept of its own; a live session belonging to
+        // another owner must never reach it (or the raw read below, whose
+        // JSONL-only physical partitioning does not cover the live-session
+        // flush side effect). A cold id is safe as-is — readRaw()'s
+        // owner-rooted path answers not-found on its own.
+        const requestedLive = deps.sessions?.get(request.sessionId, 'trusted-internal')
+        if (requestedLive !== undefined && ownedSession(ctx, request.sessionId) === undefined) {
+          return new Response('session not found', { status: 404 })
         }
         let root: SessionRawArtifact | undefined
         try {

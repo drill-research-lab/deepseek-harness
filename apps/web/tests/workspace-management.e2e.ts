@@ -81,7 +81,7 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
    * steps can't race the in-flight blank-session attach.
    */
   async function adoptDirectory(path: string, options: { waitForAgent?: boolean } = {}): Promise<void> {
-    const agentsBefore = scaffold.ctx.agents.list().length
+    const agentsBefore = scaffold.ctx.agents.list('trusted-internal').length
     const dialog = await browseTo(path)
     await dialog.getByRole('button', { name: 'Open', exact: true }).click()
     await dialog.waitFor({ state: 'hidden', timeout: 10_000 })
@@ -94,7 +94,7 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     // a delete mints a fresh blank Session+Agent too (no cwd-based reuse
     // exists), so callers opt in only where a fresh attach is possible.
     if (options.waitForAgent === true) {
-      await expect.poll(() => scaffold.ctx.agents.list().length, { timeout: 10_000 })
+      await expect.poll(() => scaffold.ctx.agents.list('trusted-internal').length, { timeout: 10_000 })
         .toBeGreaterThan(agentsBefore)
     }
   }

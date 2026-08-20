@@ -195,7 +195,7 @@ describe('dsh-agent-spine-demo bundle', () => {
         tool: { blockedAfterConsecutiveRounds: 5 },
       },
     })
-    const agent = ctx.agents.list()[0]
+    const agent = ctx.agents.list('trusted-internal')[0]
     if (agent === undefined) throw new Error('configured goal test has no live agent')
     expect(ctx.goals.create(agent, { objective: 'configured' })).toMatchObject({
       objective: 'configured', maxGoalRounds: 17,
@@ -272,7 +272,7 @@ describe('dsh-agent-spine-demo bundle', () => {
 
   it('defaults the agents list to empty (no pre-created agents)', async () => {
     const ctx = await mount({ workspaceContext: false })
-    expect(ctx.get('agents')?.get(SessionId('main'))).toBeUndefined()
+    expect(ctx.get('agents')?.get(SessionId('main'), 'trusted-internal')).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
@@ -282,7 +282,7 @@ describe('dsh-agent-spine-demo bundle', () => {
       persona: 'You are main.',
       workspaceContext: false,
     })
-    const agent = ctx.get('agents')?.list()[0]
+    const agent = ctx.get('agents')?.list('trusted-internal')[0]
     expect(agent?.id).toBe(agent?.session.id)
     expect(agent?.id).toMatch(/^main-session-/)
     const assembly = await ctx.get('systemPrompt')!.assemble()
@@ -329,7 +329,7 @@ describe('dsh-agent-spine-demo bundle', () => {
     agentCore.apply(ctx, { workspaceContext: false })
     await new Promise(resolve => setTimeout(resolve, 50))
     expect(ctx.get('agentLoop')).toBeDefined()
-    expect(ctx.get('agents')?.list()).toHaveLength(0)
+    expect(ctx.get('agents')?.list('trusted-internal')).toHaveLength(0)
     const assembly = await ctx.get('systemPrompt')!.assemble()
     expect(assembly.sections.find(s => s.name === 'deployment:persona')?.text).toBe('')
     await ctx.fiber.dispose()
@@ -343,7 +343,7 @@ describe('dsh-agent-spine-demo bundle', () => {
       goals: {},
     })
     await new Promise(resolve => setTimeout(resolve, 50))
-    const agent = ctx.agents.list()[0]
+    const agent = ctx.agents.list('trusted-internal')[0]
     if (agent === undefined) throw new Error('default goal test has no live agent')
     expect(ctx.goals.create(agent, { objective: 'defaulted' })).toMatchObject({
       objective: 'defaulted', maxGoalRounds: 256,
@@ -803,7 +803,7 @@ describe('dsh-agent-spine-demo bundle', () => {
     agentCore.apply(ctx, { workspaceContext: false })
     await new Promise(resolve => setTimeout(resolve, 50))
 
-    expect(ctx.get('agents')?.list()).toEqual([])
+    expect(ctx.get('agents')?.list('trusted-internal')).toEqual([])
     expect(ctx.get('systemPrompt')).toBeDefined()
     await ctx.fiber.dispose()
   })

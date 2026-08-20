@@ -82,8 +82,8 @@ describe('multi-subagent coexistence (spawn + fork on one context)', () => {
     expect(text(forkResult.output)).toBe('fork child reply')
 
     // The two children are distinct sessions, both lineage-stamped to the parent.
-    const spawnChild = ctx.agents.get(spawnRun.id)!
-    const forkChild = ctx.agents.get(forkRun.id)!
+    const spawnChild = ctx.agents.get(spawnRun.id, 'trusted-internal')!
+    const forkChild = ctx.agents.get(forkRun.id, 'trusted-internal')!
     expect(spawnChild.session.header.id).not.toBe(forkChild.session.header.id)
     expect(spawnChild.session.header.parentSession).toBe(parent.session.header.id)
     expect(forkChild.session.header.parentSession).toBe(parent.session.header.id)

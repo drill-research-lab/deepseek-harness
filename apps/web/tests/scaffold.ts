@@ -649,7 +649,7 @@ function rawSessionLog(session: Session): string {
  * @param fixturePath - the committed session.jsonl / seed.jsonl target.
  */
 export async function recordFixture(scaffold: WebScaffold, sessionId: SessionId, fixturePath: string): Promise<void> {
-  const agent = scaffold.ctx.agents.get(sessionId)
+  const agent = scaffold.ctx.agents.get(sessionId, 'trusted-internal')
   if (agent === undefined) throw new Error(`record harvest: no live agent for ${sessionId}`)
   const fresh = scrubRequestHeaders(rawSessionLog(agent.session))
     .split(sessionId).join('{{sessionId}}')

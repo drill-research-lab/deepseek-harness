@@ -1,8 +1,11 @@
 /** Host BFF policy for resolving Remote Agent and Session identities. */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { ownedAgent } from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentOptions, AgentSetup } from '@deepseek-ai/dsh-agent'
+import { ownedSession } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-ownership'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import { TypertLookupFailure } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-typert-registry'
@@ -67,7 +70,7 @@ export function hasApiRemoteSubagentOwner(
   if (session.header.origin === 'subagent') return true
   const parentId = session.header.parentSession
   if (parentId === undefined || agent === undefined) return false
-  const parent = ctx.agents.get(parentId)
+  const parent = ctx.agents.get(parentId, 'trusted-internal')
   return parent !== undefined && ctx.agents.isOwnedBy(agent.id, parent)
 }
 
@@ -100,14 +103,31 @@ export async function inspectApiRemoteSession(
     throw new Error('session persistence is not configured (load a dsh-session-persistence backend)')
   }
   const meta = (await persistence.list()).find(candidate => candidate.id === sessionId)
-  if (meta === undefined || meta.cwd === undefined) {
+  if (meta === undefined || meta.cwd === undefined || !isOwnedByCurrentPrincipal(ctx, meta)) {
     throw new ApiRemoteSessionNotFound(`session "${sessionId}" not found`)
   }
   const inspected = await persistence.inspect(sessionId)
-  if (inspected.meta.cwd === undefined) {
+  if (inspected.meta.cwd === undefined || !isOwnedByCurrentPrincipal(ctx, inspected.meta)) {
     throw new ApiRemoteSessionNotFound(`session "${sessionId}" not found`)
   }
   return { meta: inspected.meta, events: [...inspected.events] }
+}
+
+/**
+ * Enforce ownership on cold, persisted metadata explicitly, rather than
+ * depending only on whichever persistence backend happens to be composed.
+ * Fails closed when ownership is mounted but no principal is in scope; a
+ * deployment without an ownership service (single-tenant/CLI) has no owner
+ * concept, so every persisted session is visible, as before ownership existed.
+ * @param ctx - Host Context carrying the optional ownership service.
+ * @param meta - persisted or live session metadata to check.
+ * @returns whether the current request/background principal may see `meta`.
+ */
+function isOwnedByCurrentPrincipal(ctx: Context, meta: SessionHeader): boolean {
+  const ownership = ctx.root.get('ownership')
+  if (ownership === undefined) return true
+  const ownerUserId = ownership.currentPrincipalOrUndefined()?.userId
+  return ownerUserId !== undefined && meta.ownerUserId === ownerUserId
 }
 
 /**
@@ -125,7 +145,7 @@ export function createApiRemoteAgentResolver(
   const resumes = new Map<SessionId, Promise<Agent>>()
 
   const fencedLiveAgent = (sessionId: SessionId): ApiRemoteAgentResult | undefined => {
-    const live = ctx.agents.get(sessionId)
+    const live = ownedAgent(ctx, sessionId)
     if (live === undefined) return undefined
     if (hasApiRemoteSubagentOwner(ctx, live.session, live)) {
       return { error: apiRemoteSubagentOwnershipError(sessionId) }
@@ -136,7 +156,7 @@ export function createApiRemoteAgentResolver(
   const agentFor = async (sessionId: SessionId): Promise<ApiRemoteAgentResult> => {
     const fenced = fencedLiveAgent(sessionId)
     if (fenced !== undefined) return fenced
-    const attached = ctx.sessions.get(sessionId)
+    const attached = ownedSession(ctx, sessionId)
     if (attached !== undefined && hasApiRemoteSubagentOwner(ctx, attached, undefined)) {
       return { error: apiRemoteSubagentOwnershipError(sessionId) }
     }
@@ -153,8 +173,8 @@ export function createApiRemoteAgentResolver(
           // awaits (composing a preset, say) does not widen the collision
           // window.
           const setup = options.setup === undefined ? undefined : await options.setup(inspected)
-          const publishedSession = ctx.sessions.get(sessionId)
-          const publishedAgent = ctx.agents.get(sessionId)
+          const publishedSession = ownedSession(ctx, sessionId)
+          const publishedAgent = ownedAgent(ctx, sessionId)
           if (publishedSession !== undefined
             && hasApiRemoteSubagentOwner(ctx, publishedSession, publishedAgent)) {
             throw new ApiRemoteSubagentSessionOwnership(sessionId)
@@ -182,7 +202,7 @@ export function createApiRemoteAgentResolver(
       }
       const fenced = fencedLiveAgent(sessionId)
       if (fenced !== undefined) return fenced
-      const attached = ctx.sessions.get(sessionId)
+      const attached = ownedSession(ctx, sessionId)
       if (attached !== undefined && hasApiRemoteSubagentOwner(ctx, attached, undefined)) {
         return { error: apiRemoteSubagentOwnershipError(sessionId) }
       }

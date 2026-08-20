@@ -1021,7 +1021,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
     settled: DynamicCordisRunResponse,
   ): void {
     const agents = this.rootCtx.get('agents')
-    const agent = agents?.get(pending.agentId)
+    const agent = agents?.get(pending.agentId, 'trusted-internal')
     if (agent === undefined) return
     const plugin = this.registry.get(pending.pluginId)
     const identity = `${pending.pluginId}/${pending.packageId} (${pending.pluginRunId})`
@@ -1076,7 +1076,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
     const reportKey = `Host\u0000handler\u0000${method}\u0000${failure.message}`
     if (!this.claimRuntimeFailure(plugin, run, reportKey)) return
     const agents = this.rootCtx.get('agents')
-    const agent = agents?.get(plugin.sessionId)
+    const agent = agents?.get(plugin.sessionId, 'trusted-internal')
     if (agent === undefined) return
     agent.steer(createUserMessage({
       content: [{
@@ -1102,7 +1102,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
     const reportKey = `${platform}\u0000guard\u0000${failure.message}`
     if (!this.claimRuntimeFailure(plugin, run, reportKey)) return
     const agents = this.rootCtx.get('agents')
-    const agent = agents?.get(plugin.sessionId)
+    const agent = agents?.get(plugin.sessionId, 'trusted-internal')
     if (agent === undefined) return
     agent.steer(createUserMessage({
       content: [{
@@ -1149,7 +1149,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
 
   private injectUserContext(agent: Agent, text: string): void {
     const agents = this.rootCtx.get('agents')
-    if (agents?.get(agent.id) !== agent) return
+    if (agents?.get(agent.id, 'trusted-internal') !== agent) return
     agent.inject(createUserMessage({
       content: [{ type: 'text', text }],
       source: { kind: 'plugin', plugin: 'cordis-host-runner' },

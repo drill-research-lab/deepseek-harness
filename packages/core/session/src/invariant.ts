@@ -216,7 +216,7 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
   /* v8 ignore next -- session/event always follows list() or session/created seeding */
   const traceFor = (session: Session): SessionTrace => traces.get(session) ?? seedSession(session)
 
-  for (const session of ctx.sessions.list()) seedSession(session)
+  for (const session of ctx.sessions.list('trusted-internal')) seedSession(session)
 
   ctx.on('session/created', (session) => { seedSession(session) }, { global: true })
 

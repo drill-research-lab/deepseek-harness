@@ -316,7 +316,7 @@ export class TerminalSessionService extends Service {
   }
 
   private isLiveOwner(owner: Agent): boolean {
-    return !this.disposedOwners.has(owner) && this.ctx.get('agents')?.get(owner.id) === owner
+    return !this.disposedOwners.has(owner) && this.ctx.get('agents')?.get(owner.id, 'trusted-internal') === owner
   }
 
   private ensureOwnerCleanup(owner: Agent): void {
@@ -387,7 +387,7 @@ export class TerminalSessionService extends Service {
   private expectOwned(owner: Agent, id: TerminalSessionId): SessionRecord {
     const record = this.sessions.get(id)
     if (record === undefined) throw new TerminalError(`unknown PTY session ${id}`, 'NO_SESSION')
-    if (record.owner !== owner) throw new TerminalError(`PTY session ${id} belongs to another agent`, 'FOREIGN_SESSION')
+    if (record.owner !== owner) throw new TerminalError(`unknown PTY session ${id}`, 'NO_SESSION')
     return record
   }
 

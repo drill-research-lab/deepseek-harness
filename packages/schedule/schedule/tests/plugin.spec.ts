@@ -63,7 +63,7 @@ describe('Schedule plugin composition', () => {
     agentEvents(ctx, root.agent).emit('agent/status', { status: 'idle' })
 
     const child = await root.agent.ctx.agents.create({ sessionId: SessionId('schedule-child') })
-    expect(ctx.agents.roots()).toEqual([existing.agent, root.agent])
+    expect(ctx.agents.roots('trusted-internal')).toEqual([existing.agent, root.agent])
     expect(ctx.tools.get('schedule_create', child.agent)).toBeUndefined()
 
     const departing = await ctx.agents.create({ sessionId: SessionId('schedule-departing') })

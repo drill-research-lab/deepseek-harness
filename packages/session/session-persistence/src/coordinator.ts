@@ -720,7 +720,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
   async prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation> {
     for (;;) {
       await this.waitForRetirement(id, signal)
-      if (this.ctx.sessions.get(id) !== undefined) {
+      if (this.ctx.sessions.get(id, 'trusted-internal') !== undefined) {
         throw new Error(`cannot prepare session "${id}" while it is live`)
       }
       const reservation = await this.preparations.reserve(
@@ -730,7 +730,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
         signal,
       )
       if (reservation === undefined) continue
-      if (this.ctx.sessions.get(id) !== undefined) {
+      if (this.ctx.sessions.get(id, 'trusted-internal') !== undefined) {
         this.preparations.release(reservation, false)
         throw new Error(`cannot prepare session "${id}" while it is live`)
       }
@@ -756,7 +756,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
   async load(id: SessionId): Promise<SessionInspection> {
     for (;;) {
       await this.waitForRetirement(id)
-      const live = this.ctx.sessions.get(id)
+      const live = this.ctx.sessions.get(id, 'trusted-internal')
       if (live !== undefined) return this.loadLiveSnapshot(live)
       const reservation = await this.preparations.reserve(
         id,
@@ -764,7 +764,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
         source => this.serialize(id, () => this.commitPrepared(source)),
       )
       if (reservation === undefined) continue
-      const attached = this.ctx.sessions.get(id)
+      const attached = this.ctx.sessions.get(id, 'trusted-internal')
       if (attached !== undefined) {
         this.preparations.discard(reservation)
         return this.loadLiveSnapshot(attached)
@@ -788,7 +788,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     for (;;) {
       signal?.throwIfAborted()
       if (this.retirements.has(id)) await this.waitForRetirement(id, signal)
-      const live = this.ctx.sessions.get(id)
+      const live = this.ctx.sessions.get(id, 'trusted-internal')
       if (live !== undefined) return this.inspectLive(live)
       try {
         const source = await this.preparations.inspect(
@@ -796,14 +796,14 @@ export class PersistenceCoordinator<TornMarker = unknown> {
           () => this.serialize(id, () => this.prepareCore(id)),
           signal,
         )
-        const attached = this.ctx.sessions.get(id)
+        const attached = this.ctx.sessions.get(id, 'trusted-internal')
         if (attached !== undefined) return this.inspectLive(attached)
         const current = await this.serialize(
           id,
           () => this.isPreparedSourceCurrent(source, signal),
           signal,
         )
-        const published = this.ctx.sessions.get(id)
+        const published = this.ctx.sessions.get(id, 'trusted-internal')
         if (published !== undefined) return this.inspectLive(published)
         if (current) return source.inspection
         if (this.preparations.discardReady(id, source) === 'retained') {
@@ -811,7 +811,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
         }
       } catch (error: unknown) {
         signal?.throwIfAborted()
-        const attached = this.ctx.sessions.get(id)
+        const attached = this.ctx.sessions.get(id, 'trusted-internal')
         if (attached !== undefined) return this.inspectLive(attached)
         throw error
       }
@@ -1133,7 +1133,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
 
     // HMR: a hot reload does not replay session/created, so seed existing live
     // sessions (mirrors dsh-invariants).
-    for (const session of ctx.sessions.list()) void this.initFor(session)
+    for (const session of ctx.sessions.list('trusted-internal')) void this.initFor(session)
   }
 
   /** Start and observe one disposed session's final drain. */

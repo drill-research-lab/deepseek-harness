@@ -30,7 +30,7 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
   const seed = (session: Session): void => {
     for (const event of session.events) validateEvent(event, fail)
   }
-  for (const session of ctx.sessions.list()) seed(session)
+  for (const session of ctx.sessions.list('trusted-internal')) seed(session)
   ctx.on('session/created', (session) => { seed(session) }, { global: true })
   ctx.on('internal/dispatch', (_mode, eventName, args) => {
     if (eventName !== 'session/event') return

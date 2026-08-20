@@ -7,6 +7,10 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { AuthService, authenticatedUserId } from '@deepseek-ai/dsh-auth'
+import type { AuthenticatedUser, AuthenticatedUserId } from '@deepseek-ai/dsh-auth'
+import { OwnershipService, UserHome } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal } from '@deepseek-ai/dsh-ownership'
 import {
   encodeSegment, eventLines, logPath, projectDir, projectKey, scanLog, sessionDir, SessionLogScanner, toHeaderLine,
 } from '../src/format.ts'
@@ -34,6 +38,37 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 
 let root: string
 const dirs: string[] = []
+
+class OwnershipTestAuth extends AuthService {
+  authenticateRequest(): Promise<AuthenticatedUser | undefined> { return Promise.resolve(undefined) }
+}
+
+class TestOwnership extends OwnershipService {
+  static inject = ['auth']
+  constructor(ctx: Context, private readonly usersRoot: string) { super(ctx) }
+  currentPrincipal(): OwnerPrincipal {
+    const user = this.ctx.auth.currentUser()
+    if (user === undefined) throw new Error('no test owner')
+    return { userId: user.userId, source: 'request' }
+  }
+  currentPrincipalOrUndefined(): OwnerPrincipal | undefined {
+    const user = this.ctx.auth.currentUser()
+    return user === undefined ? undefined : { userId: user.userId, source: 'request' }
+  }
+  backgroundPrincipal(userId: AuthenticatedUserId): OwnerPrincipal {
+    return { userId, source: 'background' }
+  }
+  async resolveUserHome(principal: OwnerPrincipal): Promise<UserHome> {
+    const root = join(this.usersRoot, String(principal.userId).replaceAll(':', '-'))
+    await mkdir(root, { recursive: true })
+    return new UserHome(principal, {
+      schemaVersion: 1,
+      userId: principal.userId,
+      createdAt: '2026-08-19T00:00:00.000Z',
+      updatedAt: '2026-08-19T00:00:00.000Z',
+    }, root)
+  }
+}
 
 type MutableSessionHeader = { -readonly [K in keyof SessionHeader]: SessionHeader[K] }
 
@@ -88,6 +123,70 @@ afterEach(async () => {
   statRace.reads = 0
   vi.restoreAllMocks()
   for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true })
+})
+
+describe('JsonlSessionPersistence owner namespaces', () => {
+  it('isolates exact ids, enumeration, snapshots, and physical owner roots', async () => {
+    const deploymentRoot = await freshRoot()
+    const usersRoot = await freshRoot()
+    const ctx = new Context()
+    await ctx.plugin(OwnershipTestAuth)
+    await ctx.plugin(TestOwnership, usersRoot)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(JsonlSessionPersistence, {
+      root: deploymentRoot,
+      compression: 'none',
+      writeBatchMaxDelayMs: 1,
+    })
+    const alice: AuthenticatedUser = {
+      userId: authenticatedUserId('ldap:test-alice'),
+      username: 'alice',
+    }
+    const bob: AuthenticatedUser = {
+      userId: authenticatedUserId('ldap:test-bob'),
+      username: 'bob',
+    }
+    const aliceId = SessionId('known-alice-id')
+    const bobId = SessionId('known-bob-id')
+    const persist = async (user: AuthenticatedUser, id: SessionId, text: string): Promise<void> => {
+      await ctx.auth.runAs(user, async () => {
+        const session = ctx.sessions.prepare(id, { meta: { cwd: '/project' } })
+        expect(session.header.ownerUserId).toBe(user.userId)
+        const detach = ctx.sessions.enter(session)
+        ctx.sessions.announce(session)
+        session.append('turn/start', { turn: 1 })
+        session.append('user/message', createUserMessage({
+          content: [{ type: 'text', text }],
+          source: { kind: 'user' },
+        }), { surfaceOp: 'append' })
+        session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+        await ctx.sessions.flush(session)
+        detach()
+      })
+    }
+
+    await persist(alice, aliceId, 'alice marker')
+    await ctx.auth.runAs(alice, async () => {
+      expect(JSON.stringify((await ctx.sessionPersistence.inspect(aliceId)).events)).toContain('alice marker')
+    })
+    await ctx.auth.runAs(bob, async () => {
+      expect(await ctx.sessionPersistence.list()).toEqual([])
+      expect(await ctx.sessionPersistence.listSnapshots()).toEqual([])
+      await expect(ctx.sessionPersistence.inspect(aliceId)).rejects.toThrow(/not found|no stored session/)
+    })
+    await persist(bob, bobId, 'bob marker')
+
+    await ctx.auth.runAs(alice, async () => {
+      expect((await ctx.sessionPersistence.list()).map(header => header.ownerUserId)).toEqual([alice.userId])
+      expect(JSON.stringify((await ctx.sessionPersistence.inspect(aliceId)).events)).toContain('alice marker')
+    })
+    await ctx.auth.runAs(bob, async () => {
+      expect((await ctx.sessionPersistence.list()).map(header => header.ownerUserId)).toEqual([bob.userId])
+      expect(JSON.stringify((await ctx.sessionPersistence.inspect(bobId)).events)).toContain('bob marker')
+    })
+    expect(await readdir(deploymentRoot)).toEqual([])
+    expect(await readdir(usersRoot)).toHaveLength(2)
+  })
 })
 
 function appendClosedTurn(session: Session): void {
@@ -1359,7 +1458,7 @@ describe('JsonlSessionPersistence: edge cases', () => {
     }, { inject: ['sessions'] }))
     // Drain A, then dispose ITS fiber (the live session A is gone) while the
     // backend stays loaded.
-    for (const s of ctx.sessions.list()) await ctx.sessions.flush(s)
+    for (const s of ctx.sessions.list('trusted-internal')) await ctx.sessions.flush(s)
     await sessFiberA.dispose()
 
     // A new Session object reuses the id. Object-keyed initialization must run independently,
@@ -1427,7 +1526,7 @@ describe('JsonlSessionPersistence: edge cases', () => {
       a.append('turn/start', { turn: 1 })
       a.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     }, { inject: ['sessions'] }))
-    for (const s of ctx.sessions.list()) await ctx.sessions.flush(s)
+    for (const s of ctx.sessions.list('trusted-internal')) await ctx.sessions.flush(s)
     await firstFiber.dispose()
 
     let second!: Session

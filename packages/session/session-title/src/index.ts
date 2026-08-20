@@ -362,7 +362,7 @@ export class SessionTitleService extends Service {
    */
   rename(session: Session, title: string): SessionTitleSnapshot {
     this.assertServiceActive()
-    if (this.ctx.sessions.get(session.id) !== session) {
+    if (this.ctx.sessions.get(session.id, 'trusted-internal') !== session) {
       throw new Error(`session "${session.id}" is not live in this store`)
     }
     const normalized = normalizeSessionTitle(title, this.config.maxTitleBytes)
@@ -392,7 +392,7 @@ export class SessionTitleService extends Service {
   async refresh(session: Session, signal?: AbortSignal): Promise<SessionTitleSnapshot | undefined> {
     signal?.throwIfAborted()
     this.assertServiceActive()
-    if (this.ctx.sessions.get(session.id) !== session) {
+    if (this.ctx.sessions.get(session.id, 'trusted-internal') !== session) {
       throw new Error(`session "${session.id}" is not live in this store`)
     }
     const registration = this.registration
@@ -501,7 +501,7 @@ export class SessionTitleService extends Service {
   /** Start unchanged-route work from the marked loop request after its header fold is current. */
   private onMainRequest(options: GenerateOptions): void {
     if (!this.serviceActive() || options.sessionId === undefined || !isAgentLoopRequest(options)) return
-    const session = this.ctx.sessions.get(options.sessionId)
+    const session = this.ctx.sessions.get(options.sessionId, 'trusted-internal')
     const state = session === undefined ? undefined : this.work.get(session)
     const pending = state?.pending
     if (session === undefined || state === undefined || pending === undefined) return
@@ -641,7 +641,7 @@ export class SessionTitleService extends Service {
     if (this.registration !== work.registration
       || state?.active !== work
       || state.revision !== work.revision
-      || this.ctx.sessions.get(session.id) !== session) {
+      || this.ctx.sessions.get(session.id, 'trusted-internal') !== session) {
       throw new Error('session title generation state changed without cancellation')
     }
   }
@@ -768,7 +768,7 @@ export class SessionTitleService extends Service {
     if (state.fallback !== undefined) return state.fallback
     const fallback = Promise.resolve().then(() => {
       this.assertServiceActive()
-      if (this.ctx.sessions.get(session.id) !== session) {
+      if (this.ctx.sessions.get(session.id, 'trusted-internal') !== session) {
         throw new Error(`session "${session.id}" is not live in this store`)
       }
       const accepted = this.get(session)

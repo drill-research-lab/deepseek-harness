@@ -74,7 +74,7 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
   }
   const traceFor = (session: Session): ApprovalTrace => traces.get(session) ?? seed(session)
 
-  for (const session of ctx.sessions.list()) seed(session)
+  for (const session of ctx.sessions.list('trusted-internal')) seed(session)
   ctx.on('session/created', (session) => { seed(session) }, { global: true })
   ctx.on('session/event', (session, event) => {
     const trace = traceFor(session)

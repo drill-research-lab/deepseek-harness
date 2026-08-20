@@ -45,7 +45,7 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
       fail(`command/done ${JSON.stringify(event.data.commandId)} has invalid sourceEventSeq ${String(source)}`)
     }
   }
-  for (const session of ctx.sessions.list()) {
+  for (const session of ctx.sessions.list('trusted-internal')) {
     for (const event of session.events) validateEvent(session, event)
   }
   ctx.on('internal/dispatch', (_mode, eventName, args) => {

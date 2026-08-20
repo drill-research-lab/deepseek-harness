@@ -58,8 +58,8 @@ describe('agent loop', () => {
         SessionId('invalid-max-tokens'),
         { provider: 'mock', model: 'mock', maxTokens },
       )).toThrow('agent maxTokens must be a positive safe integer')
-      expect(ctx.agents.list()).toEqual([])
-      expect(ctx.sessions.list()).toEqual([])
+      expect(ctx.agents.list('trusted-internal')).toEqual([])
+      expect(ctx.sessions.list('trusted-internal')).toEqual([])
     },
   )
 
@@ -1386,7 +1386,7 @@ describe('agent loop', () => {
       agent = inner.agentLoop.create(SessionId('scoped'), { provider: 'mock', model: 'mock' })
     }, { inject: ['agentLoop'] }))
 
-    expect(ctx.agents.get(SessionId('scoped'))).toBe(agent)
+    expect(ctx.agents.get(SessionId('scoped'), 'trusted-internal')).toBe(agent)
     send(agent, 'go')
     await new Promise(r => setTimeout(r, 30))
     expect(agent.status).toBe('running')
@@ -1394,7 +1394,7 @@ describe('agent loop', () => {
     await fiber.dispose()
     await driverDone(agent)
 
-    expect(ctx.agents.get(SessionId('scoped'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('scoped'), 'trusted-internal')).toBeUndefined()
   })
 
   it('creates agents from config on startup', async () => {
@@ -1410,7 +1410,7 @@ describe('agent loop', () => {
     })
     ctx.llm.registerAdapter(['mock'], adapter)
 
-    const agent = ctx.agents.list()[0]!
+    const agent = ctx.agents.list('trusted-internal')[0]!
     expect(agent).toBeDefined()
     expect(agent.id).toBe(agent.session.id)
     expect(agent.id).toMatch(/^config-agent-session-/)
@@ -1433,7 +1433,7 @@ describe('agent loop', () => {
       agents: [{ id: SessionId('config-agent'), provider: 'mock', model: 'mock', cwd: '/work/project' }],
     })
 
-    const agent = ctx.agents.list()[0]!
+    const agent = ctx.agents.list('trusted-internal')[0]!
     expect(agent.session.header.cwd).toBe('/work/project')
   })
 

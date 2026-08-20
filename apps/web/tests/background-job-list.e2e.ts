@@ -38,7 +38,7 @@ const COMMAND = 'sleep 45'
 async function liveAgent(scaffold: WebScaffold, sessionId: SessionId): Promise<Agent> {
   const deadline = Date.now() + 30_000
   for (;;) {
-    const found = scaffold.ctx.agents.get(sessionId)
+    const found = scaffold.ctx.agents.get(sessionId, 'trusted-internal')
     if (found !== undefined) return found
     if (Date.now() > deadline) throw new Error(`opening session "${sessionId}" published no live Agent`)
     await new Promise(resolve => setTimeout(resolve, 100))

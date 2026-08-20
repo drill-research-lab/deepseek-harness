@@ -10,6 +10,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { unzipSync, strFromU8 } from 'fflate'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import { OwnershipService } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal, UserHome } from '@deepseek-ai/dsh-ownership'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionLineageNode } from '@deepseek-ai/dsh-session-query'
@@ -18,7 +20,29 @@ import ApiProxyService, { createApiProxy, toFetchHandler } from '@deepseek-ai/ds
 
 const sid = (id: string): SessionId => id as SessionId
 
-function header(id: string, parentSession?: SessionId): SessionHeader {
+class TestOwnership extends OwnershipService {
+  principal: OwnerPrincipal | undefined
+
+  currentPrincipal(): OwnerPrincipal {
+    if (this.principal === undefined) throw new Error('no test owner')
+    return this.principal
+  }
+
+  currentPrincipalOrUndefined(): OwnerPrincipal | undefined { return this.principal }
+
+  backgroundPrincipal(userId: OwnerPrincipal['userId']): OwnerPrincipal {
+    return { userId, source: 'background' }
+  }
+
+  resolveUserHome(): Promise<UserHome> {
+    throw new Error('not used by these tests')
+  }
+}
+
+const alice = { userId: 'ldap:test-alice' as OwnerPrincipal['userId'], source: 'request' as const }
+const bob = { userId: 'ldap:test-bob' as OwnerPrincipal['userId'], source: 'request' as const }
+
+function header(id: string, parentSession?: SessionId, ownerUserId?: OwnerPrincipal['userId']): SessionHeader {
   return {
     version: 0,
     id: sid(id),
@@ -26,6 +50,7 @@ function header(id: string, parentSession?: SessionId): SessionHeader {
     cwd: '/proj',
     ...parentSession === undefined ? {} : { parentSession },
     delegationDepth: parentSession === undefined ? 0 : 1,
+    ...ownerUserId === undefined ? {} : { ownerUserId },
   }
 }
 
@@ -62,9 +87,10 @@ async function buildApi(
     persistence?: boolean | 'throw' | 'unsupported'
     attachments?: boolean | ((ref: ImageAttachmentRef, signal?: AbortSignal) => Promise<ReturnType<typeof storedImage>>)
     sessions?: {
-      get(id: SessionId): { readonly id: SessionId } | undefined
+      get(id: SessionId): { readonly id: SessionId; readonly header?: SessionHeader } | undefined
       flush(session: { readonly id: SessionId }): Promise<boolean>
     }
+    ownershipPrincipal?: OwnerPrincipal
     readRaw?: (id: SessionId, signal?: AbortSignal) => Promise<SessionRawArtifact | undefined>
     traceSession?: (id: SessionId, signal?: AbortSignal) => Promise<{
       target: { header: SessionHeader; live: boolean; persisted: boolean }
@@ -77,6 +103,10 @@ async function buildApi(
   } = {},
 ) {
   const ctx = new Context()
+  if (services.ownershipPrincipal !== undefined) {
+    await ctx.plugin(TestOwnership)
+    ;(ctx.ownership as TestOwnership).principal = services.ownershipPrincipal
+  }
   await ctx.plugin(UserQuestionService)
   const query = services.query ?? true
   const persistence = services.persistence ?? true
@@ -278,6 +308,52 @@ describe('session.export download endpoint', () => {
     const files = unzipSync(await responseBytes(response))
     expect(flush).not.toHaveBeenCalled()
     expect(strFromU8(files['session.jsonl'] as Uint8Array)).toBe(root.content)
+  })
+
+  it('rejects a foreign owner\'s live root without flushing or reading it', async () => {
+    // Regression: request.sessionId reached flushLiveSessionLog() (and would
+    // have reached readRaw()) with no owner check — a live session belonging
+    // to another owner got flushed as a side effect purely because its id was
+    // known/guessed, even though the raw read itself is separately safe via
+    // JSONL's owner-rooted path.
+    const flush = vi.fn(async () => true)
+    const readRaw = vi.fn(async () => artifact('session-root'))
+    const api = await buildApi({}, [], {
+      ownershipPrincipal: bob,
+      sessions: {
+        get: id => id === sid('session-root')
+          ? { id, header: header('session-root', undefined, alice.userId) }
+          : undefined,
+        flush,
+      },
+      readRaw,
+    })
+    const response = await api.downloads.sessionLog(
+      { sessionId: sid('session-root'), includeDescendants: false },
+      new AbortController().signal,
+    )
+    expect(response.status).toBe(404)
+    expect(flush).not.toHaveBeenCalled()
+    expect(readRaw).not.toHaveBeenCalled()
+  })
+
+  it('still exports the caller\'s own live root when ownership is mounted', async () => {
+    const flush = vi.fn(async () => true)
+    const api = await buildApi({ 'session-root': artifact('session-root', undefined, 'durable root') }, [], {
+      ownershipPrincipal: alice,
+      sessions: {
+        get: id => id === sid('session-root')
+          ? { id, header: header('session-root', undefined, alice.userId) }
+          : undefined,
+        flush,
+      },
+    })
+    const response = await api.downloads.sessionLog(
+      { sessionId: sid('session-root'), includeDescendants: false },
+      new AbortController().signal,
+    )
+    expect(response.status).toBe(200)
+    expect(flush).toHaveBeenCalledTimes(1)
   })
 
   it('answers 404 for a missing root session', async () => {

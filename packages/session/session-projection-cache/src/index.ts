@@ -21,6 +21,7 @@ import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { ProjectionCheckpoint, ProjectionSnapshot } from '@deepseek-ai/dsh-session-projection'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
+import type {} from '@deepseek-ai/dsh-ownership'
 import { projectionCacheDomainSpec } from './spec.ts'
 import type { CheckpointIdentity, CheckpointRecord } from './spec.ts'
 
@@ -147,7 +148,7 @@ export class SessionProjectionCache extends Service {
     // from events no stored log contains). At detach the store entry is
     // already gone; persistence's own retirement drain covers that path and
     // any residual overreach is caught by the cold read's anchored floor.
-    if (this.ctx.sessions.get(session.id) === session) await this.ctx.sessions.flush(session)
+    if (this.ctx.sessions.get(session.id, 'trusted-internal') === session) await this.ctx.sessions.flush(session)
     await this.put(session.id, identityOf(session.header), rows)
   }
 
@@ -164,7 +165,11 @@ export class SessionProjectionCache extends Service {
    * @returns the snapshot cut at the stored log end.
    */
   async coldSnapshot(id: SessionId, signal?: AbortSignal): Promise<ProjectionSnapshot> {
-    const record = this.requireTable().get(id)
+    const currentOwner = this.ctx.root.get('ownership')?.currentPrincipalOrUndefined()?.userId
+    const candidate = this.requireTable().get(id)
+    const record = currentOwner === undefined || candidate?.identity.ownerUserId === currentOwner
+      ? candidate
+      : undefined
     const cached = record?.rows ?? {}
     const floor = this.ctx.sessionProjections.restoreFloor(cached)
     const persistence = this.ctx.sessionPersistence
@@ -289,12 +294,18 @@ export class SessionProjectionCache extends Service {
 
 /** Project a header onto the identity fields a record is bound to. */
 function identityOf(header: SessionHeader): CheckpointIdentity {
-  return { createdAt: header.createdAt, ...header.cwd === undefined ? {} : { cwd: header.cwd } }
+  return {
+    ...header.ownerUserId === undefined ? {} : { ownerUserId: header.ownerUserId },
+    createdAt: header.createdAt,
+    ...header.cwd === undefined ? {} : { cwd: header.cwd },
+  }
 }
 
 /** Whether a stored record's bound identity names the caller's lifecycle. */
 function identityMatches(stored: CheckpointIdentity, expected: CheckpointIdentity): boolean {
-  return stored.createdAt === expected.createdAt && stored.cwd === expected.cwd
+  return stored.ownerUserId === expected.ownerUserId
+    && stored.createdAt === expected.createdAt
+    && stored.cwd === expected.cwd
 }
 
 export default SessionProjectionCache

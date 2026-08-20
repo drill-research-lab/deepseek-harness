@@ -319,7 +319,7 @@ describe('cold history recovery view', () => {
         },
       ]
     `)
-    expect(ctx.sessions.get(sessionId)).toBeUndefined()
+    expect(ctx.sessions.get(sessionId, 'trusted-internal')).toBeUndefined()
     await ctx.fiber.dispose()
   })
 })
@@ -461,7 +461,7 @@ describe('subagent ownership fence', () => {
     if (history.result.ok) {
       expect(history.result.value.events.map(entry => entry.event.type)).toEqual(events.map(event => event.type))
     }
-    expect(ctx.agents.get(sessionId)).toBeUndefined()
+    expect(ctx.agents.get(sessionId, 'trusted-internal')).toBeUndefined()
 
     const prompt = await api.sessions.prompt(request({
       sessionId,
@@ -480,7 +480,7 @@ describe('subagent ownership fence', () => {
     expect(create.result.ok).toBe(false)
     if (!create.result.ok) expect(create.result.error.code).toBe('agent-busy')
     expect(resume).not.toHaveBeenCalled()
-    expect(ctx.agents.get(sessionId)).toBeUndefined()
+    expect(ctx.agents.get(sessionId, 'trusted-internal')).toBeUndefined()
     expect(inspect).toHaveBeenCalledTimes(3)
   })
 
@@ -580,7 +580,7 @@ describe('subagent ownership fence', () => {
 
     const history = await api.sessions.history(request({ sessionId: originChild.id }))
     expect(history.result.ok).toBe(true)
-    expect(ctx.agents.get(originChild.id)).toBe(originChild)
+    expect(ctx.agents.get(originChild.id, 'trusted-internal')).toBe(originChild)
   })
 
   it('does not classify an ordinary fork from an inherited ancestor descriptor', async () => {

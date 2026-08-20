@@ -900,6 +900,9 @@ importers:
       '@deepseek-ai/dsh-message-feedback':
         specifier: workspace:^
         version: link:../../feedback/message-feedback
+      '@deepseek-ai/dsh-ownership':
+        specifier: workspace:^
+        version: link:../../identity/ownership
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
@@ -3500,6 +3503,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-ownership':
+        specifier: workspace:^
+        version: link:../../identity/ownership
       '@deepseek-ai/dsh-scope':
         specifier: workspace:^
         version: link:../scope
@@ -3556,6 +3562,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-ownership':
+        specifier: workspace:^
+        version: link:../../identity/ownership
       '@deepseek-ai/dsh-scope':
         specifier: workspace:^
         version: link:../scope
@@ -6098,6 +6107,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-ownership':
+        specifier: workspace:^
+        version: link:../../identity/ownership
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
@@ -7073,9 +7085,15 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-ownership':
+        specifier: workspace:^
+        version: link:../../identity/ownership
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
+      '@deepseek-ai/dsh-session-persistence':
+        specifier: workspace:^
+        version: link:../../session/session-persistence
       '@deepseek-ai/dsh-spill':
         specifier: workspace:^
         version: link:../spill

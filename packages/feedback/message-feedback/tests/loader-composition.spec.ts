@@ -110,6 +110,6 @@ describe('message feedback through a real Loader composition', () => {
       ok: true,
       value: { items: [put.value] },
     })
-    expect(second.sessions.get(session.id)).toBeUndefined()
+    expect(second.sessions.get(session.id, 'trusted-internal')).toBeUndefined()
   })
 })

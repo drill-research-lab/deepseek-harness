@@ -142,7 +142,7 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
     // The last message action belongs to the completed second-turn assistant.
     await page.getByRole('button', { name: 'Branch into a new conversation' }).last().click()
     await expect.poll(
-      () => scaffold.ctx.agents.list().find(agent => agent.session.header.parentSession === SessionId(SEED_ID)),
+      () => scaffold.ctx.agents.list('trusted-internal').find(agent => agent.session.header.parentSession === SessionId(SEED_ID)),
       { timeout: 15_000 },
     ).toBeDefined()
     await expect.poll(
@@ -166,7 +166,7 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
     await page.mouse.click(buttonBox.x + buttonBox.width / 2, buttonBox.y + buttonBox.height / 2)
     await page.getByRole('menuitem', { name: 'Fork session' }).click()
     await expect.poll(
-      () => scaffold.ctx.agents.list().filter(agent => agent.session.header.parentSession !== undefined).length,
+      () => scaffold.ctx.agents.list('trusted-internal').filter(agent => agent.session.header.parentSession !== undefined).length,
       { timeout: 15_000 },
     ).toBe(2)
     await expect.poll(

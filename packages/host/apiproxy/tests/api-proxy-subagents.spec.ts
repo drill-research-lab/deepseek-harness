@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { OwnershipService } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal, UserHome } from '@deepseek-ai/dsh-ownership'
 import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import { SubagentError } from '@deepseek-ai/dsh-subagent'
 import { RpcId } from '../src/api/rpc.ts'
@@ -10,11 +12,33 @@ const sid = (value: string): SessionId => value as SessionId
 const PARENT = sid('parent')
 const CHILD = sid('child')
 
+class TestOwnership extends OwnershipService {
+  principal: OwnerPrincipal | undefined
+
+  currentPrincipal(): OwnerPrincipal {
+    if (this.principal === undefined) throw new Error('no test owner')
+    return this.principal
+  }
+
+  currentPrincipalOrUndefined(): OwnerPrincipal | undefined { return this.principal }
+
+  backgroundPrincipal(userId: OwnerPrincipal['userId']): OwnerPrincipal {
+    return { userId, source: 'background' }
+  }
+
+  resolveUserHome(): Promise<UserHome> {
+    throw new Error('not used by these tests')
+  }
+}
+
+const alice = { userId: 'ldap:test-alice' as OwnerPrincipal['userId'], source: 'request' as const }
+const bob = { userId: 'ldap:test-bob' as OwnerPrincipal['userId'], source: 'request' as const }
+
 function request<P>(payload: P): RpcRequest<P> {
   return { rpcId: RpcId('subagent-rpc'), payload }
 }
 
-function bench(options: {
+async function bench(options: {
   parentLive?: boolean
   childStatus?: 'idle' | 'running'
   entries?: object[]
@@ -28,6 +52,14 @@ function bench(options: {
   /** Every registered projection unit throws on this child's payloads. */
   projectionsThrow?: true
   historyParent?: SessionId
+  /**
+   * Mount an ownership service and give the live child a foreign owner, while
+   * `listChildren` (mocked, standing in for a hypothetical future catalog-path
+   * regression) still reports it as a valid entry. Exercises the independent
+   * `ownedSession` check on the live-child branch of `subagents.history` — it
+   * must reject even when the catalog verification alone would not.
+   */
+  ownerMismatch?: true
 } = {}) {
   const parent = { id: PARENT }
   const child = options.childStatus === undefined
@@ -65,6 +97,7 @@ function bench(options: {
   })
   const childHeader = {
     version: 0, id: CHILD, createdAt: 1, cwd: '/proj', parentSession: options.historyParent ?? PARENT,
+    ...options.ownerMismatch === true ? { ownerUserId: alice.userId } : {},
   } satisfies SessionHeader
   const childEvents = [
     { type: 'user/message', seq: 0, time: 1, data: { content: [{ type: 'text', text: 'work' }], source: { kind: 'user' } } },
@@ -81,10 +114,14 @@ function bench(options: {
     return { snapshot: coldBlock }
   })
   const ctx = new Context()
+  if (options.ownerMismatch === true) {
+    await ctx.plugin(TestOwnership)
+    ;(ctx.ownership as TestOwnership).principal = bob
+  }
   ctx.provide('agents', { get: getAgent })
   ctx.provide('subagents', { listChildren, followup, interrupt })
   ctx.provide('sessions', {
-    get: (id: SessionId) => options.liveChild === true && id === CHILD
+    get: (id: SessionId) => (options.liveChild === true || options.ownerMismatch === true) && id === CHILD
       ? { id: CHILD, header: childHeader, events: childEvents }
       : undefined,
   })
@@ -110,7 +147,7 @@ function bench(options: {
 
 describe('subagent gateway', () => {
   it('lists the complete catalog and reports exact live-parent availability', async () => {
-    const { api, listChildren } = bench({ parentLive: false, entries: [
+    const { api, listChildren } = await bench({ parentLive: false, entries: [
       {
         kind: 'child', id: CHILD, mode: 'continuable', label: 'worker',
         activity: 'inactive', hasChildren: true,
@@ -138,20 +175,20 @@ describe('subagent gateway', () => {
   })
 
   it('derives catalog activity from the live child Agent rather than Session residency', async () => {
-    const residentIdle = bench({ childStatus: 'idle', entries: [{
+    const residentIdle = await bench({ childStatus: 'idle', entries: [{
       kind: 'child', id: CHILD, mode: 'continuable', label: 'worker',
       activity: 'running', hasChildren: false,
     }] })
     expect((await residentIdle.api.subagents.list(request({ parentSessionId: PARENT }))).result)
       .toMatchObject({ ok: true, value: { entries: [{ activity: 'inactive' }] } })
 
-    const running = bench({ childStatus: 'running' })
+    const running = await bench({ childStatus: 'running' })
     expect((await running.api.subagents.list(request({ parentSessionId: PARENT }))).result)
       .toMatchObject({ ok: true, value: { entries: [{ activity: 'running' }] } })
   })
 
   it('reads a healthy direct child without looking up or activating any Agent', async () => {
-    const { api, getAgent, inspect, restore } = bench()
+    const { api, getAgent, inspect, restore } = await bench()
     const response = await api.subagents.history(request({
       parentSessionId: PARENT, childSessionId: CHILD, mode: 'continuable', maxMessages: 10,
     }))
@@ -164,8 +201,26 @@ describe('subagent gateway', () => {
     expect(getAgent).not.toHaveBeenCalled()
   })
 
+  it('rejects a live child with a foreign owner even when the catalog reports it as valid', async () => {
+    // Regression: `subagents.history`'s live-child branch used to read
+    // `ctx.sessions.get(childSessionId)` directly, trusting any live session
+    // regardless of owner. This pins the independent `ownedSession` check
+    // there — `listChildren` here still (mock-)reports the child as a valid
+    // entry, standing in for a hypothetical future regression in the catalog
+    // path, so this test only passes if the live-child branch's OWN check
+    // rejects the cross-owner read on its own.
+    const { api, inspect } = await bench({ ownerMismatch: true })
+    const response = await api.subagents.history(request({
+      parentSessionId: PARENT, childSessionId: CHILD, mode: 'continuable',
+    }))
+    expect(response.result).toMatchObject({ ok: false, error: { code: 'subagent-not-found' } })
+    // The rejection came from the live-child branch's owner check, not from
+    // falling through to a cold inspection that happened to also reject it.
+    expect(inspect).not.toHaveBeenCalled()
+  })
+
   it('serves a live child from the in-memory snapshot and the watermark projections', async () => {
-    const { api, inspect, snapshot, restore } = bench({ liveChild: true })
+    const { api, inspect, snapshot, restore } = await bench({ liveChild: true })
     const response = await api.subagents.history(request({
       parentSessionId: PARENT, childSessionId: CHILD, mode: 'continuable',
     }))
@@ -179,7 +234,7 @@ describe('subagent gateway', () => {
   })
 
   it('serves the page without projections when a hostile unit breaks the fold', async () => {
-    const cold = bench({ projectionsThrow: true })
+    const cold = await bench({ projectionsThrow: true })
     const coldResponse = await cold.api.subagents.history(request({
       parentSessionId: PARENT, childSessionId: CHILD, mode: 'continuable',
     }))
@@ -189,7 +244,7 @@ describe('subagent gateway', () => {
     })
     if (coldResponse.result.ok) expect('projections' in coldResponse.result.value).toBe(false)
 
-    const live = bench({ projectionsThrow: true, liveChild: true })
+    const live = await bench({ projectionsThrow: true, liveChild: true })
     const liveResponse = await live.api.subagents.history(request({
       parentSessionId: PARENT, childSessionId: CHILD, mode: 'continuable',
     }))
@@ -206,7 +261,7 @@ describe('subagent gateway', () => {
       kind: 'child', id: CHILD, mode: 'one-shot', label: 'batch',
       activity: 'inactive', hasChildren: false,
     }
-    const { api, inspect } = bench({ entries: [oneShot] })
+    const { api, inspect } = await bench({ entries: [oneShot] })
     expect((await api.subagents.history(request({
       parentSessionId: PARENT, childSessionId: CHILD, mode: 'one-shot',
     }))).result).toMatchObject({ ok: true })
@@ -217,7 +272,7 @@ describe('subagent gateway', () => {
   })
 
   it('rejects a diagnostic address before reading history', async () => {
-    const { api, inspect } = bench({ entries: [
+    const { api, inspect } = await bench({ entries: [
       { kind: 'diagnostic', id: CHILD, reason: 'unsupported' },
     ] })
     const response = await api.subagents.history(request({
@@ -243,17 +298,17 @@ describe('subagent gateway', () => {
       message: 'subagent catalog is unavailable: this deployment does not mount the sessionProjections registry (load @deepseek-ai/dsh-session-projection)',
     }
 
-    const list = bench({ listError: listError() })
+    const list = await bench({ listError: listError() })
     expect((await list.api.subagents.list(request({ parentSessionId: PARENT }))).result)
       .toMatchObject({ ok: false, error: expected })
 
-    const history = bench({ listError: listError() })
+    const history = await bench({ listError: listError() })
     expect((await history.api.subagents.history(request({
       parentSessionId: PARENT, childSessionId: CHILD, mode: 'continuable',
     }))).result).toMatchObject({ ok: false, error: expected })
     expect(history.inspect).not.toHaveBeenCalled()
 
-    const prompt = bench({ listError: listError() })
+    const prompt = await bench({ listError: listError() })
     expect((await prompt.api.subagents.prompt(request({
       parentSessionId: PARENT, childSessionId: CHILD, mode: 'continuable', content: [],
     }), new AbortController().signal)).result).toMatchObject({ ok: false, error: expected })
@@ -261,7 +316,7 @@ describe('subagent gateway', () => {
   })
 
   it('routes human content through the exact live parent with rpc attribution', async () => {
-    const { api, parent, followup } = bench()
+    const { api, parent, followup } = await bench()
     const content = [{ type: 'text' as const, text: '继续' }]
     const signal = new AbortController().signal
     const response = await api.subagents.prompt(request({
@@ -279,7 +334,7 @@ describe('subagent gateway', () => {
   })
 
   it('canonicalizes browser-zone provenance before delivering a child prompt', async () => {
-    const { api, parent, followup } = bench()
+    const { api, parent, followup } = await bench()
     const alias = 'US/Pacific'
     const canonical = new Intl.DateTimeFormat('en-US', { timeZone: alias })
       .resolvedOptions().timeZone
@@ -316,7 +371,7 @@ describe('subagent gateway', () => {
   })
 
   it('fails before delivery when the parent is absent and maps continuation failures', async () => {
-    const absent = bench({ parentLive: false })
+    const absent = await bench({ parentLive: false })
     expect((await absent.api.subagents.prompt(request({
       parentSessionId: PARENT, childSessionId: CHILD, mode: 'continuable', content: [],
     }), new AbortController().signal)).result).toMatchObject({
@@ -324,7 +379,7 @@ describe('subagent gateway', () => {
     })
     expect(absent.listChildren).not.toHaveBeenCalled()
 
-    const failed = bench({ followupError: new SubagentError('draining', 'DRAINING') })
+    const failed = await bench({ followupError: new SubagentError('draining', 'DRAINING') })
     expect((await failed.api.subagents.prompt(request({
       parentSessionId: PARENT, childSessionId: CHILD, mode: 'continuable', content: [],
     }), new AbortController().signal)).result).toMatchObject({
@@ -333,7 +388,7 @@ describe('subagent gateway', () => {
   })
 
   it('maps history disappearance and hides unexpected backend details', async () => {
-    const disappeared = bench({ storedChild: false })
+    const disappeared = await bench({ storedChild: false })
     expect((await disappeared.api.subagents.history(request({
       parentSessionId: PARENT, childSessionId: CHILD, mode: 'continuable',
     }))).result).toMatchObject({
@@ -345,7 +400,7 @@ describe('subagent gateway', () => {
       },
     })
 
-    const catalog = bench({ listError: new Error('secret descriptor') })
+    const catalog = await bench({ listError: new Error('secret descriptor') })
     expect((await catalog.api.subagents.list(request({
       parentSessionId: PARENT,
     }))).result).toMatchObject({
@@ -353,7 +408,7 @@ describe('subagent gateway', () => {
       error: { code: 'internal', message: 'subagent catalog read failed' },
     })
 
-    const prompt = bench({ followupError: new Error('secret provider') })
+    const prompt = await bench({ followupError: new Error('secret provider') })
     expect((await prompt.api.subagents.prompt(request({
       parentSessionId: PARENT, childSessionId: CHILD, mode: 'continuable', content: [],
     }), new AbortController().signal)).result).toMatchObject({
@@ -363,7 +418,7 @@ describe('subagent gateway', () => {
   })
 
   it('interrupts through the core primitive alone while the parent Agent is offline', async () => {
-    const { api, interrupt, getAgent, listChildren, inspect } = bench({ parentLive: false })
+    const { api, interrupt, getAgent, listChildren, inspect } = await bench({ parentLive: false })
     const response = await api.subagents.interrupt(request({
       parentSessionId: PARENT, childSessionId: CHILD, mode: 'continuable' as const,
     }))
@@ -378,7 +433,7 @@ describe('subagent gateway', () => {
   })
 
   it('maps interrupt authorization rejection without touching other services', async () => {
-    const { api, listChildren } = bench({
+    const { api, listChildren } = await bench({
       interruptError: new SubagentError('secret lineage', 'UNAUTHORIZED'),
     })
     const response = await api.subagents.interrupt(request({
@@ -396,7 +451,7 @@ describe('subagent gateway', () => {
   })
 
   it('hides unexpected interrupt failures behind the internal code', async () => {
-    const { api } = bench({ interruptError: new Error('secret activation state') })
+    const { api } = await bench({ interruptError: new Error('secret activation state') })
     const response = await api.subagents.interrupt(request({
       parentSessionId: PARENT, childSessionId: CHILD, mode: 'continuable' as const,
     }))

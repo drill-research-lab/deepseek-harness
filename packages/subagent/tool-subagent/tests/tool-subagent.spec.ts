@@ -1049,7 +1049,7 @@ describe('dsh-tool-subagent continuable background mode', () => {
     expect(ctx.jobs.list(parent)).toEqual([])
 
     await vi.waitFor(() => {
-      expect(ctx.agents.get(SessionId(childId!))).toBeUndefined()
+      expect(ctx.agents.get(SessionId(childId!), 'trusted-internal')).toBeUndefined()
     }, { timeout: 5_000 })
     // The child id names a durable session carrying its continuation descriptor.
     const loaded = await ctx.sessionPersistence.load(SessionId(childId!))
@@ -1128,7 +1128,7 @@ describe('dsh-tool-subagent continuable background mode', () => {
     expect(succeeded.isError).toBe(false)
     expect(cancelledChildId).toBeDefined()
     expect(survivingChildId).toBeDefined()
-    expect(ctx.agents.get(cancelledChildId!)).toBeUndefined()
+    expect(ctx.agents.get(cancelledChildId!, 'trusted-internal')).toBeUndefined()
     await expect(ctx.sessionPersistence.load(cancelledChildId!)).rejects.toThrow(/not found/)
 
     expect(succeeded.isError ? undefined : succeeded.value).toEqual({
@@ -1136,7 +1136,7 @@ describe('dsh-tool-subagent continuable background mode', () => {
       subagentId: survivingChildId,
     })
     await vi.waitFor(() => {
-      expect(ctx.agents.get(survivingChildId!)).toBeUndefined()
+      expect(ctx.agents.get(survivingChildId!, 'trusted-internal')).toBeUndefined()
     }, { timeout: 5_000 })
     const loaded = await ctx.sessionPersistence.load(survivingChildId!)
     expect(loaded.events.some(event => event.type === 'subagent/descriptor')).toBe(true)

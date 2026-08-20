@@ -452,7 +452,7 @@ describe('PersistenceCoordinator stored identity', () => {
       await expect(ctx.plugin(Object.assign((inner: Context) => {
         inner.sessions.create(id, { seed: [start], meta: header })
       }, { inject: ['sessions'] }))).rejects.toThrow(/persisted state already owns this identity/)
-      expect(ctx.sessions.get(id)).toBeUndefined()
+      expect(ctx.sessions.get(id, 'trusted-internal')).toBeUndefined()
 
       loadGate.resolve(true)
       const loaded = await loading
@@ -1924,7 +1924,7 @@ describe('SessionPersistence service registration', () => {
       }
 
       await vi.waitFor(() => {
-        expect(ctx.sessions.list()).toHaveLength(0)
+        expect(ctx.sessions.list('trusted-internal')).toHaveLength(0)
         expect({
           states: coordinator.states.size,
           live: coordinator.live.size,

@@ -134,7 +134,7 @@ export class HarnessSdkJsonRpcServer {
     // An agent-loop-only reload disposes the loop's agents while this record
     // survives; a retained agent accepts followup() silently, so validate the
     // record against the live registry before delivery (as the ACP bridge does).
-    if (this.ctx.agents.get(rec.handle.agent.id) !== rec.handle.agent) {
+    if (this.ctx.agents.get(rec.handle.agent.id, 'trusted-internal') !== rec.handle.agent) {
       throw new Error(`session agent was disposed outside the server: ${params.sessionId}`)
     }
     const message = createUserMessage({ content: params.contentBlocks, source: { kind: 'user' } })

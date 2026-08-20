@@ -52,7 +52,7 @@ function childFixture(source: string, fixtureId: string, withContinuation: boole
 
 async function waitForAgentToSettle(scaffold: WebScaffold, id: SessionId): Promise<void> {
   const deadline = Date.now() + 30_000
-  while (scaffold.ctx.agents.get(id) !== undefined) {
+  while (scaffold.ctx.agents.get(id, 'trusted-internal') !== undefined) {
     if (Date.now() >= deadline) throw new Error(`subagent ${id} did not settle`)
     await new Promise<void>(resolve => setTimeout(resolve, 10))
   }
@@ -91,7 +91,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
 
-    const parent = scaffold.ctx.agents.roots()[0]
+    const parent = scaffold.ctx.agents.roots('trusted-internal')[0]
     if (parent === undefined) throw new Error('fresh workspace did not publish its parent Agent')
     const parentSettled = scaffold.whenTurnSettled()
     const parentInput = page.locator('textarea:enabled').first()
@@ -199,9 +199,9 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
       },
     ] as SessionEvent[])
     await scaffold.ctx.sessionProjectionCache.coldSnapshot(grandchildId)
-    expect(scaffold.ctx.agents.get(childId)).toBeUndefined()
-    expect(scaffold.ctx.agents.get(oneShotId)).toBeUndefined()
-    expect(scaffold.ctx.agents.get(grandchildId)).toBeUndefined()
+    expect(scaffold.ctx.agents.get(childId, 'trusted-internal')).toBeUndefined()
+    expect(scaffold.ctx.agents.get(oneShotId, 'trusted-internal')).toBeUndefined()
+    expect(scaffold.ctx.agents.get(grandchildId, 'trusted-internal')).toBeUndefined()
     await expect(scaffold.ctx.subagents.listChildren(parent.id)).resolves.toMatchObject([
       {
         kind: 'child', id: oneShotId, mode: 'one-shot',
@@ -314,8 +314,8 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     await page.waitForTimeout(1_100)
     expect(await childRow.getAttribute('aria-label')).toBe(childLabel)
     await page.getByRole('treeitem', { name: new RegExp(NESTED_LABEL) }).waitFor({ timeout: 15_000 })
-    expect(scaffold.ctx.agents.get(childId)).toBeUndefined()
-    expect(scaffold.ctx.agents.get(grandchildId)).toBeUndefined()
+    expect(scaffold.ctx.agents.get(childId, 'trusted-internal')).toBeUndefined()
+    expect(scaffold.ctx.agents.get(grandchildId, 'trusted-internal')).toBeUndefined()
     const snapshot = await captureStableAria(
       page,
       '[role="tree"][aria-label="Subagent sessions"]',
@@ -333,7 +333,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
       () => page.getByText(INITIAL_PROMPT, { exact: true }).count(),
       { timeout: 15_000 },
     ).toBe(1)
-    if (scaffold.ctx.agents.get(childId) !== undefined) {
+    if (scaffold.ctx.agents.get(childId, 'trusted-internal') !== undefined) {
       throw new Error(`viewing the child activated it; API calls: ${apiCalls.join(', ')}`)
     }
     const hierarchy = page.getByRole('navigation', { name: 'Session hierarchy' })
@@ -364,12 +364,12 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     await input.fill(FOLLOWUP)
     await input.press('Enter')
     await expect.poll(
-      () => scaffold.ctx.agents.get(childId)?.status,
+      () => scaffold.ctx.agents.get(childId, 'trusted-internal')?.status,
       { timeout: 10_000 },
     ).toBe('running')
     await ended
     await expect.poll(() => page.getByText(FOLLOWUP, { exact: true }).count(), { timeout: 10_000 }).toBe(1)
-    await expect.poll(() => scaffold.ctx.agents.get(childId), { timeout: 10_000 }).toBeUndefined()
+    await expect.poll(() => scaffold.ctx.agents.get(childId, 'trusted-internal'), { timeout: 10_000 }).toBeUndefined()
     expect(await page.getByRole('button', { name: 'Stop generating' }).count()).toBe(0)
   })
 
@@ -414,8 +414,8 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     const hierarchy = page.getByRole('navigation', { name: 'Session hierarchy' })
     const crumbs = await hierarchy.getByRole('button').allTextContents()
     expect(crumbs.slice(-2)).toEqual([LABEL, NESTED_LABEL])
-    expect(scaffold.ctx.agents.get(childId)).toBeUndefined()
-    expect(scaffold.ctx.agents.get(grandchildId)).toBeUndefined()
+    expect(scaffold.ctx.agents.get(childId, 'trusted-internal')).toBeUndefined()
+    expect(scaffold.ctx.agents.get(grandchildId, 'trusted-internal')).toBeUndefined()
     await compareOrRefreshGolden(
       UNAVAILABLE_GRANDCHILD_EXPECTED,
       await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd),
@@ -432,7 +432,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     await page.getByRole('button', { name: '3 subagents' }).click()
     await page.getByRole('treeitem', { name: new RegExp(ONE_SHOT_LABEL) }).click()
     await page.getByText('One-shot tasks do not accept follow-ups; review the full execution record here.').waitFor()
-    expect(scaffold.ctx.agents.get(oneShotId)).toBeUndefined()
+    expect(scaffold.ctx.agents.get(oneShotId, 'trusted-internal')).toBeUndefined()
   })
 
   it('places an ordinary fork from a subagent beside its workspace-owning ancestor', async () => {
@@ -469,7 +469,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     await page.getByRole('button', { name: '3 subagents' }).click()
     await page.getByRole('treeitem', { name: new RegExp(LABEL) }).click()
     await page.locator('textarea:enabled').first().waitFor()
-    expect(scaffold.ctx.agents.get(childId)).toBeUndefined()
+    expect(scaffold.ctx.agents.get(childId, 'trusted-internal')).toBeUndefined()
 
     const forkResponse = page.waitForResponse(response =>
       new URL(response.url()).pathname === '/api/session.fork')
@@ -480,7 +480,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     expect(forkReceipt.result).toMatchObject({ ok: true })
     if (!forkReceipt.result.ok) return
     const forkId = sessionId(forkReceipt.result.value.sessionId)
-    await expect.poll(() => scaffold.ctx.agents.get(forkId)).not.toBeUndefined()
+    await expect.poll(() => scaffold.ctx.agents.get(forkId, 'trusted-internal')).not.toBeUndefined()
 
     await sessions.getByRole('treeitem', { name: /Ask a research subagent to/ }).click()
     await page.getByRole('button', { name: '3 subagents' }).click()
@@ -503,7 +503,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
         && event.data.content.some(block => block.type === 'text' && block.text === POST_FORK_FOLLOWUP))
       return messageIndex >= 0 && loaded.events.slice(messageIndex + 1).some(event => event.type === 'turn/end')
     }, { timeout: 30_000 }).toBe(true)
-    expect(scaffold.ctx.agents.get(forkId)).not.toBeUndefined()
-    await expect.poll(() => scaffold.ctx.agents.get(childId), { timeout: 10_000 }).toBeUndefined()
+    expect(scaffold.ctx.agents.get(forkId, 'trusted-internal')).not.toBeUndefined()
+    await expect.poll(() => scaffold.ctx.agents.get(childId, 'trusted-internal'), { timeout: 10_000 }).toBeUndefined()
   })
 })

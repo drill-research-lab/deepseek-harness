@@ -330,8 +330,8 @@ describe('workspace.insertBefore', () => {
     const listWorkspaces = vi.spyOn(ctx.workspaceRegistry, 'list')
     const stream: AsyncIterator<RpcRequest<HostFrame>> =
       api.events.host(request({}), abort.signal)[Symbol.asyncIterator]()
-    expect(listWorkspaces).toHaveBeenCalledTimes(1)
     const changed = nextHostFrame(stream)
+    await vi.waitFor(() => { expect(listWorkspaces).toHaveBeenCalledTimes(1) })
     const reordered = expectOk(await api.workspace.insertBefore(request({
       workspaceId: first.workspaceId,
       beforeWorkspaceId: second.workspaceId,
@@ -372,7 +372,7 @@ describe('session creation and Workspace membership', () => {
     expectOk(await api.sessions.create(request({ workspaceId: workspace.workspaceId, sessionId })))
     expectOk(await api.sessions.create(request({ workspaceId: workspace.workspaceId, sessionId })))
     expect(expectOk(await api.workspace.list(request({}))).items[0]?.sessionIds).toEqual([sessionId])
-    expect(ctx.agents.list().filter(agent => agent.id === sessionId)).toHaveLength(1)
+    expect(ctx.agents.list('trusted-internal').filter(agent => agent.id === sessionId)).toHaveLength(1)
 
     const ungrouped = SessionId('session-cwd-only')
     expectOk(await api.sessions.create(request({ cwd: workspace.path, sessionId: ungrouped })))
@@ -404,7 +404,7 @@ describe('session creation and Workspace membership', () => {
       ok: false,
       error: { code: 'workspace-attach-failed', details: { sessionId, workspaceId: created.workspaceId } },
     })
-    expect(ctx.agents.get(sessionId)).toBeDefined()
+    expect(ctx.agents.get(sessionId, 'trusted-internal')).toBeDefined()
 
     expectOk(await api.sessions.create(request({ workspaceId: created.workspaceId, sessionId })))
     expect(expectOk(await api.workspace.list(request({}))).items[0]?.sessionIds).toEqual([sessionId])
@@ -511,7 +511,7 @@ describe('Host Workspace increments', () => {
     })
     expect(expectOk(await api.workspace.list(request({}))).items).toEqual([])
     expect(expectOk(await api.sessions.list(request({}))).items.map(item => item.sessionId)).toContain(sessionId)
-    expect(ctx.agents.get(sessionId)).toBeDefined()
+    expect(ctx.agents.get(sessionId, 'trusted-internal')).toBeDefined()
     expect(existsSync(workspace.path)).toBe(true)
 
     const missing = await api.workspace.delete(request({ workspaceId: workspace.workspaceId }))

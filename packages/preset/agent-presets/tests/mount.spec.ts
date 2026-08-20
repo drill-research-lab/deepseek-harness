@@ -148,7 +148,7 @@ describe('composing an agent from a preset', () => {
 
     await handle.dispose()
 
-    expect(ctx.agents.get(SessionId('sess-gone'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('sess-gone'), 'trusted-internal')).toBeUndefined()
     expect(toolNames(ctx, survivor)).toEqual(['beta'])
     expect(toolNames(ctx)).toEqual([])
   })
@@ -236,7 +236,7 @@ describe('rejecting a composition that cannot be used', () => {
   it('rolls the whole agent back when a row fails to load', async () => {
     await expect(agentOn(ctx, 'sess-broken', 'broken')).rejects.toThrow(/failed to mount/)
 
-    expect(ctx.agents.get(SessionId('sess-broken'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('sess-broken'), 'trusted-internal')).toBeUndefined()
     expect(toolNames(ctx)).toEqual([])
   })
 
@@ -695,7 +695,7 @@ describe('editing a composition file', () => {
     // The mount exists for the reader; no agent, session, or turn started.
     expect(key).toEqual({ agentPreset: 'cold-read' })
     expect(livePresetMounts().filter(mount => mount.presetId === 'cold-read')).toHaveLength(1)
-    expect(scoped.agents.get(SessionId('cold-read'))).toBeUndefined()
+    expect(scoped.agents.get(SessionId('cold-read'), 'trusted-internal')).toBeUndefined()
     // A second reader resolves the same generation, not a new mount.
     expect(await scoped.agentPresets.standingKeyFor('cold-read')).toBe(key)
   })

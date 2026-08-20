@@ -105,7 +105,7 @@ describe('dsh-acp-demo composition', () => {
     expect(ctx.get('goals')).toBeDefined()
     expect(ctx.get('tools')?.get('get_goal')).toBeDefined()
     // No pre-created agents — ACP session/new creates them on demand.
-    expect(ctx.get('agents')!.list()).toHaveLength(0)
+    expect(ctx.get('agents')!.list('trusted-internal')).toHaveLength(0)
     await ctx.fiber.dispose()
   })
 
