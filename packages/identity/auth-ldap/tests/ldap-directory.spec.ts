@@ -21,6 +21,7 @@ async function mounted(): Promise<{ directory: LdapDirectory; dispose(): Promise
       const value = SETTINGS[String(ref)]
       return value === undefined ? undefined : { value, source: 'test' }
     },
+    reserveDeployment: () => {},
   } as unknown as CredentialProvider)
   const fiber = ctx.plugin(LdapDirectory)
   await fiber.await()

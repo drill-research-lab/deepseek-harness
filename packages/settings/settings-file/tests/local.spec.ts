@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { OwnershipService, UserHome } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal } from '@deepseek-ai/dsh-ownership'
 import { FileSettingsProvider, resolveSpec } from '../src/index.ts'
 
 interface ThemeConfig {
@@ -19,6 +21,29 @@ const ThemeSchema: z<ThemeConfig> = z.object({
 })
 
 const cleanups: Array<() => Promise<void>> = []
+
+class MutableTestOwnership extends OwnershipService {
+  principal?: OwnerPrincipal
+  constructor(ctx: Context, private readonly usersRoot: string) { super(ctx) }
+  currentPrincipal(): OwnerPrincipal {
+    if (this.principal === undefined) throw new Error('no test principal')
+    return this.principal
+  }
+  currentPrincipalOrUndefined(): OwnerPrincipal | undefined { return this.principal }
+  backgroundPrincipal(userId: OwnerPrincipal['userId']): OwnerPrincipal {
+    return { userId, source: 'background' }
+  }
+  async resolveUserHome(principal: OwnerPrincipal): Promise<UserHome> {
+    const root = join(this.usersRoot, String(principal.userId).replaceAll(':', '-'))
+    await mkdir(root, { recursive: true })
+    return new UserHome(principal, {
+      schemaVersion: 1,
+      userId: principal.userId,
+      createdAt: '2026-08-19T00:00:00.000Z',
+      updatedAt: '2026-08-19T00:00:00.000Z',
+    }, root)
+  }
+}
 
 afterEach(async () => {
   while (cleanups.length > 0) await cleanups.pop()!()
@@ -47,6 +72,42 @@ describe('resolveSpec', () => {
 })
 
 describe('boot and reads', () => {
+  it('keeps Alice and Bob settings documents and revisions independent', async () => {
+    const dir = await tempDir()
+    const ctx = new Context()
+    const ownershipFiber = ctx.plugin(MutableTestOwnership, join(dir, 'users'))
+    await ownershipFiber
+    const settingsFiber = ctx.plugin(FileSettingsProvider, {
+      path: join(dir, 'deployment-settings.yaml'),
+      watch: false,
+    })
+    await settingsFiber
+    cleanups.push(async () => { await settingsFiber.dispose(); await ownershipFiber.dispose() })
+    const ns = settingsNamespace('ui-theme')
+    ctx.settings.register(ns, ThemeSchema)
+    const ownership = ctx.ownership as MutableTestOwnership
+    const alice = { userId: 'ldap:test-alice' as OwnerPrincipal['userId'], source: 'request' as const }
+    const bob = { userId: 'ldap:test-bob' as OwnerPrincipal['userId'], source: 'request' as const }
+
+    ownership.principal = alice
+    await ctx.settings.updateOwned(ns, { theme: 'light' })
+    expect((await ctx.settings.describeOwned()).find(row => row.ns === ns)).toMatchObject({
+      value: { theme: 'light', fontSize: 14 },
+      revision: 1,
+    })
+    ownership.principal = bob
+    await ctx.settings.updateOwned(ns, { fontSize: 20 })
+    expect((await ctx.settings.describeOwned()).find(row => row.ns === ns)).toMatchObject({
+      value: { theme: 'dark', fontSize: 20 },
+      revision: 1,
+    })
+    ownership.principal = alice
+    expect((await ctx.settings.describeOwned()).find(row => row.ns === ns)).toMatchObject({
+      value: { theme: 'light', fontSize: 14 },
+      revision: 1,
+    })
+  })
+
   it('resolves defaults over an absent file and reports writable', async () => {
     const dir = await tempDir()
     const path = join(dir, 'settings.yaml')

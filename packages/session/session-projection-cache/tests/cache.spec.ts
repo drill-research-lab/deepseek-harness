@@ -15,8 +15,32 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
+import { OwnershipService } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal, UserHome } from '@deepseek-ai/dsh-ownership'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import SessionProjectionCache from '../src/index.ts'
+
+class TestOwnership extends OwnershipService {
+  principal: OwnerPrincipal | undefined
+
+  currentPrincipal(): OwnerPrincipal {
+    if (this.principal === undefined) throw new Error('no test owner')
+    return this.principal
+  }
+
+  currentPrincipalOrUndefined(): OwnerPrincipal | undefined { return this.principal }
+
+  backgroundPrincipal(userId: OwnerPrincipal['userId']): OwnerPrincipal {
+    return { userId, source: 'background' }
+  }
+
+  resolveUserHome(): Promise<UserHome> {
+    throw new Error('not used by these tests')
+  }
+}
+
+const alice = { userId: 'ldap:test-alice' as OwnerPrincipal['userId'], source: 'request' as const }
+const bob = { userId: 'ldap:test-bob' as OwnerPrincipal['userId'], source: 'request' as const }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionMap {
@@ -66,6 +90,7 @@ interface HarnessOptions {
   config?: { writeEveryEvents: number; writeIntervalMs: number }
   stateVersion?: number
   logs?: Map<string, SessionEvent[]>
+  ownership?: boolean
 }
 
 const contexts: Context[] = []
@@ -85,8 +110,12 @@ async function harness(options: HarnessOptions = {}) {
   ctx.sessionProjections.register(marksUnit(options.stateVersion))
   const persistence = fakePersistence(logs)
   ctx.provide('sessionPersistence', persistence as never)
+  if (options.ownership === true) await ctx.plugin(TestOwnership)
   const fiber = await ctx.plugin(SessionProjectionCache, options.config ?? { writeEveryEvents: 100, writeIntervalMs: 60_000 })
-  return { ctx, pool, logs, fiber, persistence, cache: ctx.sessionProjectionCache }
+  return {
+    ctx, pool, logs, fiber, persistence, cache: ctx.sessionProjectionCache,
+    ownership: ctx.get('ownership') as TestOwnership | undefined,
+  }
 }
 
 const mark = (session: Session, marks: string[]): SessionEvent =>
@@ -235,9 +264,9 @@ describe('SessionProjectionCache cold read', () => {
     pool: MemoryMediaPool,
     id: string,
     row: { ver: number; seq: number; val: unknown },
-    identity: { createdAt: number; cwd?: string } = { createdAt: 0 },
+    identity: { createdAt: number; cwd?: string; ownerUserId?: OwnerPrincipal['userId'] } = { createdAt: 0 },
   ): void {
-    pool.versions.set('session_projcache', 3)
+    pool.versions.set('session_projcache', 4)
     pool.media.set('session_projcache', {
       tables: new Map([['sessions', new Map([[id, { identity, rows: { 'cache-test/marks': row } }]])]]),
       global: null,
@@ -259,6 +288,29 @@ describe('SessionProjectionCache cold read', () => {
     // Write-back: the stored row advanced to the served cut.
     expect(storedRows(samePool, id)?.['cache-test/marks'])
       .toEqual({ ver: 1, seq: 3, val: { marks: ['a', 'b'] } })
+  })
+
+  it('never serves a cached row across owners: revalidates owner before using it', async () => {
+    const pool = new MemoryMediaPool()
+    const logs = new Map([['owner-mixed', storedLog([['a'], ['a', 'b']])]])
+    // Alice's checkpoint at watermark 1 (only ['a'] folded).
+    seedRow(pool, 'owner-mixed', { ver: 1, seq: 1, val: { marks: ['a'] } }, { createdAt: 0, ownerUserId: alice.userId })
+    const { cache, persistence, ownership } = await harness({ pool, logs, ownership: true })
+    const id = SessionId('owner-mixed')
+
+    ownership!.principal = alice
+    const aliceSnapshot = await cache.coldSnapshot(id)
+    expect(aliceSnapshot.values['cache-test/marks']).toEqual({ marks: ['a', 'b'] })
+    // Alice's read used the cache row: bounded tail from the anchored floor.
+    expect(persistence.readFrom).toHaveBeenCalledWith(id, 1, undefined)
+    persistence.readFrom.mockClear()
+
+    ownership!.principal = bob
+    const bobSnapshot = await cache.coldSnapshot(id)
+    expect(bobSnapshot.values['cache-test/marks']).toEqual({ marks: ['a', 'b'] })
+    // Bob must never observe Alice's cache row: this reads as an unversioned
+    // miss and refolds the FULL log from 0, not from her floor.
+    expect(persistence.readFrom).toHaveBeenCalledWith(id, 0, undefined)
   })
 
   it('discards a version-mismatched row and refolds the full log', async () => {

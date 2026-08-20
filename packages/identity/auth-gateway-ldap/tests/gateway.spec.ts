@@ -78,6 +78,7 @@ async function mounted() {
       const value = values[String(ref)]
       return value === undefined ? undefined : { value, source: 'test' }
     },
+    reserveDeployment: () => {},
   } as unknown as CredentialProvider)
   ctx.provide('ldapDirectory', { authenticate } as unknown as LdapDirectory)
   ctx.provide('localAccounts', { authenticate: authenticateLocal, create: createLocal } as unknown as LocalAccountStore)
@@ -115,6 +116,7 @@ async function verifier(publicKey: string, sessionDirectory: string) {
       const value = values[String(ref)]
       return value === undefined ? undefined : { value, source: 'test' }
     },
+    reserveDeployment: () => {},
   } as unknown as CredentialProvider)
   const fiber = ctx.plugin(ExternalCookieAuthService, { sessionDirectory })
   await fiber.await()

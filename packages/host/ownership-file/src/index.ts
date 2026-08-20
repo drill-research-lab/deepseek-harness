@@ -178,9 +178,14 @@ export class FileOwnershipService extends OwnershipService {
   }
 
   currentPrincipal(): OwnerPrincipal {
+    const principal = this.currentPrincipalOrUndefined()
+    if (principal === undefined) throw new Error('host-ownership-file: no authenticated request owner')
+    return principal
+  }
+
+  currentPrincipalOrUndefined(): OwnerPrincipal | undefined {
     const user = this.ctx.auth.currentUser()
-    if (user === undefined) throw new Error('host-ownership-file: no authenticated request owner')
-    return { userId: user.userId, source: 'request' }
+    return user === undefined ? undefined : { userId: user.userId, source: 'request' }
   }
 
   backgroundPrincipal(userId: AuthenticatedUserId): OwnerPrincipal {

@@ -200,6 +200,7 @@ export class LdapAuthGateway extends Service {
       const privateKeyRef = credentialRef(config.privateKeyRef ?? 'AUTH_COOKIE_PRIVATE_KEY')
       const issuerRef = credentialRef(config.issuerRef ?? 'AUTH_COOKIE_ISSUER')
       const audienceRef = credentialRef(config.audienceRef ?? 'AUTH_COOKIE_AUDIENCE')
+      for (const ref of [privateKeyRef, issuerRef, audienceRef]) ctx.credentials.reserveDeployment(ref)
       const [key, issuer, audience] = await Promise.all([
         ctx.credentials.resolve(privateKeyRef),
         ctx.credentials.resolve(issuerRef),

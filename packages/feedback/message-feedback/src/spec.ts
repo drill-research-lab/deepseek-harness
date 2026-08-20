@@ -6,6 +6,7 @@
 import { z } from 'zod'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { authenticatedUserId } from '@deepseek-ai/dsh-auth'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import type { MessageFeedbackItem, MessageFeedbackRating, MessageFeedbackVersion } from './types.ts'
 
@@ -40,6 +41,7 @@ export const messageFeedbackItemSchema = z.object({
 
 /** Persisted Session fields that fence a sidecar row to one log lifecycle. */
 export const messageFeedbackSessionIdentitySchema = z.object({
+  ownerUserId: z.string().transform(authenticatedUserId).optional(),
   createdAt: nonNegativeSafeInteger,
   cwd: z.string().optional(),
 })
@@ -83,7 +85,7 @@ export type MessageFeedbackRow = z.infer<typeof messageFeedbackRowSchema>
 /** One lifecycle-bound sidecar record per Session id. */
 export const messageFeedbackDomainSpec = defineDomain({
   name: 'message_feedback',
-  version: 0,
+  version: 1,
   tables: {
     sessions: domainTable<SessionId, MessageFeedbackRow>(messageFeedbackRowSchema),
   },

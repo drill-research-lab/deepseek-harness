@@ -7,6 +7,8 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY } from '@deepseek-ai/dsh-launch-environment'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { LocalCredentialProvider, resolveSpec } from '../src/index.ts'
+import { OwnershipService, UserHome } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal } from '@deepseek-ai/dsh-ownership'
 
 /** Credential documents are seeded owner-only, exactly as the provider creates them. */
 function writeCredentials(file: string, text: string): Promise<void> {
@@ -39,6 +41,30 @@ async function boot(config: ConstructorParameters<typeof LocalCredentialProvider
   return ctx
 }
 
+class TestOwnership extends OwnershipService {
+  principal: OwnerPrincipal | undefined
+
+  constructor(ctx: Context, private readonly usersRoot: string) { super(ctx) }
+  currentPrincipal(): OwnerPrincipal {
+    if (this.principal === undefined) throw new Error('no test owner')
+    return this.principal
+  }
+  currentPrincipalOrUndefined(): OwnerPrincipal | undefined { return this.principal }
+  backgroundPrincipal(userId: OwnerPrincipal['userId']): OwnerPrincipal {
+    return { userId, source: 'background' }
+  }
+  async resolveUserHome(principal: OwnerPrincipal): Promise<UserHome> {
+    const root = join(this.usersRoot, String(principal.userId).replaceAll(':', '-'))
+    await mkdir(root, { recursive: true })
+    return new UserHome(principal, {
+      schemaVersion: 1,
+      userId: principal.userId,
+      createdAt: '2026-08-19T00:00:00.000Z',
+      updatedAt: '2026-08-19T00:00:00.000Z',
+    }, root)
+  }
+}
+
 function updates(ctx: Context): CredentialRef[] {
   const seen: CredentialRef[] = []
   ctx.on('credentials/updated', (ref) => {
@@ -60,6 +86,70 @@ describe('resolveSpec', () => {
 })
 
 describe('layering and reads', () => {
+  it('separates user application credentials while deployment refs remain bootstrap-only', async () => {
+    const dir = await tempDir()
+    const ctx = new Context()
+    const credentialsFiber = ctx.plugin(LocalCredentialProvider, {
+      path: join(dir, '.credentials.yaml'), watch: false,
+    })
+    await credentialsFiber
+    const deploymentRef = credentialRef('AUTH_COOKIE_PUBLIC_KEY')
+    ctx.credentials.reserveDeployment(deploymentRef)
+    await ctx.credentials.set(deploymentRef, 'deployment-key')
+
+    const ownershipFiber = ctx.plugin(TestOwnership, dir)
+    await ownershipFiber
+    const ownership = ctx.ownership as TestOwnership
+    const alice = { userId: 'ldap:test-alice' as OwnerPrincipal['userId'], source: 'request' as const }
+    const bob = { userId: 'ldap:test-bob' as OwnerPrincipal['userId'], source: 'request' as const }
+
+    ownership.principal = alice
+    await ctx.credentials.set(KEY, 'alice-key')
+    expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'alice-key', source: 'user-file' })
+    await expect(ctx.credentials.set(deploymentRef, 'forged')).rejects.toThrow(/deployment credential/)
+    expect(await ctx.credentials.resolve(deploymentRef)).toEqual({ value: 'deployment-key', source: 'file' })
+
+    ownership.principal = bob
+    expect(await ctx.credentials.resolve(KEY)).toBeUndefined()
+    await ctx.credentials.set(KEY, 'bob-key')
+    expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'bob-key', source: 'user-file' })
+
+    ownership.principal = alice
+    expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'alice-key', source: 'user-file' })
+
+    cleanups.push(async () => { await ownershipFiber.dispose() })
+    cleanups.push(async () => { await credentialsFiber.dispose() })
+  })
+
+  it('lets only the inherited environment shadow a user-scoped credential, read-only', async () => {
+    const dir = await tempDir()
+    const ctx = new Context()
+    const credentialsFiber = ctx.plugin(LocalCredentialProvider, {
+      path: join(dir, '.credentials.yaml'), watch: false,
+    })
+    await credentialsFiber
+    const ownershipFiber = ctx.plugin(TestOwnership, dir)
+    await ownershipFiber
+    const ownership = ctx.ownership as TestOwnership
+    const alice = { userId: 'ldap:test-alice' as OwnerPrincipal['userId'], source: 'request' as const }
+    ownership.principal = alice
+
+    await ctx.credentials.set(KEY, 'alice-key')
+    expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'alice-key', source: 'user-file' })
+
+    vi.stubEnv('DSH_CRED_TEST', 'from-shell')
+    // The inherited environment must win over a value the authenticated user
+    // already stored in their own application-credential document — it must
+    // never be silently shadowed by a per-user write.
+    expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'from-shell', source: 'env' })
+    expect(await ctx.credentials.describe(KEY)).toEqual({ configured: true, source: 'env', writable: false })
+    await expect(ctx.credentials.set(KEY, 'next')).rejects.toThrow(/shadowed/)
+    await expect(ctx.credentials.unset(KEY)).rejects.toThrow(/shadowed/)
+
+    cleanups.push(async () => { await ownershipFiber.dispose() })
+    cleanups.push(async () => { await credentialsFiber.dispose() })
+  })
+
   it('treats an absent file as an empty writable store', async () => {
     const dir = await tempDir()
     const ctx = await boot({ path: join(dir, '.credentials.yaml'), watch: false })
