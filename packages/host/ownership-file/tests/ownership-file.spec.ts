@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it } from 'vitest'
 import { AuthService, authenticatedUserId, type AuthenticatedUser } from '@deepseek-ai/dsh-auth'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import {
   FileOwnershipService,
   FileUserHomeResolver,
@@ -139,10 +140,10 @@ describe('owner identity and user-home mapping', () => {
     expect(home.path('sessions', 'one.json')).toContain('sessions')
   })
 
-  it('resolves explicit and environment users roots without accepting blank overrides', () => {
-    expect(resolveUsersRoot('/srv/dsh-users', {})).toBe('/srv/dsh-users')
-    expect(resolveUsersRoot(undefined, { DSH_USERS_HOME: '/srv/env-users' })).toBe('/srv/env-users')
-    expect(resolveUsersRoot(undefined, { DSH_USERS_HOME: ' ', DSH_HOME: '/srv/dsh' })).toBe('/srv/dsh/users')
+  it('resolves only the configured users root and rejects blank overrides', () => {
+    expect(resolveUsersRoot('/srv/dsh-users')).toBe('/srv/dsh-users')
+    expect(resolveUsersRoot('')).toBe(join(resolveDshHome(), 'users'))
+    expect(resolveUsersRoot(' ')).toBe(join(resolveDshHome(), 'users'))
   })
 })
 

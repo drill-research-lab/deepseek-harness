@@ -28,16 +28,11 @@ export const Config: z<Config> = z.object({ usersRoot: z.string().default('') })
 /**
  * Resolve the deployment-owned users root.
  * @param configured - Explicit plugin configuration.
- * @param env - Environment mapping containing optional DSH overrides.
  * @returns An absolute users-root path.
  */
-export function resolveUsersRoot(
-  configured?: string,
-  env: Record<string, string | undefined> = process.env,
-): string {
-  const selected = configured ?? env.DSH_USERS_HOME
-  if (selected !== undefined && selected.trim().length > 0) return resolve(selected)
-  return join(resolveDshHome(undefined, env), 'users')
+export function resolveUsersRoot(configured?: string): string {
+  if (configured !== undefined && configured.trim().length > 0) return resolve(configured)
+  return join(resolveDshHome(), 'users')
 }
 
 /**
