@@ -7,6 +7,7 @@ import { Buffer } from 'node:buffer'
 import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import s from '@deepseek-ai/schemastery'
+import { ownedSession } from '@deepseek-ai/dsh-session'
 import { deriveEventMessage, isAppendSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionInspection } from '@deepseek-ai/dsh-session-persistence'
@@ -100,6 +101,7 @@ function rejected<E extends MessageFeedbackFailure>(error: E): MessageFeedbackRe
 /** Project the Session fields that distinguish one persisted log lifecycle. */
 function identityOf(header: SessionHeader): MessageFeedbackSessionIdentity {
   return Object.freeze({
+    ...(header.ownerUserId === undefined ? {} : { ownerUserId: header.ownerUserId }),
     createdAt: header.createdAt,
     ...(header.cwd === undefined ? {} : { cwd: header.cwd }),
   })
@@ -107,12 +109,15 @@ function identityOf(header: SessionHeader): MessageFeedbackSessionIdentity {
 
 /** Whether a stored row belongs to the inspected Session lifecycle. */
 function sameIdentity(row: MessageFeedbackRow, header: SessionHeader): boolean {
-  return row.session.createdAt === header.createdAt && row.session.cwd === header.cwd
+  return row.session.ownerUserId === header.ownerUserId
+    && row.session.createdAt === header.createdAt && row.session.cwd === header.cwd
 }
 
 /** Whether two observations name the same persisted Session lifecycle. */
 function sameHeaderIdentity(left: SessionHeader, right: SessionHeader): boolean {
-  return left.id === right.id && left.createdAt === right.createdAt && left.cwd === right.cwd
+  return left.id === right.id
+    && left.ownerUserId === right.ownerUserId
+    && left.createdAt === right.createdAt && left.cwd === right.cwd
 }
 
 /** Freeze the replacement row so storage-domain never exposes mutable aliases. */
@@ -301,10 +306,10 @@ export class MessageFeedbackService extends TypertRemoteService {
    * guessed into the business `session-not-found` branch.
    */
   private async inspectSession(sessionId: SessionId): Promise<KnownSession> {
-    if (this.ctx.sessions.get(sessionId) === undefined) {
+    if (ownedSession(this.ctx, sessionId) === undefined) {
       const snapshots = await this.ctx.sessionPersistence.listSnapshots()
       if (!snapshots.some(snapshot => snapshot.header.id === sessionId)
-        && this.ctx.sessions.get(sessionId) === undefined) {
+        && ownedSession(this.ctx, sessionId) === undefined) {
         return rejected({ code: 'session-not-found', sessionId })
       }
     }
@@ -326,7 +331,7 @@ export class MessageFeedbackService extends TypertRemoteService {
    * cold owner is re-read from the physical durable prefix.
    */
   private async ensureTargetDurable(inspection: SessionInspection): Promise<SessionInspection> {
-    const live = this.ctx.sessions.get(inspection.meta.id)
+    const live = this.ctx.sessions.get(inspection.meta.id, 'trusted-internal')
     if (live !== undefined && sameHeaderIdentity(live.header, inspection.meta)) {
       if (!(await this.ctx.sessions.flush(live))) {
         throw new Error(

@@ -79,7 +79,7 @@ async function startChild(ctx: Context, parent: Agent, prompt = 'child task') {
     signal: testSignal,
   })
   const child = await vi.waitFor(() => {
-    const live = ctx.agents.get(started.childId)
+    const live = ctx.agents.get(started.childId, 'trusted-internal')
     expect(live).toBeDefined()
     return live as Agent
   })
@@ -168,7 +168,7 @@ describe('dsh-tool-subagent-report', () => {
       signal: testSignal,
     })
     const child = await vi.waitFor(() => {
-      const live = ctx.agents.get(started.childId)
+      const live = ctx.agents.get(started.childId, 'trusted-internal')
       expect(live).toBeDefined()
       return live as Agent
     })
@@ -238,7 +238,7 @@ describe('dsh-tool-subagent-report', () => {
 
     adapter.release()
     await vi.waitFor(() => {
-      expect(ctx.agents.get(started.childId) === undefined).toBe(true)
+      expect(ctx.agents.get(started.childId, 'trusted-internal') === undefined).toBe(true)
     }, { timeout: 5_000 })
     expect(reports(parent).map(report => report.text)).toEqual([
       `Background subagent ${started.childId} reported:\nDURABLE_SELECTION`,
@@ -267,7 +267,7 @@ describe('dsh-tool-subagent-report', () => {
     const { started: grandchildStart, child: grandchild } = await startChild(ctx, child, 'inner task')
 
     expect((await callReport(ctx, grandchild, 'WAKE_PARENT_CHILD')).isError).toBe(false)
-    expect(ctx.agents.get(child.id)).toBe(child)
+    expect(ctx.agents.get(child.id, 'trusted-internal')).toBe(child)
 
     adapter.release()
     await vi.waitFor(() => { expect(reports(child)).toHaveLength(1) })
@@ -457,7 +457,7 @@ describe('dsh-tool-subagent-report', () => {
     })).rejects.toMatchObject({ code: 'ACTIVATION_SETUP_REVOKED' })
     removeListener()
     expect(announced).toEqual([])
-    expect(ctx.agents.list().map(agent => agent.id)).toEqual([parent.id])
+    expect(ctx.agents.list('trusted-internal').map(agent => agent.id)).toEqual([parent.id])
   })
 
   it('rolls back materialization when setup revocation lands before publication', async () => {
@@ -484,8 +484,8 @@ describe('dsh-tool-subagent-report', () => {
     removeListener()
     expect(installed).toBe(false)
     expect(announced).toEqual([])
-    expect(ctx.agents.list().map(agent => agent.id)).toEqual([parent.id])
-    expect(ctx.sessions.list()).toEqual([parent.session])
+    expect(ctx.agents.list('trusted-internal').map(agent => agent.id)).toEqual([parent.id])
+    expect(ctx.sessions.list('trusted-internal')).toEqual([parent.session])
   })
 
   it('accepts a report into a host-disposing but still-registered parent', async () => {
@@ -546,7 +546,7 @@ describe('dsh-tool-subagent-report result independence', () => {
     const { started } = await startChild(ctx, parent)
     adapter.release()
     await vi.waitFor(() => {
-      expect(ctx.agents.get(started.childId) === undefined).toBe(true)
+      expect(ctx.agents.get(started.childId, 'trusted-internal') === undefined).toBe(true)
     }, { timeout: 5_000 })
 
     // The parent does learn the child settled — that account is the

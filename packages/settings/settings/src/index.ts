@@ -348,6 +348,11 @@ interface SettingsRegistration {
  * detection, and the `settings/updated` commit event.
  */
 export abstract class SettingsProvider extends Service {
+  private readonly ownedDocumentWatchers = new Set<(
+    ownerUserId: string,
+    ns: SettingsNamespace,
+    revision: number,
+  ) => void>()
   private readonly registrations = new Map<SettingsNamespace, SettingsRegistration>()
   /** Latest published raw document; empty until the provider's first publish. */
   private document: Record<string, unknown> = {}
@@ -477,10 +482,25 @@ export abstract class SettingsProvider extends Service {
    * @returns one descriptor per registered namespace, in registration order.
    */
   describe(options?: SettingsDescribeOptions): SettingsDescriptor[] {
+    return this.describeDocument(
+      this.document,
+      ns => this.registrations.get(ns)?.revision ?? 0,
+      options,
+      true,
+    )
+  }
+
+  /** Describe registered namespaces from an owner-specific raw document. */
+  protected describeDocument(
+    document: Record<string, unknown>,
+    revision: (ns: SettingsNamespace) => number,
+    options?: SettingsDescribeOptions,
+    useCommittedValue = false,
+  ): SettingsDescriptor[] {
     return [...this.registrations.values()].map((registration) => {
       let user: Record<string, unknown> | undefined
       try {
-        user = this.section(registration.ns)
+        user = this.sectionFrom(document, registration.ns)
       } catch {
         // A malformed stored section already warned at publish and kept the
         // last good resolved value; only that malformed shape can throw here,
@@ -492,8 +512,10 @@ export abstract class SettingsProvider extends Service {
       const descriptor: SettingsDescriptor = {
         ns: registration.ns,
         schema: registration.schema.toJSON(),
-        value: registration.resolved,
-        revision: registration.revision,
+        value: useCommittedValue
+          ? registration.resolved
+          : deepFreeze(this.resolve(registration.schema, registration.base, user, registration.validate)),
+        revision: revision(registration.ns),
         ...base === undefined ? {} : { base },
         ...detachedUser === undefined ? {} : { user: detachedUser },
         applies: registration.applies,
@@ -509,6 +531,118 @@ export abstract class SettingsProvider extends Service {
         secrets: redacted.secrets,
       }
     })
+  }
+
+  /**
+   * Owner-aware configuration-surface read; providers without owner storage fall back to {@link describe}'s deployment document.
+   * @param options - redaction switch; wire surfaces must redact.
+   * @returns one descriptor per registered namespace, in registration order.
+   */
+  describeOwned(options?: SettingsDescribeOptions): Promise<SettingsDescriptor[]> {
+    return Promise.resolve(this.describe(options))
+  }
+
+  /**
+   * Owner-aware merge; providers without owner storage fall back to {@link update}'s deployment document.
+   * @param ns - the registered namespace to update.
+   * @param patch - plain-object patch over the user section.
+   * @param expectedRevision - the descriptor `revision` the caller read; a
+   *   namespace that moved past it rejects with {@link SettingsConflictError}.
+   */
+  updateOwned(ns: SettingsNamespace, patch: object, expectedRevision?: number): Promise<void> {
+    return this.update(ns, patch, expectedRevision)
+  }
+
+  /**
+   * Owner-aware replacement; providers without owner storage fall back to {@link replace}'s deployment document.
+   * @param ns - the registered namespace to replace.
+   * @param section - the complete next user section.
+   * @param expectedRevision - the descriptor `revision` the caller read; a
+   *   namespace that moved past it rejects with {@link SettingsConflictError}.
+   */
+  replaceOwned(ns: SettingsNamespace, section: object, expectedRevision?: number): Promise<void> {
+    return this.replace(ns, section, expectedRevision)
+  }
+
+  /**
+   * Owner-aware path mutation; providers without owner storage fall back to {@link mutate}'s deployment document.
+   * @param ns - the registered namespace to edit.
+   * @param ops - ordered path edits; later ops observe earlier ones.
+   * @param expectedRevision - the descriptor `revision` the caller read; a
+   *   namespace that moved past it rejects with {@link SettingsConflictError}.
+   */
+  mutateOwned(ns: SettingsNamespace, ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<void> {
+    return this.mutate(ns, ops, expectedRevision)
+  }
+
+  /**
+   * Observe owner-document commits without publishing them as deployment
+   * settings events. Transport consumers must compare the captured request
+   * principal before forwarding a notification.
+   * @param watcher - Called after an owner document commit.
+   * @returns a disposer for this exact watcher.
+   */
+  onOwnedDocumentUpdated(
+    watcher: (ownerUserId: string, ns: SettingsNamespace, revision: number) => void,
+  ): () => void {
+    this.ownedDocumentWatchers.add(watcher)
+    return () => { this.ownedDocumentWatchers.delete(watcher) }
+  }
+
+  /** Announce one owner-document revision to trusted in-process consumers. */
+  protected emitOwnedDocumentUpdated(ownerUserId: string, ns: SettingsNamespace, revision: number): void {
+    for (const watcher of [...this.ownedDocumentWatchers]) {
+      try {
+        watcher(ownerUserId, ns, revision)
+      } catch (error) {
+        this.ctx.logger.warn('settings: owner-document watcher for "%s" failed', ns)
+        this.ctx.logger.warn(error)
+      }
+    }
+  }
+
+  /** Resolve and validate one owner document write without mutating provider-global state. */
+  protected prepareOwnedSection(
+    ns: SettingsNamespace,
+    document: Record<string, unknown>,
+    input: object,
+    mode: 'merge' | 'replace' | 'mutate',
+    expectedRevision: number | undefined,
+    actualRevision: number,
+  ): Record<string, unknown> {
+    const registration = this.registrations.get(ns)
+    if (registration === undefined) throw new Error(`settings namespace "${ns}" is not registered`)
+    if (this.isStopped()) throw new Error(`settings service is disposed: "${ns}" cannot be written`)
+    if (!this.writable) throw new Error(`settings provider is read-only: "${ns}" cannot be updated in-process`)
+    if (expectedRevision !== undefined && expectedRevision !== actualRevision) {
+      throw new SettingsConflictError(ns, expectedRevision, actualRevision)
+    }
+    if (mode === 'mutate') {
+      if (!Array.isArray(input)) throw new TypeError(`settings mutate for "${ns}" must be an array of path ops`)
+      for (const op of input) {
+        if (!isPlainObject(op) || (op['op'] !== 'set' && op['op'] !== 'unset')) {
+          throw new TypeError(`settings mutate for "${ns}" ops must be {op:'set'|'unset', path}`)
+        }
+        if (!Array.isArray(op['path']) || (op['path'] as unknown[]).some(part => typeof part !== 'string')) {
+          throw new TypeError(`settings mutate for "${ns}" op paths must be arrays of strings`)
+        }
+      }
+    } else if (!isPlainObject(input)) {
+      throw new TypeError(`settings ${mode === 'merge' ? 'update' : 'replace'} for "${ns}" must be a plain object`)
+    }
+    const payload = mode === 'mutate'
+      ? cloneJsonShaped({ ops: input }, (label, path) =>
+        new TypeError(`settings mutate for "${ns}" must contain only JSON-compatible data (found ${label} at ${path})`))
+      : cloneJsonShaped(input as Record<string, unknown>, (label, path) =>
+        new TypeError(`settings ${mode === 'merge' ? 'update' : 'replace'} for "${ns}" must contain only JSON-compatible data (found ${label} at ${path})`))
+    const current = this.sectionFrom(document, ns) ?? {}
+    const section = mode === 'merge'
+      ? mergeLayers(current, payload) as Record<string, unknown>
+      : mode === 'replace'
+        ? payload
+        : (payload['ops'] as SettingsPathOp[]).reduce(applyPathOp, current)
+    this.resolve(registration.schema, registration.base, section, registration.validate)
+    return section
   }
 
   /**
@@ -685,7 +819,12 @@ export abstract class SettingsProvider extends Service {
 
   /** Read one namespace's raw user section, rejecting non-object sections. */
   private section(ns: SettingsNamespace): Record<string, unknown> | undefined {
-    const section = this.document[ns]
+    return this.sectionFrom(this.document, ns)
+  }
+
+  /** Read one namespace section from a selected owner document. */
+  private sectionFrom(document: Record<string, unknown>, ns: SettingsNamespace): Record<string, unknown> | undefined {
+    const section = document[ns]
     if (section === undefined) return undefined
     if (!isPlainObject(section)) {
       throw new TypeError(`settings section "${ns}" must be an object of keys`)

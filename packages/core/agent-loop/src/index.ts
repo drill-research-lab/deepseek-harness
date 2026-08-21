@@ -25,6 +25,7 @@ import { SessionId, SessionPreparation } from '@deepseek-ai/dsh-session'
 import type { Session, SessionHeader } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-ownership'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import { ReactLoopAgent } from './agent.ts'
 import { DEFAULT_MAX_PARALLEL_TOOL_CALLS } from './constants.ts'
@@ -431,11 +432,11 @@ export class AgentLoop extends Service implements AgentFactory {
   private async waitForDrainingConfiguredIdentity(ownerCtx: Context, sessionId: SessionId): Promise<void> {
     // Only an id still occupying a registry needs waiting for; a live healthy
     // occupant is a collision the create/resume below will surface itself.
-    if (ownerCtx.agents.get(sessionId) === undefined && ownerCtx.sessions.get(sessionId) === undefined) return
+    if (ownerCtx.agents.get(sessionId, 'trusted-internal') === undefined && ownerCtx.sessions.get(sessionId, 'trusted-internal') === undefined) return
 
     const released = Promise.withResolvers<void>()
     const checkReleased = (): void => {
-      if (ownerCtx.agents.get(sessionId) === undefined && ownerCtx.sessions.get(sessionId) === undefined) {
+      if (ownerCtx.agents.get(sessionId, 'trusted-internal') === undefined && ownerCtx.sessions.get(sessionId, 'trusted-internal') === undefined) {
         released.resolve()
       }
     }
@@ -604,7 +605,12 @@ export class AgentLoop extends Service implements AgentFactory {
    * @returns the published handle.
    */
   async createAgent(ownerCtx: Context, options: CreateAgentOptions): Promise<AgentHandle> {
+    const ownerUserId = ownerCtx.agent?.session.header.ownerUserId
+    const ownership = this.runtime.ctx.root.get('ownership')
     const preparation = SessionPreparation.create(this.runtime.ctx.sessions.prepare(options.sessionId, {
+      ...ownerUserId === undefined || ownership === undefined
+        ? {}
+        : { owner: ownership.backgroundPrincipal(ownerUserId) },
       ...options.seed === undefined ? {} : { seed: options.seed },
       ...options.meta === undefined ? {} : { meta: options.meta },
     }))

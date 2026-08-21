@@ -9,15 +9,40 @@ import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import type { DomainChanged } from '@deepseek-ai/dsh-storage-domain'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
+import { OwnershipService } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal, UserHome } from '@deepseek-ai/dsh-ownership'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import WorkspaceRegistry, {
   WorkspaceId,
   WorkspaceMoveInvalidError,
   WorkspaceOrderInvalidError,
+  WorkspaceUnknownSessionError,
 } from '../src/index.ts'
 import type { WorkspaceDomainState, WorkspaceRecord } from '../src/index.ts'
 
-const DOMAIN_VERSION = 2
+class TestOwnership extends OwnershipService {
+  principal: OwnerPrincipal | undefined
+
+  currentPrincipal(): OwnerPrincipal {
+    if (this.principal === undefined) throw new Error('no test owner')
+    return this.principal
+  }
+
+  currentPrincipalOrUndefined(): OwnerPrincipal | undefined { return this.principal }
+
+  backgroundPrincipal(userId: OwnerPrincipal['userId']): OwnerPrincipal {
+    return { userId, source: 'background' }
+  }
+
+  resolveUserHome(): Promise<UserHome> {
+    throw new Error('not used by these tests')
+  }
+}
+
+const alice = { userId: 'ldap:test-alice' as OwnerPrincipal['userId'], source: 'request' as const }
+const bob = { userId: 'ldap:test-bob' as OwnerPrincipal['userId'], source: 'request' as const }
+
+const DOMAIN_VERSION = 3
 
 const header = (id: string, cwd?: string, createdAt = 0): SessionHeader => ({
   version: 0,
@@ -32,6 +57,7 @@ interface HarnessOptions {
   liveSessions?: SessionHeader[]
   sessionStore?: boolean
   backend?: StorageBackend
+  ownership?: boolean
 }
 
 /** Boot the real storage/domain/registry composition over controllable header-only peers. */
@@ -60,6 +86,8 @@ async function harness(options: HarnessOptions = {}) {
     } as never)
   }
 
+  if (options.ownership === true) await ctx.plugin(TestOwnership)
+
   const changes: DomainChanged[] = []
   ctx.on('domain/changed', (change) => { changes.push(change) })
   const fiber = await ctx.plugin(WorkspaceRegistry)
@@ -70,6 +98,7 @@ async function harness(options: HarnessOptions = {}) {
     fiber,
     pool,
     registry: ctx.workspaceRegistry,
+    ownership: ctx.get('ownership') as TestOwnership | undefined,
     changes,
     initChanges,
     list,
@@ -940,5 +969,152 @@ describe('registry-global session archive', () => {
     )
     const upgraded = await harness({ pool: legacy })
     expect(upgraded.registry.archivedSessionIds).toEqual([])
+  })
+})
+
+describe('WorkspaceRegistry ownership isolation', () => {
+  function ownedHeader(id: string, cwd: string, owner: OwnerPrincipal, createdAt = 0): SessionHeader {
+    return { ...header(id, cwd, createdAt), ownerUserId: owner.userId }
+  }
+
+  it('keeps create/get/list/resolveByPath fully separated between two owners', async () => {
+    const result = await harness({ ownership: true })
+    const ownership = result.ownership!
+
+    ownership.principal = alice
+    const aliceDir = await makeDir('owner-alice')
+    const aliceWorkspace = await result.registry.create(aliceDir)
+
+    ownership.principal = bob
+    const bobDir = await makeDir('owner-bob')
+    const bobWorkspace = await result.registry.create(bobDir)
+
+    // Bob cannot resolve, list, or path-lookup Alice's workspace even though
+    // he holds her real WorkspaceId and directory path.
+    expect(result.registry.get(aliceWorkspace.id)).toBeUndefined()
+    expect(result.registry.list().map(w => w.id)).toEqual([bobWorkspace.id])
+    expect(await result.registry.resolveByPath(aliceDir)).toBeUndefined()
+
+    ownership.principal = alice
+    expect(result.registry.get(bobWorkspace.id)).toBeUndefined()
+    expect(result.registry.list().map(w => w.id)).toEqual([aliceWorkspace.id])
+    expect(await result.registry.resolveByPath(bobDir)).toBeUndefined()
+  })
+
+  it('rejects reordering a foreign workspace exactly like an unknown one', async () => {
+    const result = await harness({ ownership: true })
+    const ownership = result.ownership!
+
+    ownership.principal = alice
+    const aliceDir = await makeDir('order-alice')
+    const aliceWorkspace = await result.registry.create(aliceDir)
+
+    ownership.principal = bob
+    const bobDir = await makeDir('order-bob')
+    await result.registry.create(bobDir)
+
+    // A forged/foreign WorkspaceId (Alice's real one) is indistinguishable
+    // from a nonexistent one for Bob's reorder.
+    await expect(result.registry.insertBefore(aliceWorkspace.id))
+      .rejects.toThrow(WorkspaceOrderInvalidError)
+  })
+
+  it('returns the complete cross-owner order for every successful reorder path', async () => {
+    const result = await harness({ ownership: true })
+    const ownership = result.ownership!
+
+    ownership.principal = alice
+    const aliceFirst = await result.registry.create(await makeDir('order-shape-alice-first'))
+    ownership.principal = bob
+    const bobWorkspace = await result.registry.create(await makeDir('order-shape-bob'))
+    ownership.principal = alice
+    const aliceSecond = await result.registry.create(await makeDir('order-shape-alice-second'))
+
+    const complete = [aliceSecond.id, bobWorkspace.id, aliceFirst.id]
+    await expect(result.registry.insertBefore(aliceSecond.id, aliceSecond.id)).resolves.toEqual(complete)
+    await expect(result.registry.insertBefore(aliceSecond.id, aliceFirst.id)).resolves.toEqual(complete)
+    await expect(result.registry.insertBefore(aliceFirst.id, aliceSecond.id))
+      .resolves.toEqual([aliceFirst.id, bobWorkspace.id, aliceSecond.id])
+  })
+
+  it('keeps the archive set and startup bootstrap independent per owner', async () => {
+    const aliceSession = ownedHeader('alice-session', await makeDir('bootstrap-alice'), alice)
+    const bobSession = ownedHeader('bob-session', await makeDir('bootstrap-bob'), bob)
+    const result = await harness({ ownership: true, sessions: [aliceSession, bobSession] })
+    const ownership = result.ownership!
+
+    ownership.principal = alice
+    await result.registry.prepareOwner()
+    // Alice's bootstrap must never observe Bob's session history: only her
+    // own directory is grouped into a workspace.
+    expect(result.registry.list().map(w => w.path)).toEqual([aliceSession.cwd])
+    await result.registry.archiveSession(aliceSession.id)
+    expect(result.registry.archivedSessionIds).toEqual([aliceSession.id])
+
+    ownership.principal = bob
+    await result.registry.prepareOwner()
+    expect(result.registry.list().map(w => w.path)).toEqual([bobSession.cwd])
+    // Bob's archive set does not include the session Alice just archived.
+    expect(result.registry.archivedSessionIds).toEqual([])
+    await expect(result.registry.archiveSession(aliceSession.id))
+      .rejects.toThrow(WorkspaceUnknownSessionError)
+
+    ownership.principal = alice
+    expect(result.registry.archivedSessionIds).toEqual([aliceSession.id])
+  })
+
+  it('resolves archived sessions for a server-captured principal after request scope ends', async () => {
+    const aliceSession = ownedHeader('alice-captured', await makeDir('captured-alice'), alice)
+    const result = await harness({ ownership: true, sessions: [aliceSession] })
+    const ownership = result.ownership!
+
+    ownership.principal = alice
+    await result.registry.prepareOwner()
+    const [workspace] = result.registry.list()
+    await result.registry.archiveSession(aliceSession.id)
+
+    // A long-lived subscription callback outside request scope resolves
+    // through the captured principal, not the live ambient one.
+    ownership.principal = bob
+    expect(result.registry.getForPrincipal(alice, workspace!.id)).toBe(workspace)
+    expect(result.registry.getForPrincipal(bob, workspace!.id)).toBeUndefined()
+    expect(result.registry.archivedSessionIdsForPrincipal(alice)).toEqual([aliceSession.id])
+    expect(result.registry.archivedSessionIdsForPrincipal(bob)).toEqual([])
+  })
+
+  it('rejects archiving a foreign owner\'s LIVE session as unknown, not merely a persisted one', async () => {
+    // Regression: sessionKnown()'s first check (`ctx.get('sessions')?.get(id)`)
+    // used to treat process-wide liveness alone as "known", ignoring owner —
+    // distinct from the persisted-header path above, which was already gated.
+    // Alice could archive Bob's live session id into the shared
+    // archivedSessionIds array purely because it was live in the same process.
+    const bobLive = ownedHeader('bob-live-only', await makeDir('archive-foreign-live'), bob, 100)
+    const result = await harness({ ownership: true, liveSessions: [bobLive] })
+    const ownership = result.ownership!
+
+    ownership.principal = alice
+    await expect(result.registry.archiveSession(bobLive.id))
+      .rejects.toThrow(WorkspaceUnknownSessionError)
+    expect(result.registry.archivedSessionIds).toEqual([])
+
+    ownership.principal = bob
+    await result.registry.archiveSession(bobLive.id)
+    expect(result.registry.archivedSessionIds).toEqual([bobLive.id])
+  })
+
+  it('rejects attaching a foreign owner\'s live session even when its cwd matches the workspace path', async () => {
+    // Regression: readSessionHeader()'s live branch used to trust ANY live
+    // session's header unconditionally — disclosing a foreign owner's real
+    // cwd and letting a cwd-matching foreign session attach into this
+    // workspace's durable sessionIds.
+    const dir = await makeDir('attach-foreign-live')
+    const bobLive = ownedHeader('bob-live-cwd-match', dir, bob, 100)
+    const result = await harness({ ownership: true, liveSessions: [bobLive] })
+    const ownership = result.ownership!
+
+    ownership.principal = alice
+    const workspace = await result.registry.create(dir)
+    await expect(workspace.attachSession(bobLive.id)).rejects.toThrow(/no such session/)
+    expect(workspace.sessionIds).toEqual([])
   })
 })

@@ -74,6 +74,12 @@ export abstract class OwnershipService extends Service {
   abstract currentPrincipal(): OwnerPrincipal
 
   /**
+   * Read the verified request principal when execution is inside an authenticated scope.
+   * @returns The current request principal, or `undefined` outside a request.
+   */
+  abstract currentPrincipalOrUndefined(): OwnerPrincipal | undefined
+
+  /**
    * Rehydrate a principal from a durable, server-trusted owner id.
    * @param userId - Branded owner id previously read from trusted persistence.
    * @returns A background principal.

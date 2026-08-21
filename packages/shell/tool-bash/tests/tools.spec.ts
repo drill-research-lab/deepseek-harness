@@ -481,7 +481,7 @@ describe('background execution through the job runtime', () => {
 
     const anon = await call(ctx, 'job_output', { job_id: 'bash-1' })
     expect(anon.isError).toBe(true)
-    expect(text(anon)).toMatch(/belongs to another session/)
+    expect(text(anon)).toMatch(/unknown job/)
 
     const killed = await call(ctx, 'job_kill', { job_id: 'bash-1' }, agent)
     expect(killed.isError).toBe(false)

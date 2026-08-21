@@ -60,6 +60,7 @@ export class LdapDirectory extends Service {
 
   private async setting(key: CredentialSettingKey, fallback: string): Promise<string> {
     const ref = credentialRef(this.config[key] ?? fallback)
+    this.ctx.credentials.reserveDeployment(ref)
     const found = await this.ctx.credentials.resolve(ref)
     if (found === undefined) throw new Error(`auth-ldap: ${ref} is not configured`)
     return found.value

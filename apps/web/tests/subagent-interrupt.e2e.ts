@@ -95,7 +95,7 @@ describe.skipIf(MODE === 'record')('web e2e: subagent.interrupt over the real co
     })
     if (!created.ok) throw new Error(`session.create failed: ${created.error.code}`)
     parentId = sessionId(created.value.sessionId)
-    const parent = scaffold.ctx.agents.get(parentId)
+    const parent = scaffold.ctx.agents.get(parentId, 'trusted-internal')
     if (parent === undefined) throw new Error('created parent session did not publish a live Agent')
 
     const started = await scaffold.ctx.subagents.startContinuable({
@@ -141,7 +141,7 @@ describe.skipIf(MODE === 'record')('web e2e: subagent.interrupt over the real co
 
     // Parked, not resumed: the Activation stays resident with an idle driver,
     // the follow-up is retained, and no second turn opened.
-    const child = scaffold.ctx.agents.get(childId)
+    const child = scaffold.ctx.agents.get(childId, 'trusted-internal')
     expect(child).toBeDefined()
     expect(child!.status).toBe('idle')
     expect(child!.inbox.nextTurn).toHaveLength(1)
@@ -158,7 +158,7 @@ describe.skipIf(MODE === 'record')('web e2e: subagent.interrupt over the real co
       content: [{ type: 'text', text: WAKING }],
     })
     expect(waking).toMatchObject({ ok: true })
-    await expect.poll(() => scaffold.ctx.agents.get(childId), { timeout: 60_000 }).toBeUndefined()
+    await expect.poll(() => scaffold.ctx.agents.get(childId, 'trusted-internal'), { timeout: 60_000 }).toBeUndefined()
 
     const loaded = await scaffold.ctx.sessionPersistence.load(childId)
     // Human-origin messages only: the real composition also injects

@@ -52,7 +52,7 @@ export function goalToolExecution(ctx: Context, exec: ToolRunContext): GoalToolE
   if (agent === undefined) {
     return reject('goal tools require a calling agent', 'GOAL_TOOL_AGENT_REQUIRED')
   }
-  if (ctx.agents.get(agent.id) !== agent || agent.status !== 'running'
+  if (ctx.agents.get(agent.id, 'trusted-internal') !== agent || agent.status !== 'running'
     || ctx.agents.currentInitiator() !== agent) {
     return reject(
       'goal tools require the exact live calling agent inside its active driver',
@@ -68,7 +68,7 @@ export function goalToolExecution(ctx: Context, exec: ToolRunContext): GoalToolE
  * producers must supply their own source rather than inheriting this authority.
  */
 function hasDirectHumanInput(ctx: Context, execution: GoalToolExecution): boolean {
-  if (!ctx.agents.roots().includes(execution.agent)) return false
+  if (!ctx.agents.roots('trusted-internal').includes(execution.agent)) return false
   return execution.events.some(event =>
     event.type === 'user/message' && event.data.source.kind === 'user')
 }

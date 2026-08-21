@@ -13,6 +13,9 @@ import { resolve } from 'node:path'
 import z from '@deepseek-ai/schemastery'
 import { SpillLocator, SpillStore } from '@deepseek-ai/dsh-spill'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
+import type {} from '@deepseek-ai/dsh-ownership'
+import type {} from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-session-persistence'
 import { privateRoot, saveTextFile } from './store.ts'
 
 export { encodeSegment, privateRoot, saveTextFile, sessionDir } from './store.ts'
@@ -48,8 +51,9 @@ export class LocalSpillStore extends SpillStore {
   }
 
   async saveText(input: SaveTextSpill): Promise<SpillRef> {
+    const root = await this.ownerRoot(input.owner.sessionId)
     const saved = await saveTextFile({
-      root: this.root,
+      root,
       sessionId: input.owner.sessionId,
       suggestedName: input.suggestedName,
       content: input.content,
@@ -59,6 +63,21 @@ export class LocalSpillStore extends SpillStore {
       bytes: saved.bytes,
       retrievalHint: 'Use read with offset/limit, or grep this path to search within it.',
     }
+  }
+
+  /** Resolve a spill namespace from the trusted owner of its AgentSession. */
+  private async ownerRoot(sessionId: SaveTextSpill['owner']['sessionId']): Promise<string> {
+    const ownership = this.ctx.root.get('ownership')
+    if (ownership === undefined) return this.root
+    const live = this.ctx.get('sessions')?.get(sessionId, 'trusted-internal')
+    const header = live?.header ?? (await this.ctx.get('sessionPersistence')?.inspect(sessionId))?.meta
+    if (header?.ownerUserId === undefined) throw new Error(`session "${sessionId}" not found`)
+    const requestPrincipal = ownership.currentPrincipalOrUndefined()
+    if (requestPrincipal !== undefined && requestPrincipal.userId !== header.ownerUserId) {
+      throw new Error(`session "${sessionId}" not found`)
+    }
+    const principal = requestPrincipal ?? ownership.backgroundPrincipal(header.ownerUserId)
+    return (await ownership.resolveUserHome(principal)).path('spill')
   }
 }
 

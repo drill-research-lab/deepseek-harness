@@ -1107,7 +1107,7 @@ async function measurePostSoakUserRender(
   expect(chunks).toHaveLength(spec.deltas.length + 4)
   expect(turnEvents.filter(event => event.type === 'tool/call')).toHaveLength(0)
   expect(turnEvents.filter(event => event.type === 'tool/result')).toHaveLength(0)
-  expect(world.scaffold.ctx.agents.get(settledSessionId)).toBeDefined()
+  expect(world.scaffold.ctx.agents.get(settledSessionId, 'trusted-internal')).toBeDefined()
   expect(await conversationTurns(world.page)).toBe(POST_SOAK_RENDER_TURN)
 
   return {

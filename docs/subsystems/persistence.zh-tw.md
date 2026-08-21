@@ -59,6 +59,8 @@ interface SessionHeader {
   readonly id: SessionId
   /** Non-negative safe-integer Unix epoch milliseconds when the session was created. */
   readonly createdAt: number
+  /** Immutable authenticated owner; absent only on unsupported legacy or non-product detached sessions. */
+  readonly ownerUserId?: AuthenticatedUserId
   /** Absolute working directory the session was created in (if any). */
   readonly cwd?: string
   /** The session this one was forked from (seed lineage), if any. */
@@ -104,6 +106,8 @@ interface SessionHeader {
  * store folds into a {@link SessionHeader}.
  */
 interface CreateSessionOptions {
+  /** Server-trusted owner used by background creation after request scope ends. */
+  readonly owner?: OwnerPrincipal
   /** Initial replay or fork history supplied at construction. */
   readonly seed?: readonly SessionEvent[]
   /**

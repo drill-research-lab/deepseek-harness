@@ -187,7 +187,7 @@ describe('in-process structured output', () => {
     const result = await run.result
     expect(result.structured).toEqual({ answer: 5 })
     expect(sideEffectRan).toBe(false)
-    const child = ctx.agents.get(run.id)
+    const child = ctx.agents.get(run.id, 'trusted-internal')
     const sideEffectResult = child?.session.events.find(event =>
       event.type === 'tool/result' && event.data.message.source.callId === 'c2')
     expect(sideEffectResult?.type === 'tool/result' && sideEffectResult.data.message.content[0].isError).toBe(true)
@@ -231,7 +231,7 @@ describe('in-process structured output', () => {
     expect(result.structured).toEqual({ answer: 7 })
     expect(result.stopReason).toBe('completed')
     // The child's log carries the isError tool/result for the invalid call.
-    const child = ctx.agents.get(run.id)!
+    const child = ctx.agents.get(run.id, 'trusted-internal')!
     const results = child.session.events.filter(e => e.type === 'tool/result')
     expect(results.length).toBe(2)
     expect(results[0]!.data.message.content[0].isError).toBe(true)
@@ -249,7 +249,7 @@ describe('in-process structured output', () => {
     expect(result.structured).toBeUndefined()
     // Exactly one model request and one caller-supplied user message: no nudge turn exists.
     expect(adapter.requests.length).toBe(1)
-    const child = ctx.agents.get(run.id)!
+    const child = ctx.agents.get(run.id, 'trusted-internal')!
     expect(child.session.events.filter(e => e.type === 'user/message' && e.data.source.kind !== 'plugin').length).toBe(1)
     await run.dispose()
   })
@@ -271,7 +271,7 @@ describe('in-process structured output', () => {
     // Cancel synchronously inside the turn's end recording: the cancel
     // contract outranks the schema shortfall, so the result maps to aborted.
     ctx.on('session/event', (session, event) => {
-      const child = ctx.agents.get(run.id)
+      const child = ctx.agents.get(run.id, 'trusted-internal')
       if (session === child?.session && event.type === 'turn/end') controller.abort('cancelled at turn end')
     })
     const result = await run.result
@@ -284,7 +284,7 @@ describe('in-process structured output', () => {
     await expect(ctx.subagents.start('spawn', structuredRequest(parent, {
       outputSchema: { type: 'object', oneOf: [] } as unknown as ObjectJsonSchema,
     }))).rejects.toThrow(/unsupported JSON schema/)
-    expect(ctx.agents.get(SessionId('parent'))).toBeDefined()
+    expect(ctx.agents.get(SessionId('parent'), 'trusted-internal')).toBeDefined()
   })
 
   it('a schema carrying non-JSON values fails as JsonSchemaError at the validation boundary', async () => {
@@ -314,7 +314,7 @@ describe('in-process structured output', () => {
     expect(result.structured).toBeUndefined()
     expect(result.stopReason).toBe('error')
     // ...the logged tool result is the blocked isError with the feedback...
-    const child = ctx.agents.get(run.id)!
+    const child = ctx.agents.get(run.id, 'trusted-internal')!
     const results = child.session.events.filter(e => e.type === 'tool/result')
     expect(results[0]!.data.message.content[0].isError).toBe(true)
     expect(JSON.stringify(results[0]!.data.message.content)).toContain('capture rejected by hook')
@@ -359,7 +359,7 @@ describe('in-process structured output', () => {
     const result = await run.result
     expect(result.structured).toBeUndefined()
     expect(result.stopReason).toBe('error')
-    const child = ctx.agents.get(run.id)
+    const child = ctx.agents.get(run.id, 'trusted-internal')
     const captureResult = child?.session.events.find(event =>
       event.type === 'tool/result' && event.data.message.source.callId === 'c1')
     expect(captureResult?.type === 'tool/result' && captureResult.data.message.content[0].isError).toBe(true)
@@ -430,7 +430,7 @@ describe('in-process structured output', () => {
     expect(result.structured).toBeUndefined()
     expect(result.stopReason).toBe('error')
     expect(adapter.requests).toHaveLength(2)
-    const child = ctx.agents.get(run.id)!
+    const child = ctx.agents.get(run.id, 'trusted-internal')!
     const outer = child.session.events.find(event =>
       event.type === 'tool/result' && event.data.message.source.callId === CallId('c1'))
     expect(outer?.type === 'tool/result' && outer.data.message.content[0].isError).toBe(true)
@@ -593,7 +593,7 @@ describe('in-process structured output', () => {
       disposeProvider()
       const result = await run.result
       expect(result.structured).toEqual({ answer: 4 })
-      const child = ctx.agents.get(run.id)!
+      const child = ctx.agents.get(run.id, 'trusted-internal')!
       expect(ctx.tools.get(STRUCTURED_OUTPUT_TOOL, child)).toBeDefined()
       await run.dispose()
       // Child disposed ⇒ its scoped registrations are gone.
@@ -643,7 +643,7 @@ describe('in-process structured output', () => {
       return next()
     }, { prepend: true })
     const result = await run.result
-    const child = ctx.agents.get(run.id)!
+    const child = ctx.agents.get(run.id, 'trusted-internal')!
     // The blocked capture must NOT surface as structured success…
     expect(result.stopReason).toBe('error')
     expect(result.structured).toBeUndefined()
@@ -685,7 +685,7 @@ describe('in-process structured output', () => {
       return next()
     }, { prepend: true })
     await run.result
-    const child = ctx.agents.get(run.id)!
+    const child = ctx.agents.get(run.id, 'trusted-internal')!
     // A SECOND capture call with the SAME call id whose body never stages
     // (invalid args throw before the stage): the discarded value must not ride
     // its acceptance.
@@ -724,7 +724,7 @@ describe('in-process structured output', () => {
       return next()
     }, { prepend: true })
     await run.result
-    const child = ctx.agents.get(run.id)!
+    const child = ctx.agents.get(run.id, 'trusted-internal')!
     // A prepended pre-execute deny skips the body, while the denied call still
     // reaches the final notification with the same adapter-minted call id.
     const offDeny = ctx.on('tools/pre-execute', (exec) => {

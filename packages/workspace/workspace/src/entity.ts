@@ -32,6 +32,8 @@ export class WorkspaceMoveInvalidError extends Error {
  * index backing the `sessionIds` projection, and attach-time header reads.
  */
 export interface WorkspaceEntityHost {
+  /** Reject a workspace record outside the current authenticated owner scope. */
+  authorize(record: WorkspaceRecord): void
   /**
    * Resolve the open `workspaces` table.
    * @returns the table; throws while the registry has not started yet.
@@ -83,30 +85,37 @@ export class WorkspaceEntity implements Workspace {
   }
 
   get path(): string {
+    this.host.authorize(this.record)
     return this.record.path
   }
 
   get title(): string {
+    this.host.authorize(this.record)
     return this.record.title
   }
 
   get createdAt(): string {
+    this.host.authorize(this.record)
     return this.record.createdAt
   }
 
   get updatedAt(): string {
+    this.host.authorize(this.record)
     return this.record.updatedAt
   }
 
   get sessionIds(): readonly SessionId[] {
+    this.host.authorize(this.record)
     return this.record.sessionIds.filter(id => this.host.sessionPath(id) === this.record.path)
   }
 
   async setTitle(title: string): Promise<void> {
+    this.host.authorize(this.record)
     await this.mutate(record => ({ ...record, title }))
   }
 
   async attachSession(sessionId: SessionId): Promise<void> {
+    this.host.authorize(this.record)
     // Validation is skipped when the settled snapshot already accounts the
     // id: the cwd fact was checked when it first attached and both inputs
     // (stored header cwd, workspace path) are immutable. Membership itself is
@@ -149,6 +158,7 @@ export class WorkspaceEntity implements Workspace {
   }
 
   async insertSessionBefore(sessionId: SessionId, beforeSessionId?: SessionId): Promise<void> {
+    this.host.authorize(this.record)
     await this.mutate((record) => {
       if (!record.sessionIds.includes(sessionId)) {
         throw new WorkspaceMoveInvalidError(
@@ -172,12 +182,14 @@ export class WorkspaceEntity implements Workspace {
   }
 
   async detachSession(sessionId: SessionId): Promise<void> {
+    this.host.authorize(this.record)
     await this.mutate(record => record.sessionIds.includes(sessionId)
       ? { ...record, sessionIds: record.sessionIds.filter(id => id !== sessionId) }
       : record)
   }
 
   async status(): Promise<'ok' | 'missing-dir'> {
+    this.host.authorize(this.record)
     try {
       return (await stat(this.record.path)).isDirectory() ? 'ok' : 'missing-dir'
     } catch {

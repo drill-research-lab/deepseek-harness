@@ -138,7 +138,7 @@ function drainManager(ctx: Context): Promise<void> {
 /** Wait until a child's Activation is gone, i.e. its handle finished disposal. */
 async function waitNoActivation(ctx: Context, childId: SessionId): Promise<void> {
   await vi.waitFor(() => {
-    expect(ctx.agents.get(childId)).toBeUndefined()
+    expect(ctx.agents.get(childId, 'trusted-internal')).toBeUndefined()
   }, { timeout: 5_000 })
 }
 
@@ -204,7 +204,7 @@ describe('SubagentRuntime.startContinuable', () => {
       .rejects.toThrow(/does not support continuable children/)
     expect(start).not.toHaveBeenCalled()
     // No child Agent and no session were created.
-    expect(ctx.agents.list().map(agent => agent.id)).toEqual([SessionId('parent')])
+    expect(ctx.agents.list('trusted-internal').map(agent => agent.id)).toEqual([SessionId('parent')])
   })
 
   it('rejects synchronously when persistence is not configured', async () => {
@@ -251,7 +251,7 @@ describe('SubagentRuntime.startContinuable', () => {
       .rejects.toThrow()
     // No Activation, no live child Agent, and no parent ownership remains.
     await vi.waitFor(() => {
-      expect(ctx.agents.list().map(agent => agent.id)).toEqual([SessionId('parent')])
+      expect(ctx.agents.list('trusted-internal').map(agent => agent.id)).toEqual([SessionId('parent')])
     })
   })
 
@@ -267,7 +267,7 @@ describe('SubagentRuntime.startContinuable', () => {
 
     // No resident child and no queued turn survive the abort.
     await vi.waitFor(() => {
-      expect(ctx.agents.list().map(agent => agent.id)).toEqual([SessionId('parent')])
+      expect(ctx.agents.list('trusted-internal').map(agent => agent.id)).toEqual([SessionId('parent')])
     })
   })
 
@@ -283,7 +283,7 @@ describe('SubagentRuntime.startContinuable', () => {
       .rejects.toThrow(/start publication failed/)
 
     await vi.waitFor(() => {
-      expect(ctx.agents.list().map(agent => agent.id)).toEqual([SessionId('parent')])
+      expect(ctx.agents.list('trusted-internal').map(agent => agent.id)).toEqual([SessionId('parent')])
     })
     expect(ends).toEqual([])
     await expect(drainManager(ctx)).resolves.toBeUndefined()
@@ -295,7 +295,7 @@ describe('SubagentRuntime.startContinuable', () => {
       ...startSpec(parent),
       request: { prompt: message('deep'), parent, maxDepth: 0 },
     })).rejects.toThrow(/exceeds maxDepth 0/)
-    expect(ctx.agents.list().map(agent => agent.id)).toEqual([SessionId('parent')])
+    expect(ctx.agents.list('trusted-internal').map(agent => agent.id)).toEqual([SessionId('parent')])
   })
 
   it('rejects an invalid continuable depth cap before provider preparation', async () => {
@@ -304,7 +304,7 @@ describe('SubagentRuntime.startContinuable', () => {
       ...startSpec(parent),
       request: { prompt: message('deep'), parent, maxDepth: Number.NaN },
     })).rejects.toThrow(/non-negative safe integer/)
-    expect(ctx.agents.list().map(agent => agent.id)).toEqual([SessionId('parent')])
+    expect(ctx.agents.list('trusted-internal').map(agent => agent.id)).toEqual([SessionId('parent')])
   })
 
   it('omits undeclared composition fields from the descriptor', async () => {
@@ -314,7 +314,7 @@ describe('SubagentRuntime.startContinuable', () => {
     const routeless = ctx.agentLoop.create(SessionId('routeless'), {})
     const started = await ctx.subagents.startContinuable(startSpec(routeless))
     const child = await vi.waitFor(() => {
-      const found = ctx.agents.get(started.childId)
+      const found = ctx.agents.get(started.childId, 'trusted-internal')
       expect(found).toBeDefined()
       return found!
     })
@@ -348,7 +348,7 @@ describe('SubagentRuntime.startContinuable', () => {
       request: { prompt: message('filtered work'), parent: routeless, toolFilter: { deny: ['noop'] } },
     })
     const child = await vi.waitFor(() => {
-      const found = ctx.agents.get(started.childId)
+      const found = ctx.agents.get(started.childId, 'trusted-internal')
       expect(found).toBeDefined()
       return found!
     })
@@ -380,7 +380,7 @@ describe('SubagentRuntime.startContinuable', () => {
     await followup(fresh, freshParent, started.childId, message('resume routeless'))
 
     const resumed = await vi.waitFor(() => {
-      const found = fresh.agents.get(started.childId)
+      const found = fresh.agents.get(started.childId, 'trusted-internal')
       expect(found).toBeDefined()
       return found!
     })
@@ -447,7 +447,7 @@ describe('SubagentRuntime.followup residency routing', () => {
     const { ctx, parent } = await setupWith(adapter)
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-    const child = ctx.agents.get(started.childId)
+    const child = ctx.agents.get(started.childId, 'trusted-internal')
     expect(child?.status).toBe('running')
 
     // Both messages queue behind the open turn, in call order.
@@ -455,7 +455,7 @@ describe('SubagentRuntime.followup residency routing', () => {
     const secondMessage = await followup(ctx, parent, started.childId, message('second follow-up'))
     expect(firstMessage).not.toBe(secondMessage)
     // Still the same Activation: no second child Agent was created.
-    expect(ctx.agents.get(started.childId)).toBe(child)
+    expect(ctx.agents.get(started.childId, 'trusted-internal')).toBe(child)
 
     releaseFirst.resolve(undefined)
     await waitNoActivation(ctx, started.childId)
@@ -521,7 +521,7 @@ describe('SubagentRuntime.followup residency routing', () => {
     const { ctx, parent } = await setupWith(adapter)
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     const child = await vi.waitFor(() => {
-      const found = ctx.agents.get(started.childId)
+      const found = ctx.agents.get(started.childId, 'trusted-internal')
       expect(found).toBeDefined()
       return found!
     })
@@ -530,14 +530,14 @@ describe('SubagentRuntime.followup residency routing', () => {
     await vi.waitFor(() => { expect(adapter.requests.length).toBeGreaterThanOrEqual(2) })
     await vi.waitFor(() => {
       expect(child.status).toBe('idle')
-      expect(ctx.agents.get(started.childId)).toBe(child)
+      expect(ctx.agents.get(started.childId, 'trusted-internal')).toBe(child)
     }, { timeout: 5_000 })
     // Waiting retains the handle: the same Agent is still live.
-    expect(ctx.agents.get(started.childId)).toBe(child)
+    expect(ctx.agents.get(started.childId, 'trusted-internal')).toBe(child)
 
     await followup(ctx, parent, started.childId, message('while waiting'))
     // Woken back to running on the SAME Activation.
-    expect(ctx.agents.get(started.childId)).toBe(child)
+    expect(ctx.agents.get(started.childId, 'trusted-internal')).toBe(child)
 
     releaseGrandchild.resolve(undefined)
     await waitNoActivation(ctx, grandchild.childId)
@@ -628,7 +628,7 @@ describe('SubagentRuntime.followup residency routing', () => {
     const { ctx, parent } = await setup([textResponse('first'), textResponse('after the race')])
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     const child = await vi.waitFor(() => {
-      const found = ctx.agents.get(started.childId)
+      const found = ctx.agents.get(started.childId, 'trusted-internal')
       expect(found).toBeDefined()
       return found!
     })
@@ -655,7 +655,7 @@ describe('continuable child ownership', () => {
     const { ctx, parent } = await setupWith(adapter)
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     const child = await vi.waitFor(() => {
-      const found = ctx.agents.get(started.childId)
+      const found = ctx.agents.get(started.childId, 'trusted-internal')
       expect(found).toBeDefined()
       return found!
     })
@@ -663,11 +663,11 @@ describe('continuable child ownership', () => {
 
     await vi.waitFor(() => {
       expect(child.status).toBe('idle')
-      expect(ctx.agents.get(started.childId)).toBe(child)
+      expect(ctx.agents.get(started.childId, 'trusted-internal')).toBe(child)
     }, { timeout: 5_000 })
     // Child-first: the parent handle is retained while the grandchild is live.
-    expect(ctx.agents.get(started.childId)).toBe(child)
-    expect(ctx.agents.get(grandchild.childId)).toBeDefined()
+    expect(ctx.agents.get(started.childId, 'trusted-internal')).toBe(child)
+    expect(ctx.agents.get(grandchild.childId, 'trusted-internal')).toBeDefined()
 
     releaseGrandchild.resolve(undefined)
     await waitNoActivation(ctx, grandchild.childId)
@@ -679,7 +679,7 @@ describe('continuable child ownership', () => {
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     await waitNoActivation(ctx, started.childId)
     // The top-level parent remains independently registered after its child settles.
-    expect(ctx.agents.get(parent.id)).toBe(parent)
+    expect(ctx.agents.get(parent.id, 'trusted-internal')).toBe(parent)
   })
 })
 
@@ -748,7 +748,7 @@ describe('continuable durability and teardown', () => {
     await vi.waitFor(() => {
       expect(warnings.some(warning => warning.includes('normal settlement cleanup failed'))).toBe(true)
     })
-    expect(ctx.agents.get(started.childId)).toBeUndefined()
+    expect(ctx.agents.get(started.childId, 'trusted-internal')).toBeUndefined()
   })
 
   it('disposes every live Activation forest child-first on manager teardown', async () => {
@@ -760,12 +760,12 @@ describe('continuable durability and teardown', () => {
     const { ctx, parent } = await setupWith(adapter)
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     const child = await vi.waitFor(() => {
-      const found = ctx.agents.get(started.childId)
+      const found = ctx.agents.get(started.childId, 'trusted-internal')
       expect(found).toBeDefined()
       return found!
     })
     const grandchild = await ctx.subagents.startContinuable(startSpec(child))
-    await vi.waitFor(() => { expect(ctx.agents.get(grandchild.childId)).toBeDefined() })
+    await vi.waitFor(() => { expect(ctx.agents.get(grandchild.childId, 'trusted-internal')).toBeDefined() })
 
     const disposals: SessionId[] = []
     ctx.on('agent/disposed', ({ agent }) => { disposals.push(agent.id) })
@@ -801,13 +801,13 @@ describe('continuable durability and teardown', () => {
     const target = await ctx.subagents.startContinuable(startSpec(parent))
     const sibling = await ctx.subagents.startContinuable(startSpec(siblingParent))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(2) })
-    const targetChild = ctx.agents.get(target.childId)!
-    const siblingChild = ctx.agents.get(sibling.childId)!
+    const targetChild = ctx.agents.get(target.childId, 'trusted-internal')!
+    const siblingChild = ctx.agents.get(sibling.childId, 'trusted-internal')!
     const grandchild = await ctx.subagents.startContinuable(startSpec(targetChild))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(3) })
     const cancellations: SessionId[] = []
     observeCancel(targetChild, () => { cancellations.push(targetChild.id) })
-    const grandchildAgent = ctx.agents.get(grandchild.childId)!
+    const grandchildAgent = ctx.agents.get(grandchild.childId, 'trusted-internal')!
     observeCancel(grandchildAgent, () => { cancellations.push(grandchildAgent.id) })
 
     const drained = ctx.subagents.drainContinuableDescendants([parent])
@@ -816,9 +816,9 @@ describe('continuable durability and teardown', () => {
     // The scoped cutoff stops only the selected forest. The sibling child stays
     // resident and can accept later work while target cleanup is still blocked.
     expect(cancellations).toEqual([target.childId, grandchild.childId])
-    expect(ctx.agents.get(target.childId)).toBe(targetChild)
-    expect(ctx.agents.get(grandchild.childId)).toBeDefined()
-    expect(ctx.agents.get(sibling.childId)).toBe(siblingChild)
+    expect(ctx.agents.get(target.childId, 'trusted-internal')).toBe(targetChild)
+    expect(ctx.agents.get(grandchild.childId, 'trusted-internal')).toBeDefined()
+    expect(ctx.agents.get(sibling.childId, 'trusted-internal')).toBe(siblingChild)
     await expect(followup(ctx, siblingParent, sibling.childId, message('still live')))
       .resolves.toBeTypeOf('string')
     await expect(ctx.subagents.startContinuable(startSpec(parent)))
@@ -829,9 +829,9 @@ describe('continuable durability and teardown', () => {
     releaseTarget.resolve(undefined)
     releaseGrandchild.resolve(undefined)
     await Promise.all([drained, convergedDrain])
-    expect(ctx.agents.get(target.childId)).toBeUndefined()
-    expect(ctx.agents.get(grandchild.childId)).toBeUndefined()
-    expect(ctx.agents.get(sibling.childId)).toBe(siblingChild)
+    expect(ctx.agents.get(target.childId, 'trusted-internal')).toBeUndefined()
+    expect(ctx.agents.get(grandchild.childId, 'trusted-internal')).toBeUndefined()
+    expect(ctx.agents.get(sibling.childId, 'trusted-internal')).toBe(siblingChild)
     // The exact root remains closed until its host disposes it, even after all
     // current descendants are gone.
     await expect(ctx.subagents.startContinuable(startSpec(parent)))
@@ -851,21 +851,21 @@ describe('continuable durability and teardown', () => {
     const { ctx, parent } = await setupWith(adapter)
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-    const child = ctx.agents.get(started.childId)!
+    const child = ctx.agents.get(started.childId, 'trusted-internal')!
     const grandchild = await ctx.subagents.startContinuable(startSpec(child))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(2) })
     const cancellations: SessionId[] = []
-    const grandchildAgent = ctx.agents.get(grandchild.childId)!
+    const grandchildAgent = ctx.agents.get(grandchild.childId, 'trusted-internal')!
     observeCancel(grandchildAgent, () => { cancellations.push(grandchildAgent.id) })
 
     const drained = ctx.subagents.drainContinuableDescendants([child])
 
     expect(cancellations).toEqual([grandchild.childId])
-    expect(ctx.agents.get(started.childId)).toBe(child)
+    expect(ctx.agents.get(started.childId, 'trusted-internal')).toBe(child)
     releaseGrandchild.resolve(undefined)
     await drained
-    expect(ctx.agents.get(grandchild.childId)).toBeUndefined()
-    expect(ctx.agents.get(started.childId)).toBe(child)
+    expect(ctx.agents.get(grandchild.childId, 'trusted-internal')).toBeUndefined()
+    expect(ctx.agents.get(started.childId, 'trusted-internal')).toBe(child)
     await expect(ctx.subagents.startContinuable(startSpec(child)))
       .rejects.toMatchObject({ code: 'DRAINING' })
 
@@ -897,10 +897,10 @@ describe('continuable durability and teardown', () => {
     const disposingIntermediate = run.dispose()
     releaseIntermediate.resolve(undefined)
     await disposingIntermediate
-    expect(ctx.agents.get(intermediateId)).toBeUndefined()
-    expect(ctx.agents.get(descendant.childId)).toBeDefined()
+    expect(ctx.agents.get(intermediateId, 'trusted-internal')).toBeUndefined()
+    expect(ctx.agents.get(descendant.childId, 'trusted-internal')).toBeDefined()
     const cancellations: SessionId[] = []
-    const descendantAgent = ctx.agents.get(descendant.childId)!
+    const descendantAgent = ctx.agents.get(descendant.childId, 'trusted-internal')!
     observeCancel(descendantAgent, () => { cancellations.push(descendantAgent.id) })
 
     const drained = ctx.subagents.drainContinuableDescendants([parent])
@@ -908,7 +908,7 @@ describe('continuable durability and teardown', () => {
     expect(cancellations).toEqual([descendant.childId])
     releaseDescendant.resolve(undefined)
     await drained
-    expect(ctx.agents.get(descendant.childId)).toBeUndefined()
+    expect(ctx.agents.get(descendant.childId, 'trusted-internal')).toBeUndefined()
   })
 
   it('awaits and rolls back an admitted materialization below a scoped root', async () => {
@@ -940,7 +940,7 @@ describe('continuable durability and teardown', () => {
       releaseMaterialization.resolve(undefined)
       await expect(starting).rejects.toMatchObject({ code: 'DRAINING' })
       await drained
-      expect(ctx.agents.get(childId)).toBeUndefined()
+      expect(ctx.agents.get(childId, 'trusted-internal')).toBeUndefined()
     } finally {
       createSpy.mockRestore()
     }
@@ -978,7 +978,7 @@ describe('continuable durability and teardown', () => {
     hold.resolve(undefined)
 
     await expect(drained).rejects.toMatchObject({ code: 'ACTIVATION_TEARDOWN_FAILED' })
-    expect(ctx.agents.get(started.childId)).toBeUndefined()
+    expect(ctx.agents.get(started.childId, 'trusted-internal')).toBeUndefined()
   })
 
   it('rejects new materialization and delivery once draining begins', async () => {
@@ -1006,7 +1006,7 @@ describe('continuable durability and teardown', () => {
     await Promise.all(drains)
 
     expect(accepted).toEqual([])
-    expect(ctx.agents.list()).toEqual([parent])
+    expect(ctx.agents.list('trusted-internal')).toEqual([parent])
   })
 
   it('waits for a published materialization to finish rollback before drain resolves', async () => {
@@ -1029,7 +1029,7 @@ describe('continuable durability and teardown', () => {
     await Promise.all(drains)
 
     expect(order).toEqual(['disposed', 'drain'])
-    expect(ctx.agents.list()).toEqual([parent])
+    expect(ctx.agents.list('trusted-internal')).toEqual([parent])
   })
 
   it('admits a live follow-up before a later drain can begin disposal', async () => {
@@ -1038,7 +1038,7 @@ describe('continuable durability and teardown', () => {
     const { ctx, parent } = await setupWith(adapter)
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-    const child = ctx.agents.get(started.childId)!
+    const child = ctx.agents.get(started.childId, 'trusted-internal')!
     const order: string[] = []
     child.ctx.on('agent/inbox/inserted', ({ message }) => {
       if (message.content.some(block => block.type === 'text' && block.text === 'before drain')) {
@@ -1132,7 +1132,7 @@ describe('continuable review regressions', () => {
     const { ctx, parent } = await setupWith(adapter)
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-    const child = ctx.agents.get(started.childId)!
+    const child = ctx.agents.get(started.childId, 'trusted-internal')!
     const manager = (ctx.subagents as unknown as {
       continuations: {
         activations: Map<SessionId, { accepted: Set<MessageId> }>
@@ -1179,7 +1179,7 @@ describe('continuable review regressions', () => {
     const { ctx, parent } = await setupWith(adapter)
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-    const child = ctx.agents.get(started.childId)!
+    const child = ctx.agents.get(started.childId, 'trusted-internal')!
     const before = child.session.events.length
 
     const controller = new AbortController()
@@ -1353,7 +1353,7 @@ describe('continuable review regressions', () => {
     expect(failure).toMatchObject({ code: 'ACTIVATION_TEARDOWN_FAILED' })
     expect(String(failure)).toContain('capture failed')
     expect(String(failure)).toContain('scoped cleanup failed')
-    expect(ctx.agents.get(started.childId)).toBeUndefined()
+    expect(ctx.agents.get(started.childId, 'trusted-internal')).toBeUndefined()
   })
 
   it('cancels a running turn before the best-effort final flush', async () => {
@@ -1367,7 +1367,7 @@ describe('continuable review regressions', () => {
 
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     const child = await vi.waitFor(() => {
-      const found = ctx.agents.get(started.childId)
+      const found = ctx.agents.get(started.childId, 'trusted-internal')
       expect(found).toBeDefined()
       return found!
     })
@@ -1407,7 +1407,7 @@ describe('continuable review regressions', () => {
     const { ctx, parent } = await setupWith(adapter)
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-    const child = ctx.agents.get(started.childId)!
+    const child = ctx.agents.get(started.childId, 'trusted-internal')!
 
     // Cancel from the synchronous enqueue observer: the discard fires after the
     // id is recorded but before `followup()` returns.
@@ -1433,7 +1433,7 @@ describe('continuable review regressions', () => {
     const { ctx, parent } = await setupWith(adapter)
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-    const child = ctx.agents.get(started.childId)!
+    const child = ctx.agents.get(started.childId, 'trusted-internal')!
     const manager = (ctx.subagents as unknown as {
       continuations: {
         activations: Map<SessionId, { accepted: Set<MessageId> }>
@@ -1489,18 +1489,18 @@ describe('continuable review regressions', () => {
     // exact window where `Agent.status` is still idle.
     ctx.on('agent/inbox/inserted', ({ agent }) => {
       if (agent.session.header.parentSession !== undefined) {
-        registeredAtEnqueue.push(ctx.agents.get(agent.id) === agent)
+        registeredAtEnqueue.push(ctx.agents.get(agent.id, 'trusted-internal') === agent)
       }
     })
 
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-    const child = ctx.agents.get(started.childId)
+    const child = ctx.agents.get(started.childId, 'trusted-internal')
     await followup(ctx, parent, started.childId, message('queued'))
 
     expect(registeredAtEnqueue.length).toBeGreaterThan(0)
     expect(registeredAtEnqueue).not.toContain(false)
-    expect(ctx.agents.get(started.childId)).toBe(child)
+    expect(ctx.agents.get(started.childId, 'trusted-internal')).toBe(child)
     releaseFirst.resolve(undefined)
     await waitNoActivation(ctx, started.childId)
     // Two child turns; the third request is the parent's own turn on the
@@ -1547,7 +1547,7 @@ describe('continuable settlement delivery', () => {
     const { ctx, parent } = await setup([textResponse('the answer'), textResponse('parent ack')])
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     const child = await vi.waitFor(() => {
-      const live = ctx.agents.get(started.childId)
+      const live = ctx.agents.get(started.childId, 'trusted-internal')
       expect(live).toBeDefined()
       return live!
     })
@@ -1726,14 +1726,14 @@ describe('continuable settlement delivery', () => {
     const { ctx, parent } = await setupWith(adapter)
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     const child = await vi.waitFor(() => {
-      const live = ctx.agents.get(started.childId)
+      const live = ctx.agents.get(started.childId, 'trusted-internal')
       expect(live).toBeDefined()
       return live!
     })
     // A descendant keeps the child resident once its own turn closes, so the
     // maintenance phase below is reachable without racing settlement.
     const grandchild = await ctx.subagents.startContinuable(startSpec(child))
-    await vi.waitFor(() => { expect(ctx.agents.get(grandchild.childId)).toBeDefined() })
+    await vi.waitFor(() => { expect(ctx.agents.get(grandchild.childId, 'trusted-internal')).toBeDefined() })
     releaseChild.resolve(undefined)
     await vi.waitFor(() => { expect(child.status).toBe('idle') })
 
@@ -1844,7 +1844,7 @@ describe('continuable settlement delivery', () => {
     const { ctx, parent } = await setupWith(adapter)
     const outer = await ctx.subagents.startContinuable(startSpec(parent))
     const middle = await vi.waitFor(() => {
-      const live = ctx.agents.get(outer.childId)
+      const live = ctx.agents.get(outer.childId, 'trusted-internal')
       expect(live).toBeDefined()
       return live!
     })
@@ -1863,7 +1863,7 @@ describe('continuable settlement delivery', () => {
     await waitNoActivation(ctx, first.childId)
     releaseSecond.resolve(undefined)
     await waitNoActivation(ctx, second.childId)
-    expect(ctx.agents.get(outer.childId)).toBe(middle)
+    expect(ctx.agents.get(outer.childId, 'trusted-internal')).toBe(middle)
 
     maintaining.resolve(undefined)
     await maintenance
@@ -1883,7 +1883,7 @@ describe('continuable settlement delivery', () => {
     const { ctx, parent } = await setupWith(adapter)
     const outer = await ctx.subagents.startContinuable(startSpec(parent))
     const middle = await vi.waitFor(() => {
-      const live = ctx.agents.get(outer.childId)
+      const live = ctx.agents.get(outer.childId, 'trusted-internal')
       expect(live).toBeDefined()
       return live!
     })
@@ -1912,7 +1912,7 @@ describe('continuable settlement delivery', () => {
     const adapter = new GatedAdapter([{ chunks: textResponse('interrupted'), gate: hold.promise }])
     const { ctx, parent } = await setupWith(adapter)
     const started = await ctx.subagents.startContinuable(startSpec(parent))
-    await vi.waitFor(() => { expect(ctx.agents.get(started.childId)).toBeDefined() })
+    await vi.waitFor(() => { expect(ctx.agents.get(started.childId, 'trusted-internal')).toBeDefined() })
 
     const drained = drainManager(ctx)
     hold.resolve(undefined)
@@ -1936,7 +1936,7 @@ describe('continuable settlement delivery', () => {
     const adapter = new GatedAdapter([{ chunks: textResponse('interrupted'), gate: hold.promise }])
     const { ctx, parent } = await setupWith(adapter)
     const started = await ctx.subagents.startContinuable(startSpec(parent))
-    await vi.waitFor(() => { expect(ctx.agents.get(started.childId)).toBeDefined() })
+    await vi.waitFor(() => { expect(ctx.agents.get(started.childId, 'trusted-internal')).toBeDefined() })
 
     const drained = ctx.subagents.drainContinuableDescendants([parent])
     hold.resolve(undefined)
@@ -1956,7 +1956,7 @@ describe('continuable settlement delivery', () => {
       agentOptions: { provider: 'mock', model: 'mock' },
     })
     const started = await ctx.subagents.startContinuable(startSpec(host.agent))
-    await vi.waitFor(() => { expect(ctx.agents.get(started.childId)).toBeDefined() })
+    await vi.waitFor(() => { expect(ctx.agents.get(started.childId, 'trusted-internal')).toBeDefined() })
 
     const drained = ctx.subagents.drainContinuableDescendants([host.agent])
     hold.resolve(undefined)
@@ -2137,7 +2137,7 @@ describe('continuable errors', () => {
     const { ctx, parent } = await setupWith(adapter)
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     const child = await vi.waitFor(() => {
-      const found = ctx.agents.get(started.childId)
+      const found = ctx.agents.get(started.childId, 'trusted-internal')
       expect(found).toBeDefined()
       return found!
     })
@@ -2150,7 +2150,7 @@ describe('continuable errors', () => {
 
     await expect(followup(ctx, parent, started.childId, message('hello')))
       .rejects.toThrow(SubagentError)
-    expect(ctx.agents.get(started.childId)).toBe(child)
+    expect(ctx.agents.get(started.childId, 'trusted-internal')).toBe(child)
     hold.resolve(undefined)
   })
 
@@ -2158,7 +2158,7 @@ describe('continuable errors', () => {
     const { ctx, parent } = await setup([textResponse('first')])
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     const child = await vi.waitFor(() => {
-      const found = ctx.agents.get(started.childId)
+      const found = ctx.agents.get(started.childId, 'trusted-internal')
       expect(found).toBeDefined()
       return found!
     })
@@ -2176,7 +2176,7 @@ describe('continuable errors', () => {
     const { ctx, parent } = await setupWith(adapter)
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     const child = await vi.waitFor(() => {
-      const found = ctx.agents.get(started.childId)
+      const found = ctx.agents.get(started.childId, 'trusted-internal')
       expect(found).toBeDefined()
       return found!
     })
@@ -2198,12 +2198,12 @@ describe('continuable errors', () => {
     const { ctx, parent } = await setupWith(adapter)
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     const child = await vi.waitFor(() => {
-      const found = ctx.agents.get(started.childId)
+      const found = ctx.agents.get(started.childId, 'trusted-internal')
       expect(found).toBeDefined()
       return found!
     })
     const grandchild = await ctx.subagents.startContinuable(startSpec(child))
-    await vi.waitFor(() => { expect(ctx.agents.get(grandchild.childId)).toBeDefined() })
+    await vi.waitFor(() => { expect(ctx.agents.get(grandchild.childId, 'trusted-internal')).toBeDefined() })
     // Make the grandchild's own handle disposal reject: scope teardown failure
     // propagates, unlike a contained `agent/disposed` listener throw.
     const manager = (ctx.subagents as unknown as {
@@ -2220,7 +2220,7 @@ describe('continuable errors', () => {
     hold.resolve(undefined)
     await expect(drained).rejects.toMatchObject({ code: 'ACTIVATION_TEARDOWN_FAILED' })
     // The other branch still released, and durable sessions survive.
-    expect(ctx.agents.get(started.childId)).toBeUndefined()
+    expect(ctx.agents.get(started.childId, 'trusted-internal')).toBeUndefined()
     const loaded = await ctx.sessionPersistence.load(started.childId)
     expect(loaded.meta.id).toBe(started.childId)
   })
@@ -2234,7 +2234,7 @@ describe('continuable errors', () => {
     const { ctx, parent } = await setupWith(adapter)
     const outer = await ctx.subagents.startContinuable(startSpec(parent))
     const child = await vi.waitFor(() => {
-      const found = ctx.agents.get(outer.childId)
+      const found = ctx.agents.get(outer.childId, 'trusted-internal')
       expect(found).toBeDefined()
       return found!
     })
@@ -2244,13 +2244,13 @@ describe('continuable errors', () => {
     const manager = (ctx.subagents as unknown as {
       continuations: { activations: Map<SessionId, { disposal: Promise<void> | undefined }> }
     }).continuations
-    const before = new Set(ctx.agents.list().map(agent => agent.id))
+    const before = new Set(ctx.agents.list('trusted-internal').map(agent => agent.id))
     manager.activations.get(outer.childId)!.disposal = Promise.resolve()
 
     await expect(ctx.subagents.startContinuable(startSpec(child)))
       .rejects.toMatchObject({ code: 'ACTIVATION_CLOSING' })
     await vi.waitFor(() => {
-      expect(ctx.agents.list().map(agent => agent.id).filter(id => !before.has(id))).toEqual([])
+      expect(ctx.agents.list('trusted-internal').map(agent => agent.id).filter(id => !before.has(id))).toEqual([])
     })
     hold.resolve(undefined)
   })
@@ -2273,7 +2273,7 @@ describe('continuable errors', () => {
     // The resumed Activation runs on the declared route, not the parent's.
     await followup(ctx, parent, started.childId, message('again'))
     await vi.waitFor(() => {
-      expect(ctx.agents.get(started.childId)?.options.model).toBe('child-model')
+      expect(ctx.agents.get(started.childId, 'trusted-internal')?.options.model).toBe('child-model')
     })
     await waitNoActivation(ctx, started.childId)
   })
@@ -2292,13 +2292,13 @@ describe('continuable errors', () => {
     ctx.llm.registerAdapter(['mock'], adapter)
     const parent = ctx.agentLoop.create(SessionId('parent'), { provider: 'mock', model: 'mock' })
     const started = await ctx.subagents.startContinuable(startSpec(parent))
-    await vi.waitFor(() => { expect(ctx.agents.get(started.childId)).toBeDefined() })
+    await vi.waitFor(() => { expect(ctx.agents.get(started.childId, 'trusted-internal')).toBeDefined() })
 
     // Manager unload uses the same drain, so no child outlives its runtime.
     const disposal = serviceFiber.dispose()
     hold.resolve(undefined)
     await disposal
-    expect(ctx.agents.get(started.childId)).toBeUndefined()
+    expect(ctx.agents.get(started.childId, 'trusted-internal')).toBeUndefined()
   })
 })
 
@@ -2314,7 +2314,7 @@ describe('SubagentRuntime.interrupt', () => {
     const { ctx, parent } = await setupWith(adapter)
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-    const child = ctx.agents.get(started.childId)!
+    const child = ctx.agents.get(started.childId, 'trusted-internal')!
     await followup(ctx, parent, started.childId, message('parked B'))
     await followup(ctx, parent, started.childId, message('parked C'))
     const cancelSpy = vi.spyOn(child, 'cancel')
@@ -2331,7 +2331,7 @@ describe('SubagentRuntime.interrupt', () => {
     expect(adapter.requests).toHaveLength(1)
     expect(child.inbox.nextTurn).toHaveLength(2)
     expect(child.status).toBe('idle')
-    expect(ctx.agents.get(started.childId)).toBe(child)
+    expect(ctx.agents.get(started.childId, 'trusted-internal')).toBe(child)
 
     // Only an explicit waking send restores the driver; the parked items then
     // run before it in the existing FIFO order.
@@ -2355,10 +2355,10 @@ describe('SubagentRuntime.interrupt', () => {
     const { ctx, parent } = await setupWith(adapter)
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-    const child = ctx.agents.get(started.childId)!
+    const child = ctx.agents.get(started.childId, 'trusted-internal')!
     const grandchild = await ctx.subagents.startContinuable(startSpec(child))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(2) })
-    const grandchildAgent = ctx.agents.get(grandchild.childId)!
+    const grandchildAgent = ctx.agents.get(grandchild.childId, 'trusted-internal')!
     const childCancel = vi.spyOn(child, 'cancel')
     const grandchildCancel = vi.spyOn(grandchildAgent, 'cancel')
 
@@ -2370,8 +2370,8 @@ describe('SubagentRuntime.interrupt', () => {
     // The target parks as a waiting owner; the published descendant was never
     // signalled and keeps its own turn open.
     expect(grandchildCancel).not.toHaveBeenCalled()
-    expect(ctx.agents.get(started.childId)).toBe(child)
-    expect(ctx.agents.get(grandchild.childId)).toBe(grandchildAgent)
+    expect(ctx.agents.get(started.childId, 'trusted-internal')).toBe(child)
+    expect(ctx.agents.get(grandchild.childId, 'trusted-internal')).toBe(grandchildAgent)
 
     releaseGrandchild.resolve(undefined)
     await waitNoActivation(ctx, grandchild.childId)
@@ -2389,7 +2389,7 @@ describe('SubagentRuntime.interrupt', () => {
     const { ctx, parent } = await setupWith(adapter)
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-    const child = ctx.agents.get(started.childId)!
+    const child = ctx.agents.get(started.childId, 'trusted-internal')!
     const cancelSpy = vi.spyOn(child, 'cancel')
 
     expect(() => { ctx.subagents.interrupt(started.childId, {
@@ -2414,10 +2414,10 @@ describe('SubagentRuntime.interrupt', () => {
     const { ctx, parent } = await setupWith(adapter)
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-    const child = ctx.agents.get(started.childId)!
+    const child = ctx.agents.get(started.childId, 'trusted-internal')!
     const grandchild = await ctx.subagents.startContinuable(startSpec(child))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(2) })
-    const grandchildAgent = ctx.agents.get(grandchild.childId)!
+    const grandchildAgent = ctx.agents.get(grandchild.childId, 'trusted-internal')!
     const childCancel = vi.spyOn(child, 'cancel')
     const grandchildCancel = vi.spyOn(grandchildAgent, 'cancel')
 
@@ -2444,10 +2444,10 @@ describe('SubagentRuntime.interrupt', () => {
     const { ctx, parent } = await setupWith(adapter)
     const targetStart = await ctx.subagents.startContinuable(startSpec(parent))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-    const target = ctx.agents.get(targetStart.childId)!
+    const target = ctx.agents.get(targetStart.childId, 'trusted-internal')!
     const siblingStart = await ctx.subagents.startContinuable(startSpec(parent))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(2) })
-    const sibling = ctx.agents.get(siblingStart.childId)!
+    const sibling = ctx.agents.get(siblingStart.childId, 'trusted-internal')!
     const stranger = ctx.agentLoop.create(SessionId('stranger'), { provider: 'mock', model: 'mock' })
     const stale = { ...parent, id: parent.id } as unknown as Agent
     const cancelSpy = vi.spyOn(target, 'cancel')
@@ -2505,7 +2505,7 @@ describe('SubagentRuntime.interrupt', () => {
     const { ctx, parent } = await setupWith(adapter)
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-    const child = ctx.agents.get(started.childId)!
+    const child = ctx.agents.get(started.childId, 'trusted-internal')!
     const cancelSpy = vi.spyOn(child, 'cancel')
 
     // Scoped teardown opens the disposal transaction synchronously and issues

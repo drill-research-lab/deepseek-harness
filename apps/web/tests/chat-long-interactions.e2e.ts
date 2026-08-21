@@ -174,7 +174,7 @@ describe('web e2e: long Chat interaction contract', () => {
 
   it.skipIf(MODE === 'record')('keeps heterogeneous rows and their actions bound to exact semantic identities', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-chat-long-interactions'))
-    const source = scaffold.ctx.agents.get(SessionId(SESSION_ID))
+    const source = scaffold.ctx.agents.get(SessionId(SESSION_ID), 'trusted-internal')
     if (source === undefined) throw new Error('seeded long-history agent is not attached')
 
     const toolUserMarker = FIXTURE.markers.user(TOOL_TURN)
@@ -255,10 +255,10 @@ describe('web e2e: long Chat interaction contract', () => {
     await turnTailRow.hover()
     await turnTailRow.getByRole('button', { name: 'Branch into a new conversation', exact: true }).click()
     await expect.poll(
-      () => scaffold.ctx.agents.list().find(agent => agent.session.header.parentSession === SessionId(SESSION_ID)),
+      () => scaffold.ctx.agents.list('trusted-internal').find(agent => agent.session.header.parentSession === SessionId(SESSION_ID)),
       { timeout: 15_000 },
     ).toBeDefined()
-    const child = scaffold.ctx.agents.list()
+    const child = scaffold.ctx.agents.list('trusted-internal')
       .find(agent => agent.session.header.parentSession === SessionId(SESSION_ID))
     if (child === undefined) throw new Error('message branch did not create a child session')
     expect(child.session.header.seedLength).toBe(boundary.seq + 1)

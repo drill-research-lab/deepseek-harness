@@ -643,7 +643,7 @@ describe('MessageFeedbackService durability ordering', () => {
     })
     await started.promise
     detach()
-    expect(ctx.sessions.get(session.id)).toBeUndefined()
+    expect(ctx.sessions.get(session.id, 'trusted-internal')).toBeUndefined()
     release.resolve(undefined)
     expectItem(await pending)
     expect(persistence.readFromCalls).toBe(1)

@@ -62,7 +62,7 @@ async function waitForRunningChild(
   childId: SessionIdValue,
 ): Promise<void> {
   const deadline = Date.now() + 10_000
-  while (adapter.activeCalls !== 1 || scaffold.ctx.agents.get(childId)?.status !== 'running') {
+  while (adapter.activeCalls !== 1 || scaffold.ctx.agents.get(childId, 'trusted-internal')?.status !== 'running') {
     if (Date.now() >= deadline) throw new Error('held child did not enter its running model call')
     await new Promise<void>(resolve => setTimeout(resolve, 10))
   }
@@ -121,7 +121,7 @@ describe('web e2e: sidebar subagent activity', () => {
 
   afterAll(async () => {
     const failures: unknown[] = []
-    const child = childId === undefined ? undefined : scaffold?.ctx.agents.get(childId)
+    const child = childId === undefined ? undefined : scaffold?.ctx.agents.get(childId, 'trusted-internal')
     if (child !== undefined) {
       child.cancel({ kind: 'user' })
       await child.whenIdle().catch((error: unknown) => failures.push(error))

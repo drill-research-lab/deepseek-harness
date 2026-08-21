@@ -385,7 +385,7 @@ async resume(ownerCtx: Context, options: ResumeAgentOptions): Promise<AgentHandl
 
 Types: [SessionHeader](persistence.md)
 
-Source: [`packages/core/agent-loop/src/index.ts:296`](../../packages/core/agent-loop/src/index.ts)
+Source: [`packages/core/agent-loop/src/index.ts:297`](../../packages/core/agent-loop/src/index.ts)
 
 <a id="ctxagentpresets--agentpresets"></a>
 
@@ -697,11 +697,22 @@ enter(agent: Agent, owner: Agent | undefined): () => void
 announce(agent: Agent): void
 
 /**
- * Look up a live agent.
+ * Look up a live agent. Unfiltered: trusted internal machinery (lifecycle,
+ * lineage, and identity checks on an agent the caller already holds) relies
+ * on this seeing every live agent in the process regardless of the current
+ * request's owner. The caller MUST pass the literal `'trusted-internal'`
+ * marker, declaring — at every call site, checked by the compiler — that it
+ * is one of those trusted internal callers. A caller resolving a
+ * client-supplied id for an authenticated request MUST narrow the result
+ * through {@link ownedAgent} instead, which performs this trusted lookup
+ * and the owner check together.
  * @param id - the shared agent/session id to look up.
+ * @param access - must be the literal `'trusted-internal'`, naming this
+ *   call site as trusted internal machinery rather than a request-facing
+ *   caller resolving a client-supplied id.
  * @returns the agent, or undefined when no live agent has that id.
  */
-get(id: SessionId): Agent | undefined
+get(id: SessionId, access: 'trusted-internal'): Agent | undefined
 
 /**
  * Test whether a live agent was created through one exact parent agent's
@@ -714,21 +725,24 @@ get(id: SessionId): Agent | undefined
 isOwnedBy(id: SessionId, owner: Agent): boolean
 
 /**
- * All live agents, in registration order.
+ * All live agents, in registration order. Unfiltered — see {@link get}.
+ * @param access - must be the literal `'trusted-internal'` — see {@link get}.
  * @returns a fresh array; mutating it does not affect the registry.
  */
-list(): Agent[]
+list(access: 'trusted-internal'): Agent[]
 
 /**
  * All live top-level agents in registration order. A top-level agent was
  * created without an owning agent context; durable session lineage does not
  * affect this runtime relation, so a resumed fork may still be a root.
+ * Unfiltered — see {@link get}.
+ * @param access - must be the literal `'trusted-internal'` — see {@link get}.
  * @returns a fresh array; mutating it does not affect the registry.
  */
-roots(): Agent[]
+roots(access: 'trusted-internal'): Agent[]
 ```
 
-Source: [`packages/core/agent/src/index.ts:256`](../../packages/core/agent/src/index.ts)
+Source: [`packages/core/agent/src/index.ts:257`](../../packages/core/agent/src/index.ts)
 
 <a id="agent-events"></a>
 
@@ -1051,7 +1065,7 @@ A declarative agent entry failed before it could publish a live agent. Consumers
 'agent-loop/config-start-failed'(payload: { sessionId: SessionId; error: unknown }): void
 ```
 
-Source: [`packages/core/agent-loop/src/index.ts:183`](../../packages/core/agent-loop/src/index.ts)
+Source: [`packages/core/agent-loop/src/index.ts:184`](../../packages/core/agent-loop/src/index.ts)
 
 <a id="agent-preset-events"></a>
 

@@ -70,8 +70,8 @@ describe('agent scope lifecycle', () => {
       signal: controller.signal,
     })).rejects.toBe(reason)
 
-    expect(ctx.agents.get(SessionId('pre-aborted-s'))).toBeUndefined()
-    expect(ctx.sessions.get(SessionId('pre-aborted-s'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('pre-aborted-s'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('pre-aborted-s'), 'trusted-internal')).toBeUndefined()
 
     const valueController = new AbortController()
     valueController.abort('plain cancellation reason')
@@ -83,8 +83,8 @@ describe('agent scope lifecycle', () => {
       cause: 'plain cancellation reason',
     })
 
-    expect(ctx.agents.get(SessionId('pre-aborted-value-s'))).toBeUndefined()
-    expect(ctx.sessions.get(SessionId('pre-aborted-value-s'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('pre-aborted-value-s'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('pre-aborted-value-s'), 'trusted-internal')).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
@@ -104,8 +104,8 @@ describe('agent scope lifecycle', () => {
       signal: controller.signal,
     })).rejects.toBe(reason)
 
-    expect(ctx.agents.get(SessionId('prepare-abort-s'))).toBeUndefined()
-    expect(ctx.sessions.get(SessionId('prepare-abort-s'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('prepare-abort-s'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('prepare-abort-s'), 'trusted-internal')).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
@@ -135,8 +135,8 @@ describe('agent scope lifecycle', () => {
       sessionId: SessionId('unknown-owned-create-s'),
     })).rejects.toBe(ownedFailure)
 
-    expect(ctx.agents.get(SessionId('unknown-create'))).toBeUndefined()
-    expect(ctx.agents.get(SessionId('unknown-owned-create-s'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('unknown-create'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.agents.get(SessionId('unknown-owned-create-s'), 'trusted-internal')).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
@@ -161,8 +161,8 @@ describe('agent scope lifecycle', () => {
       agentOptions: { model: 'mock' },
     })
 
-    expect(ctx.agents.list()).toEqual([root.agent, child.agent])
-    expect(ctx.agents.roots()).toEqual([root.agent])
+    expect(ctx.agents.list('trusted-internal')).toEqual([root.agent, child.agent])
+    expect(ctx.agents.roots('trusted-internal')).toEqual([root.agent])
 
     await child.dispose()
     await root.dispose()
@@ -245,8 +245,8 @@ describe('agent scope lifecycle', () => {
     const setupStarted = Promise.withResolvers<undefined>()
     const order: string[] = []
     ctx.on('session/created', (session) => {
-      expect(ctx.sessions.get(session.id)).toBe(session)
-      expect(ctx.agents.get(session.id)?.session).toBe(session)
+      expect(ctx.sessions.get(session.id, 'trusted-internal')).toBe(session)
+      expect(ctx.agents.get(session.id, 'trusted-internal')?.session).toBe(session)
       order.push('session/created')
     })
     ctx.on('agent/created', () => void order.push('agent/created'))
@@ -266,16 +266,16 @@ describe('agent scope lifecycle', () => {
         order.push('setup:end')
         return {
           commit: () => {
-            expect(ctx.agents.get(SessionId('atomic'))).toBeUndefined()
-            expect(ctx.sessions.get(SessionId('atomic'))).toBeUndefined()
+            expect(ctx.agents.get(SessionId('atomic'), 'trusted-internal')).toBeUndefined()
+            expect(ctx.sessions.get(SessionId('atomic'), 'trusted-internal')).toBeUndefined()
             order.push('setup:commit')
           },
         }
       },
     })
     await setupStarted.promise
-    expect(ctx.agents.get(SessionId('atomic'))).toBeUndefined()
-    expect(ctx.sessions.get(SessionId('atomic'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('atomic'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('atomic'), 'trusted-internal')).toBeUndefined()
     expect(order).toEqual(['setup:start'])
     gate.resolve(undefined)
     const handle = await creating
@@ -315,8 +315,8 @@ describe('agent scope lifecycle', () => {
       setup,
     })
     await bothStarted.promise
-    expect(ctx.agents.list()).toEqual([])
-    expect(ctx.sessions.list()).toEqual([])
+    expect(ctx.agents.list('trusted-internal')).toEqual([])
+    expect(ctx.sessions.list('trusted-internal')).toEqual([])
 
     gate.resolve(undefined)
     const outcomes = await Promise.allSettled([first, second])
@@ -325,12 +325,12 @@ describe('agent scope lifecycle', () => {
     expect(fulfilled).toHaveLength(1)
     expect(rejected).toHaveLength(1)
     expect(String(rejected[0]!.reason)).toMatch(/already exists/)
-    expect(ctx.agents.list()).toEqual([fulfilled[0]!.value.agent])
-    expect(ctx.sessions.list()).toEqual([fulfilled[0]!.value.agent.session])
+    expect(ctx.agents.list('trusted-internal')).toEqual([fulfilled[0]!.value.agent])
+    expect(ctx.sessions.list('trusted-internal')).toEqual([fulfilled[0]!.value.agent.session])
 
     await fulfilled[0]!.value.dispose()
-    expect(ctx.agents.list()).toEqual([])
-    expect(ctx.sessions.list()).toEqual([])
+    expect(ctx.agents.list('trusted-internal')).toEqual([])
+    expect(ctx.sessions.list('trusted-internal')).toEqual([])
   })
 
   it('uses signal only for creation: aborts pending setup but not a returned live handle', async () => {
@@ -349,8 +349,8 @@ describe('agent scope lifecycle', () => {
     await setupStarted.promise
     pendingController.abort(new Error('cancel pending creation'))
     await expect(pending).rejects.toThrow('cancel pending creation')
-    expect(ctx.agents.get(SessionId('signal-pending-s'))).toBeUndefined()
-    expect(ctx.sessions.get(SessionId('signal-pending-s'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('signal-pending-s'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('signal-pending-s'), 'trusted-internal')).toBeUndefined()
 
     const liveController = new AbortController()
     const live = await ctx.agents.create({
@@ -360,7 +360,7 @@ describe('agent scope lifecycle', () => {
     })
     liveController.abort(new Error('too late'))
     await Promise.resolve()
-    expect(ctx.agents.get(live.agent.id)).toBe(live.agent)
+    expect(ctx.agents.get(live.agent.id, 'trusted-internal')).toBe(live.agent)
     expect(live.agent.status).toBe('idle')
     await live.dispose()
   })
@@ -389,8 +389,8 @@ describe('agent scope lifecycle', () => {
     await owner.dispose()
     await expect(creating).rejects.toThrow(/owner disposed during setup/)
     expect(published).toEqual([])
-    expect(ctx.agents.get(SessionId('owner-race-s'))).toBeUndefined()
-    expect(ctx.sessions.get(SessionId('owner-race-s'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('owner-race-s'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('owner-race-s'), 'trusted-internal')).toBeUndefined()
     // Let the losing callback settle; Promise.race already observes it.
     gate.resolve(undefined)
     await Promise.resolve()
@@ -416,8 +416,8 @@ describe('agent scope lifecycle', () => {
     const unload2 = owner2.dispose()
     await expect(creating2).rejects.toThrow(/owner disposed during setup/)
     await unload2
-    expect(ctx.agents.get(SessionId('owner-race-s-2'))).toBeUndefined()
-    expect(ctx.sessions.get(SessionId('owner-race-s-2'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('owner-race-s-2'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('owner-race-s-2'), 'trusted-internal')).toBeUndefined()
   })
 
   it('an AgentLoop unload aborts pending setup, awaits cleanup, and releases both ids', async () => {
@@ -441,8 +441,8 @@ describe('agent scope lifecycle', () => {
     await loopFiber.dispose()
     await expect(creating).rejects.toThrow(/agent loop is not active/)
     expect(published).toEqual([])
-    expect(ctx.agents.get(SessionId('factory-setup-race-s'))).toBeUndefined()
-    expect(ctx.sessions.get(SessionId('factory-setup-race-s'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('factory-setup-race-s'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('factory-setup-race-s'), 'trusted-internal')).toBeUndefined()
 
     gate.resolve(undefined)
     await ctx.fiber.dispose()
@@ -466,8 +466,8 @@ describe('agent scope lifecycle', () => {
     await expect(creating).rejects.toThrow(/agent loop is not active/)
     await loopFiber.dispose()
     expect(setupCalls).toBe(1)
-    expect(ctx.agents.get(SessionId('factory-scope-race-s'))).toBeUndefined()
-    expect(ctx.sessions.get(SessionId('factory-scope-race-s'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('factory-scope-race-s'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('factory-scope-race-s'), 'trusted-internal')).toBeUndefined()
 
     await ctx.fiber.dispose()
   })
@@ -508,15 +508,15 @@ describe('agent scope lifecycle', () => {
     await ownerDisposal
     await owner
     expect(scopeFiber?.uid).toBeNull()
-    expect(ctx.agents.get(SessionId('caller-scope-race-s'))).toBeUndefined()
-    expect(ctx.sessions.get(SessionId('caller-scope-race-s'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('caller-scope-race-s'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('caller-scope-race-s'), 'trusted-internal')).toBeUndefined()
     await owner.dispose()
     await ctx.fiber.dispose()
   })
 
   it('synchronous create rechecks provider liveness before its first publication edge', async () => {
     const { ctx, loopFiber } = await harnessWithLoop()
-    const sessionsBefore = ctx.sessions.list().length
+    const sessionsBefore = ctx.sessions.list('trusted-internal').length
     let unloaded = false
     let unloading!: Promise<void>
     ctx.on('internal/plugin', (fiber) => {
@@ -527,8 +527,8 @@ describe('agent scope lifecycle', () => {
 
     ctx.agentLoop.create(SessionId('config-scope-race'), { provider: 'mock', model: 'mock' })
     await unloading
-    expect(ctx.agents.get(SessionId('config-scope-race')) === undefined).toBe(true)
-    expect(ctx.sessions.list().length).toBe(sessionsBefore)
+    expect(ctx.agents.get(SessionId('config-scope-race'), 'trusted-internal') === undefined).toBe(true)
+    expect(ctx.sessions.list('trusted-internal').length).toBe(sessionsBefore)
     await ctx.fiber.dispose()
   })
 
@@ -539,7 +539,7 @@ describe('agent scope lifecycle', () => {
     expect(() => ctx.agentLoop.create(id, { provider: 'mock', model: 'mock' }, { cwd: 'relative' }))
       .toThrow(/absolute path/)
     const replacement = ctx.agentLoop.create(id, { provider: 'mock', model: 'mock' }, { cwd: '/recovered' })
-    expect(ctx.agents.get(id)).toBe(replacement)
+    expect(ctx.agents.get(id, 'trusted-internal')).toBe(replacement)
     await replacement.whenIdle()
     await ctx.fiber.dispose()
   })
@@ -559,8 +559,8 @@ describe('agent scope lifecycle', () => {
       agentOptions: { provider: 'mock', model: 'mock' },
     })).rejects.toThrow('scope preparation failed')
     await loopFiber.dispose()
-    expect(ctx.agents.get(SessionId('factory-scope-throw-s'))).toBeUndefined()
-    expect(ctx.sessions.get(SessionId('factory-scope-throw-s'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('factory-scope-throw-s'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('factory-scope-throw-s'), 'trusted-internal')).toBeUndefined()
 
     await ctx.fiber.dispose()
   })
@@ -576,8 +576,8 @@ describe('agent scope lifecycle', () => {
 
     await loopFiber.dispose()
     expect(handle.agent.status).toBe('idle')
-    expect(ctx.agents.get(sessionId)).toBeUndefined()
-    expect(ctx.sessions.get(sessionId)).toBeUndefined()
+    expect(ctx.agents.get(sessionId, 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(sessionId, 'trusted-internal')).toBeUndefined()
     expect(ctx.fiber.getEffects().filter(effect => effect.label === `agentLoop.lifecycle(${sessionId})`)).toEqual([])
     // The consumer handle shares the provider's completed quiescence boundary.
     await handle.dispose()
@@ -632,8 +632,8 @@ describe('agent scope lifecycle', () => {
     })
     ctx.on('session/created', (session) => {
       if (session.id !== SessionId('session-created-barrier-s')) return
-      const agent = ctx.agents.get(SessionId('session-created-barrier-s'))!
-      expect(ctx.sessions.get(session.id)).toBe(session)
+      const agent = ctx.agents.get(SessionId('session-created-barrier-s'), 'trusted-internal')!
+      expect(ctx.sessions.get(session.id, 'trusted-internal')).toBe(session)
       expect(agent.session).toBe(session)
       agent.ctx.effect(() => () => { lifecycle.push('scope-disposed') })
       lifecycle.push('session-created:observer')
@@ -660,8 +660,8 @@ describe('agent scope lifecycle', () => {
       'scope-disposed',
       'session-disposed',
     ])
-    expect(ctx.agents.get(SessionId('session-created-barrier-s'))).toBeUndefined()
-    expect(ctx.sessions.get(SessionId('session-created-barrier-s'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('session-created-barrier-s'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('session-created-barrier-s'), 'trusted-internal')).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
@@ -680,8 +680,8 @@ describe('agent scope lifecycle', () => {
     })
     ctx.on('agent/created', ({ agent }) => {
       if (agent.id !== SessionId('agent-created-barrier-s')) return
-      expect(ctx.agents.get(agent.id)).toBe(agent)
-      expect(ctx.sessions.get(agent.session.id)).toBe(agent.session)
+      expect(ctx.agents.get(agent.id, 'trusted-internal')).toBe(agent)
+      expect(ctx.sessions.get(agent.session.id, 'trusted-internal')).toBe(agent.session)
       agent.ctx.effect(() => () => { lifecycle.push('scope-disposed') })
       lifecycle.push('agent-created:observer')
     })
@@ -710,8 +710,8 @@ describe('agent scope lifecycle', () => {
       'agent-disposed',
       'session-disposed',
     ])
-    expect(ctx.agents.get(SessionId('agent-created-barrier-s'))).toBeUndefined()
-    expect(ctx.sessions.get(SessionId('agent-created-barrier-s'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('agent-created-barrier-s'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('agent-created-barrier-s'), 'trusted-internal')).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
@@ -736,8 +736,8 @@ describe('agent scope lifecycle', () => {
     await expect(creating).rejects.toThrow(/owner disposed during setup/)
     await owner.dispose()
     expect(starts).toEqual([])
-    expect(ctx.agents.get(SessionId('listener-dispose-s')) === undefined).toBe(true)
-    expect(ctx.sessions.get(SessionId('listener-dispose-s')) === undefined).toBe(true)
+    expect(ctx.agents.get(SessionId('listener-dispose-s'), 'trusted-internal') === undefined).toBe(true)
+    expect(ctx.sessions.get(SessionId('listener-dispose-s'), 'trusted-internal') === undefined).toBe(true)
     await ctx.fiber.dispose()
   })
 
@@ -759,8 +759,8 @@ describe('agent scope lifecycle', () => {
     })
     ctx.on('agent/session-start', ({ agent }) => {
       if (agent.id !== SessionId('session-start-dispose-s')) return
-      expect(ctx.agents.get(agent.id)).toBe(agent)
-      expect(ctx.sessions.get(agent.session.id)).toBe(agent.session)
+      expect(ctx.agents.get(agent.id, 'trusted-internal')).toBe(agent)
+      expect(ctx.sessions.get(agent.session.id, 'trusted-internal')).toBe(agent.session)
       agent.ctx.effect(() => () => { scopeDisposed = true })
       observerSawLive = true
     })
@@ -780,8 +780,8 @@ describe('agent scope lifecycle', () => {
     expect(observerSawLive).toBe(true)
     expect(scopeDisposed).toBe(true)
     expect(announced.session.events).toEqual([])
-    expect(ctx.agents.get(SessionId('session-start-dispose-s'))).toBeUndefined()
-    expect(ctx.sessions.get(SessionId('session-start-dispose-s'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('session-start-dispose-s'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('session-start-dispose-s'), 'trusted-internal')).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
@@ -802,8 +802,8 @@ describe('agent scope lifecycle', () => {
 
     // Nothing leaked: no agent, no session, and the ids are reusable.
     expect(published).toEqual([])
-    expect(ctx.agents.get(SessionId('bad-s'))).toBeUndefined()
-    expect(ctx.sessions.get(SessionId('bad-s'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('bad-s'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('bad-s'), 'trusted-internal')).toBeUndefined()
     const retry = await ctx.agents.create({ sessionId: SessionId('bad-s'), agentOptions: { provider: 'mock', model: 'mock' } })
     await retry.dispose()
   })
@@ -827,8 +827,8 @@ describe('agent scope lifecycle', () => {
     })).rejects.toThrow(/seed event at index 0 is not losslessly JSON-serializable/)
 
     expect(published).toEqual([])
-    expect(ctx.agents.get(SessionId('exotic-seed-session'))).toBeUndefined()
-    expect(ctx.sessions.get(SessionId('exotic-seed-session'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('exotic-seed-session'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('exotic-seed-session'), 'trusted-internal')).toBeUndefined()
     const retry = await ctx.agents.create({
       sessionId: SessionId('exotic-seed-session'),
       agentOptions: { provider: 'mock', model: 'mock' },
@@ -847,8 +847,8 @@ describe('agent scope lifecycle', () => {
     await expect(ctx.agents.create({
       sessionId: SessionId('bad-s'), agentOptions: { provider: 'mock', model: 'mock' },
     })).rejects.toThrow('boom created')
-    expect(ctx.agents.get(SessionId('bad-s'))).toBeUndefined()
-    expect(ctx.sessions.get(SessionId('bad-s'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('bad-s'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('bad-s'), 'trusted-internal')).toBeUndefined()
     expect(disposed).toEqual([]) // inserted but never announced: no impossible disposed edge
     // The rollback also disposed the scope fiber: re-creating works cleanly.
     const retry = await ctx.agents.create({ sessionId: SessionId('bad-s'), agentOptions: { provider: 'mock', model: 'mock' } })
@@ -878,13 +878,13 @@ describe('agent scope lifecycle', () => {
       'agent-disposed:partial-session',
       'session-disposed:partial-session',
     ])
-    expect(ctx.agents.get(SessionId('partial-session'))).toBeUndefined()
-    expect(ctx.sessions.get(SessionId('partial-session'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('partial-session'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('partial-session'), 'trusted-internal')).toBeUndefined()
   })
 
   it('the synchronous config helper rolls back when publication throws', async () => {
     const ctx = await harness()
-    const sessionsBefore = ctx.sessions.list().length
+    const sessionsBefore = ctx.sessions.list('trusted-internal').length
     let boom = true
     ctx.on('session/created', () => {
       if (boom) {
@@ -895,8 +895,8 @@ describe('agent scope lifecycle', () => {
 
     expect(() => ctx.agentLoop.create(SessionId('config-bad'), { provider: 'mock', model: 'mock' }))
       .toThrow('config publish failed')
-    await expect.poll(() => ctx.agents.get(SessionId('config-bad')) === undefined).toBe(true)
-    await expect.poll(() => ctx.sessions.list().length).toBe(sessionsBefore)
+    await expect.poll(() => ctx.agents.get(SessionId('config-bad'), 'trusted-internal') === undefined).toBe(true)
+    await expect.poll(() => ctx.sessions.list('trusted-internal').length).toBe(sessionsBefore)
   })
 
   it('registrations through a disposed agent ctx throw INACTIVE_EFFECT', async () => {
@@ -931,8 +931,8 @@ describe('agent scope lifecycle', () => {
       if (event.type === 'turn/end') order.push('turn-end')
     })
     ctx.on('agent/disposed', () => {
-      order.push(`disposed(listed=${ctx.agents.get(SessionId('o1-s')) !== undefined})`)
-      order.push(`session-still-stored=${ctx.sessions.get(SessionId('o1-s')) !== undefined}`)
+      order.push(`disposed(listed=${ctx.agents.get(SessionId('o1-s'), 'trusted-internal') !== undefined})`)
+      order.push(`session-still-stored=${ctx.sessions.get(SessionId('o1-s'), 'trusted-internal') !== undefined}`)
     })
 
     // Open a turn so disposal must drain real work before registry removal.
@@ -951,7 +951,7 @@ describe('agent scope lifecycle', () => {
       'disposed(listed=false)',
       'session-still-stored=true',
     ])
-    expect(ctx.sessions.get(SessionId('o1-s'))).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('o1-s'), 'trusted-internal')).toBeUndefined()
   })
 
   it('handle.dispose() during owner unload still awaits true quiescence (shared boundary)', async () => {
@@ -970,8 +970,8 @@ describe('agent scope lifecycle', () => {
     // actually finished (the raw wrapper returns undefined on a repeat call).
     await handle.dispose()
     expect(teardownDone).toContain('unregistered')
-    expect(ctx.agents.get(SessionId('h1-s'))).toBeUndefined()
-    expect(ctx.sessions.get(SessionId('h1-s'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('h1-s'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('h1-s'), 'trusted-internal')).toBeUndefined()
     await unload
   })
 
@@ -1015,8 +1015,8 @@ describe('agent scope lifecycle', () => {
     expect(ownerSettled).toBe(false)
     gate.resolve(undefined)
     await Promise.all([disposing, unloading])
-    expect(ctx.agents.get(SessionId('manual-first-s'))).toBeUndefined()
-    expect(ctx.sessions.get(SessionId('manual-first-s'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('manual-first-s'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('manual-first-s'), 'trusted-internal')).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
@@ -1038,15 +1038,15 @@ describe('agent scope lifecycle', () => {
 
     const disposing = first.dispose()
     await cleanupStarted.promise
-    expect(ctx.agents.get(sessionId)).toBe(first.agent)
-    expect(ctx.sessions.get(sessionId)).toBe(first.agent.session)
+    expect(ctx.agents.get(sessionId, 'trusted-internal')).toBe(first.agent)
+    expect(ctx.sessions.get(sessionId, 'trusted-internal')).toBe(first.agent.session)
     gate.resolve(undefined)
     await disposing
-    expect(ctx.agents.get(sessionId)).toBeUndefined()
-    expect(ctx.sessions.get(sessionId)).toBeUndefined()
+    expect(ctx.agents.get(sessionId, 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(sessionId, 'trusted-internal')).toBeUndefined()
     const replacement = await ctx.agents.create({ sessionId, agentOptions: { provider: 'mock', model: 'mock' } })
-    expect(ctx.agents.get(sessionId)).toBe(replacement.agent)
-    expect(ctx.sessions.get(sessionId)).toBe(replacement.agent.session)
+    expect(ctx.agents.get(sessionId, 'trusted-internal')).toBe(replacement.agent)
+    expect(ctx.sessions.get(sessionId, 'trusted-internal')).toBe(replacement.agent.session)
     await replacement.dispose()
     await ctx.fiber.dispose()
   })
@@ -1082,8 +1082,8 @@ describe('agent scope lifecycle', () => {
 
     // The reentrant run either never started or was drained: the registries
     // are empty and nothing still drives the detached session.
-    expect(ctx.agents.get(agent.id)).toBeUndefined()
-    expect(ctx.sessions.get(agent.id)).toBeUndefined()
+    expect(ctx.agents.get(agent.id, 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(agent.id, 'trusted-internal')).toBeUndefined()
     const eventsAfter = agent.session.events.length
     await new Promise(resolve => setTimeout(resolve, 30))
     expect(agent.session.events.length).toBe(eventsAfter)

@@ -177,13 +177,13 @@ describe('AgentRegistry', () => {
 
     const agent = stubAgent('a1')
     const dispose = ctx.agents.register(agent)
-    expect(ctx.agents.get(agent.id)).toBe(agent)
-    expect(ctx.agents.list()).toEqual([agent])
-    expect(ctx.agents.roots()).toEqual([agent])
+    expect(ctx.agents.get(agent.id, 'trusted-internal')).toBe(agent)
+    expect(ctx.agents.list('trusted-internal')).toEqual([agent])
+    expect(ctx.agents.roots('trusted-internal')).toEqual([agent])
     expect(() => ctx.agents.register(stubAgent('a1'))).toThrow(/already registered/)
 
     dispose()
-    expect(ctx.agents.get(agent.id)).toBeUndefined()
+    expect(ctx.agents.get(agent.id, 'trusted-internal')).toBeUndefined()
     expect(lifecycle).toEqual(['created:a1', 'disposed:a1'])
   })
 
@@ -194,7 +194,7 @@ describe('AgentRegistry', () => {
 
     expect(() => ctx.agents.enter(agent, undefined))
       .toThrow('agent id "agent-id" does not match session id "session-id"')
-    expect(ctx.agents.list()).toEqual([])
+    expect(ctx.agents.list('trusted-internal')).toEqual([])
   })
 
   it('tracks runtime creator ownership separately from registry order', async () => {
@@ -207,8 +207,8 @@ describe('AgentRegistry', () => {
     const detachChild = ctx.agents.enter(child, root)
     ctx.agents.announce(child)
 
-    expect(ctx.agents.list()).toEqual([root, child])
-    expect(ctx.agents.roots()).toEqual([root])
+    expect(ctx.agents.list('trusted-internal')).toEqual([root, child])
+    expect(ctx.agents.roots('trusted-internal')).toEqual([root])
     expect(ctx.agents.isOwnedBy(child.id, root)).toBe(true)
     expect(ctx.agents.isOwnedBy(root.id, root)).toBe(false)
     expect(ctx.agents.isOwnedBy(SessionId('missing'), root)).toBe(false)
@@ -227,7 +227,7 @@ describe('AgentRegistry', () => {
     ctx.on('agent/disposed', ({ agent }) => void lifecycle.push(`disposed:${agent.id}`))
 
     expect(() => ctx.agents.register(stubAgent('vetoed'))).toThrow('creation veto')
-    expect(ctx.agents.get(SessionId('vetoed'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('vetoed'), 'trusted-internal')).toBeUndefined()
     expect(lifecycle).toEqual(['created:vetoed', 'disposed:vetoed'])
   })
 
@@ -273,7 +273,7 @@ describe('AgentRegistry', () => {
     const replacement = stubAgent('split')
     const detachReplacement = ctx.agents.enter(replacement, undefined)
     detachFirst()
-    expect(ctx.agents.get(replacement.id)).toBe(replacement)
+    expect(ctx.agents.get(replacement.id, 'trusted-internal')).toBe(replacement)
     expect(() => { ctx.agents.announce(first) }).toThrow(/not live/)
     detachReplacement()
     expect(lifecycle).toEqual(['created:split', 'disposed:split'])
@@ -285,16 +285,16 @@ describe('AgentRegistry', () => {
     const order: string[] = []
     const agent = stubAgent('reentrant')
     ctx.on('agent/created', () => {
-      order.push(`first:${ctx.agents.get(agent.id) === agent}`)
+      order.push(`first:${ctx.agents.get(agent.id, 'trusted-internal') === agent}`)
       detach()
-      order.push(`after-detach:${ctx.agents.get(agent.id) === agent}`)
+      order.push(`after-detach:${ctx.agents.get(agent.id, 'trusted-internal') === agent}`)
     })
-    ctx.on('agent/created', () => void order.push(`second:${ctx.agents.get(agent.id) === agent}`))
+    ctx.on('agent/created', () => void order.push(`second:${ctx.agents.get(agent.id, 'trusted-internal') === agent}`))
     ctx.on('agent/disposed', () => void order.push('disposed'))
     const detach = ctx.agents.enter(agent, undefined)
     ctx.agents.announce(agent)
     expect(order).toEqual(['first:true', 'after-detach:true', 'second:true', 'disposed'])
-    expect(ctx.agents.get(agent.id)).toBeUndefined()
+    expect(ctx.agents.get(agent.id, 'trusted-internal')).toBeUndefined()
   })
 })
 

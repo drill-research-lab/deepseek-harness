@@ -13,12 +13,36 @@ import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
+import { OwnershipService } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal, UserHome } from '@deepseek-ai/dsh-ownership'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import type { JobOutcome } from '@deepseek-ai/dsh-jobs'
 import type { MuxFrame, RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api'
 import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import { createApiProxy } from '@deepseek-ai/dsh-host-apiproxy'
+
+class TestOwnership extends OwnershipService {
+  principal: OwnerPrincipal | undefined
+
+  currentPrincipal(): OwnerPrincipal {
+    if (this.principal === undefined) throw new Error('no test owner')
+    return this.principal
+  }
+
+  currentPrincipalOrUndefined(): OwnerPrincipal | undefined { return this.principal }
+
+  backgroundPrincipal(userId: OwnerPrincipal['userId']): OwnerPrincipal {
+    return { userId, source: 'background' }
+  }
+
+  resolveUserHome(): Promise<UserHome> {
+    throw new Error('not used by these tests')
+  }
+}
+
+const alice = { userId: 'ldap:test-alice' as OwnerPrincipal['userId'], source: 'request' as const }
+const bob = { userId: 'ldap:test-bob' as OwnerPrincipal['userId'], source: 'request' as const }
 
 type JobFrame = Extract<MuxFrame, { type: 'session/jobs' }>
 
@@ -186,7 +210,7 @@ describe('session/jobs change pushes', () => {
     ctx.jobs.start(producer().spec)
     await collected
     expect(loaded).toBe(false)
-    expect(ctx.agents.get(coldId)).toBeUndefined()
+    expect(ctx.agents.get(coldId, 'trusted-internal')).toBeUndefined()
   })
 })
 
@@ -241,6 +265,75 @@ describe('session/jobs never consumes model output', () => {
 
     expect(baseline?.jobs).toHaveLength(1)
     expect(p.reads.count).toBe(0)
+  })
+})
+
+describe('events.mux baseline ownership isolation', () => {
+  /**
+   * Regression: the `events.mux` connection-time baseline loops (subscribe,
+   * queue, and job snapshots) iterated `ctx.sessions.list()` unfiltered and
+   * pushed a frame per session with no owner check — unlike the live
+   * `session/created`/`session/disposed`/`jobs.onJobsChanged` listeners a few
+   * lines below them in the same handler, which already gated on
+   * `visibleSession`. Any authenticated user who opened the mux stream
+   * received, at connect time, the existence (`session/subscribed`) and
+   * background-task content (`session/jobs`) of every OTHER user's live
+   * sessions in the same process.
+   */
+  it('never sends another owner\'s session/subscribed or session/jobs baseline frames', async () => {
+    const ctx = new Context()
+    await ctx.plugin(TestOwnership)
+    const ownership = ctx.ownership as TestOwnership
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(UserQuestionService)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(LocalJobRegistry)
+    ctx.jobs.attachController('api-proxy-test')
+
+    ownership.principal = alice
+    const aliceSession = ctx.sessions.create()
+    const aliceAgent = {
+      id: aliceSession.id,
+      session: aliceSession,
+      inbox: new Inbox(aliceSession, { inserted: () => {}, discarded: () => {}, claimed: () => {} }),
+      status: 'idle',
+      ctx,
+    } as Agent
+    ctx.agents.register(aliceAgent)
+    ctx.jobs.start({ ...producer('alice private build').spec, owner: aliceAgent })
+
+    ownership.principal = bob
+    const bobSession = ctx.sessions.create()
+    const bobAgent = {
+      id: bobSession.id,
+      session: bobSession,
+      inbox: new Inbox(bobSession, { inserted: () => {}, discarded: () => {}, claimed: () => {} }),
+      status: 'idle',
+      ctx,
+    } as Agent
+    ctx.agents.register(bobAgent)
+
+    const abort = new AbortController()
+    const stream = api(ctx).events.mux({ rpcId: RpcId('t-mux-ownership'), payload: {} }, abort.signal)
+    const frames: MuxFrame[] = []
+    const drained = (async () => {
+      for await (const envelope of stream) {
+        frames.push(envelope.payload)
+        // Bob's own subscribe frame is the deterministic end of the
+        // synchronous baseline loops (his session is created last).
+        if (frames.some(frame => frame.type === 'session/subscribed' && frame.sessionId === bobSession.id)) {
+          abort.abort()
+        }
+      }
+    })()
+    await drained
+
+    const subscribed = frames.filter((frame): frame is Extract<MuxFrame, { type: 'session/subscribed' }> =>
+      frame.type === 'session/subscribed')
+    expect(subscribed.map(frame => frame.sessionId)).toEqual([bobSession.id])
+
+    const jobs = frames.filter((frame): frame is JobFrame => frame.type === 'session/jobs')
+    expect(jobs).toEqual([])
   })
 })
 

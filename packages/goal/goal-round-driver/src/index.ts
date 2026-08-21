@@ -95,7 +95,7 @@ export function apply(ctx: Context): void {
 
   /** Read only when the exact Agent remains live. */
   function currentGoal(state: DriverState): GoalView | undefined {
-    if (ctx.agents.get(state.agent.id) !== state.agent) return undefined
+    if (ctx.agents.get(state.agent.id, 'trusted-internal') !== state.agent) return undefined
     return ctx.goals.get(state.agent)
   }
 
@@ -103,7 +103,7 @@ export function apply(ctx: Context): void {
   function readyToDrive(state: DriverState): boolean {
     return ctx.fiber.state === FiberState.ACTIVE
       && !state.stopping
-      && ctx.agents.get(state.agent.id) === state.agent
+      && ctx.agents.get(state.agent.id, 'trusted-internal') === state.agent
       && state.agent.status === 'idle'
       && !state.competingQueued
   }
@@ -305,7 +305,7 @@ export function apply(ctx: Context): void {
     })
 
     ctx.on('session/event', (session: Session, event: SessionEvent) => {
-      const agent = ctx.agents.get(session.id)
+      const agent = ctx.agents.get(session.id, 'trusted-internal')
       if (agent === undefined || agent.session !== session) return
       const state = stateFor(agent)
       switch (event.type) {
@@ -415,7 +415,7 @@ export function apply(ctx: Context): void {
 
     // Loading a lifecycle driver over existing agents never inherits hidden
     // automatic authority from an earlier producer instance.
-    for (const agent of ctx.agents.list()) {
+    for (const agent of ctx.agents.list('trusted-internal')) {
       const state = stateFor(agent)
       disarm(state)
     }

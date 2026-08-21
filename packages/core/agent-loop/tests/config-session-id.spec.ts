@@ -49,10 +49,10 @@ describe('config-driven session id', () => {
         { id: 'unchanged', sessionId: SessionId('config-unchanged'), model: 'mock' },
       ],
     })
-    expect(ctx.agents.get(SessionId('launcher-fresh'))?.session.id).toBe('launcher-fresh')
-    expect(ctx.agents.get(SessionId('launcher-resumed'))).toBeUndefined()
-    expect(ctx.agents.get(SessionId('config-resumed'))).toBeUndefined()
-    expect(ctx.agents.get(SessionId('config-unchanged'))?.session.id).toBe('config-unchanged')
+    expect(ctx.agents.get(SessionId('launcher-fresh'), 'trusted-internal')?.session.id).toBe('launcher-fresh')
+    expect(ctx.agents.get(SessionId('launcher-resumed'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.agents.get(SessionId('config-resumed'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.agents.get(SessionId('config-unchanged'), 'trusted-internal')?.session.id).toBe('config-unchanged')
     await ctx.fiber.dispose()
   })
 
@@ -61,7 +61,7 @@ describe('config-driven session id', () => {
     await expect(ctx.plugin(AgentLoop, {
       agents: [{ id: 'main', sessionId: SessionId(''), model: 'mock' }],
     })).rejects.toThrow('expected string length >= 1')
-    expect(ctx.agents.get(SessionId(''))).toBeUndefined()
+    expect(ctx.agents.get(SessionId(''), 'trusted-internal')).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
@@ -70,7 +70,7 @@ describe('config-driven session id', () => {
     await exact.plugin(AgentLoop, {
       agents: [{ id: 'main', sessionId: SessionId('config-exact'), model: 'mock' }],
     })
-    expect(exact.agents.get(SessionId('config-exact'))?.session.id).toBe('config-exact')
+    expect(exact.agents.get(SessionId('config-exact'), 'trusted-internal')?.session.id).toBe('config-exact')
     await exact.fiber.dispose()
 
     const conflicting = await makeCoreContext()
@@ -97,7 +97,7 @@ describe('config-driven session id', () => {
         { id: 'second', sessionId: SessionId('shared'), model: 'mock' },
       ],
     }).then(() => undefined, (error: unknown) => error)
-    const published = ctx.agents.get(SessionId('shared'))
+    const published = ctx.agents.get(SessionId('shared'), 'trusted-internal')
     await ctx.fiber.dispose()
 
     expect(outcome).toEqual(new Error('agents "first" and "second" use duplicate exact session identity "shared"'))
@@ -113,15 +113,15 @@ describe('config-driven session id', () => {
     const config = { agents: [{ id: 'main', sessionId: SessionId('config-exact-reload'), provider: 'mock', model: 'mock' }] }
 
     const firstLoop = await ctx.plugin(AgentLoop, config)
-    await expect.poll(() => ctx.agents.get(SessionId('config-exact-reload')), { timeout: 5_000 }).toBeDefined()
-    const first = ctx.agents.get(SessionId('config-exact-reload'))!
+    await expect.poll(() => ctx.agents.get(SessionId('config-exact-reload'), 'trusted-internal'), { timeout: 5_000 }).toBeDefined()
+    const first = ctx.agents.get(SessionId('config-exact-reload'), 'trusted-internal')!
     first.followup(createUserMessage({ content: [{ type: 'text', text: 'remember me' }], source: { kind: 'user' } }))
     await waitForIdle(ctx, first)
     await firstLoop.dispose()
 
     const secondLoop = await ctx.plugin(AgentLoop, config)
-    await expect.poll(() => ctx.agents.get(SessionId('config-exact-reload')), { timeout: 5_000 }).toBeDefined()
-    const second = ctx.agents.get(SessionId('config-exact-reload'))!
+    await expect.poll(() => ctx.agents.get(SessionId('config-exact-reload'), 'trusted-internal'), { timeout: 5_000 }).toBeDefined()
+    const second = ctx.agents.get(SessionId('config-exact-reload'), 'trusted-internal')!
     expect(JSON.stringify(second.session.deriveMessages())).toContain('remember me')
     second.followup(createUserMessage({ content: [{ type: 'text', text: 'continue' }], source: { kind: 'user' } }))
     await waitForIdle(ctx, second)
@@ -142,8 +142,8 @@ describe('config-driven session id', () => {
     const sessionId = SessionId('config-exact-overlap')
     const config = { agents: [{ id: 'main', sessionId, provider: 'mock', model: 'mock' }] }
     const firstLoop = await ctx.plugin(AgentLoop, config)
-    await expect.poll(() => ctx.agents.get(sessionId)).toBeDefined()
-    const first = ctx.agents.get(sessionId) as Agent
+    await expect.poll(() => ctx.agents.get(sessionId, 'trusted-internal')).toBeDefined()
+    const first = ctx.agents.get(sessionId, 'trusted-internal') as Agent
 
     const cleanupGate = Promise.withResolvers<undefined>()
     const cleanupStarted = Promise.withResolvers<undefined>()
@@ -165,13 +165,13 @@ describe('config-driven session id', () => {
     ctx.on('agent-loop/config-start-failed', ({ error }) => { failures.push(error) })
     const secondLoop = await ctx.plugin(AgentLoop, config)
     await new Promise(resolve => setTimeout(resolve, 0))
-    expect(ctx.agents.get(sessionId)).toBe(first)
+    expect(ctx.agents.get(sessionId, 'trusted-internal')).toBe(first)
     expect(failures).toEqual([])
 
     cleanupGate.resolve(undefined)
     await firstDisposal
-    await expect.poll(() => ctx.agents.get(sessionId)).toBeDefined()
-    const second = ctx.agents.get(sessionId) as Agent
+    await expect.poll(() => ctx.agents.get(sessionId, 'trusted-internal')).toBeDefined()
+    const second = ctx.agents.get(sessionId, 'trusted-internal') as Agent
     expect(second).not.toBe(first)
     expect(JSON.stringify(second.session.deriveMessages())).toContain('persist before replacement')
     expect(failures).toEqual([])
@@ -188,8 +188,8 @@ describe('config-driven session id', () => {
     const sessionId = SessionId('config-exact-cancel')
     const config = { agents: [{ id: 'main', sessionId, model: 'mock' }] }
     const firstLoop = await ctx.plugin(AgentLoop, config)
-    await expect.poll(() => ctx.agents.get(sessionId)).toBeDefined()
-    const first = ctx.agents.get(sessionId) as Agent
+    await expect.poll(() => ctx.agents.get(sessionId, 'trusted-internal')).toBeDefined()
+    const first = ctx.agents.get(sessionId, 'trusted-internal') as Agent
 
     const cleanupGate = Promise.withResolvers<undefined>()
     const cleanupStarted = Promise.withResolvers<undefined>()
@@ -207,11 +207,11 @@ describe('config-driven session id', () => {
     expect(first.status).toBe('idle')
     const secondLoop = await ctx.plugin(AgentLoop, config)
     await secondLoop.dispose()
-    expect(ctx.agents.get(sessionId)).toBe(first)
+    expect(ctx.agents.get(sessionId, 'trusted-internal')).toBe(first)
 
     cleanupGate.resolve(undefined)
     await firstDisposal
-    expect(ctx.agents.get(sessionId)).toBeUndefined()
+    expect(ctx.agents.get(sessionId, 'trusted-internal')).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
@@ -246,7 +246,7 @@ describe('config-driven session id', () => {
     await expect.poll(() => warn).toHaveBeenCalledWith(
       'agent "main": config-start-failed listener rejected: async failure observer failed',
     )
-    expect(ctx.agents.get(SessionId('config-exact-failure'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('config-exact-failure'), 'trusted-internal')).toBeUndefined()
     warn.mockRestore()
     await ctx.fiber.dispose()
   })
@@ -315,7 +315,7 @@ describe('config-driven session id', () => {
       }
       await Promise.resolve()
       if (outcome === 'resolve') await expect.poll(() => released).toHaveBeenCalledOnce()
-      expect(ctx.agents.get(SessionId('config-exact-dispose'))).toBeUndefined()
+      expect(ctx.agents.get(SessionId('config-exact-dispose'), 'trusted-internal')).toBeUndefined()
       expect(failures).toEqual([])
       expect(warn).not.toHaveBeenCalled()
       warn.mockRestore()
@@ -358,10 +358,10 @@ describe('config-driven session id', () => {
     await ctx1.plugin(AgentLoop, { agents: [{ id: SessionId('cfg'), provider: 'mock', model: 'mock' }] })
     await ctx1.plugin(JsonlSessionPersistence, { root })
     ctx1.llm.registerAdapter(['mock'], new MockAdapter([textResponse('cfg')]))
-    const a1 = ctx1.agents.list()[0] as Agent
+    const a1 = ctx1.agents.list('trusted-internal')[0] as Agent
     expect(a1.id).toBe(a1.session.id)
     expect(a1.session.id).toMatch(idPattern)
-    expect(ctx1.agents.get(SessionId('cfg'))).toBeUndefined()
+    expect(ctx1.agents.get(SessionId('cfg'), 'trusted-internal')).toBeUndefined()
     a1.followup(createUserMessage({ content: [{ type: 'text', text: 'q' }], source: { kind: 'user' } }))
     await waitForIdle(ctx1, a1)
     await ctx1.fiber.dispose()
@@ -377,7 +377,7 @@ describe('config-driven session id', () => {
     await ctx2.plugin(AgentLoop, { agents: [{ id: SessionId('cfg'), provider: 'mock', model: 'mock' }] })
     await ctx2.plugin(JsonlSessionPersistence, { root })
     ctx2.llm.registerAdapter(['mock'], new MockAdapter([textResponse('cfg2')]))
-    const a2 = ctx2.agents.list()[0] as Agent
+    const a2 = ctx2.agents.list('trusted-internal')[0] as Agent
     expect(a2.id).toBe(a2.session.id)
     expect(a2.session.id).toMatch(idPattern)
     expect(a2.session.id).not.toBe(a1.session.id)
@@ -419,8 +419,8 @@ describe('config-driven session id', () => {
     ctx2.llm.registerAdapter(['mock'], new MockAdapter([textResponse('second')]))
 
     // The deferred resume runs after the backend is available.
-    await expect.poll(() => ctx2.agents.get(SessionId('sticky-1')), { timeout: 5_000 }).toBeDefined()
-    const resumed = ctx2.agents.get(SessionId('sticky-1'))!
+    await expect.poll(() => ctx2.agents.get(SessionId('sticky-1'), 'trusted-internal'), { timeout: 5_000 }).toBeDefined()
+    const resumed = ctx2.agents.get(SessionId('sticky-1'), 'trusted-internal')!
     // The live session id IS the resumed id (NOT a fresh ${id}-session-<uuid>),
     // and the prior turn's user message is in the derived history.
     expect(resumed.id).toBe(SessionId('sticky-1'))
@@ -448,7 +448,7 @@ describe('config-driven session id', () => {
     // The deferred resume fails (no such session on disk). It must be contained:
     // a warning is logged, no agent is registered, and the app stays up.
     await new Promise(r => setTimeout(r, 200))
-    expect(ctx.agents.list()).toEqual([])
+    expect(ctx.agents.list('trusted-internal')).toEqual([])
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('config-driven resume of "does-not-exist" failed'))
     warn.mockRestore()
     await ctx.fiber.dispose()

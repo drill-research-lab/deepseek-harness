@@ -206,6 +206,49 @@ register<T>(ns: SettingsNamespace, schema: z<T>, options?: SettingsRegisterOptio
 describe(options?: SettingsDescribeOptions): SettingsDescriptor[]
 
 /**
+ * Owner-aware configuration-surface read; providers without owner storage fall back to {@link describe}'s deployment document.
+ * @param options - redaction switch; wire surfaces must redact.
+ * @returns one descriptor per registered namespace, in registration order.
+ */
+describeOwned(options?: SettingsDescribeOptions): Promise<SettingsDescriptor[]>
+
+/**
+ * Owner-aware merge; providers without owner storage fall back to {@link update}'s deployment document.
+ * @param ns - the registered namespace to update.
+ * @param patch - plain-object patch over the user section.
+ * @param expectedRevision - the descriptor `revision` the caller read; a
+ *   namespace that moved past it rejects with {@link SettingsConflictError}.
+ */
+updateOwned(ns: SettingsNamespace, patch: object, expectedRevision?: number): Promise<void>
+
+/**
+ * Owner-aware replacement; providers without owner storage fall back to {@link replace}'s deployment document.
+ * @param ns - the registered namespace to replace.
+ * @param section - the complete next user section.
+ * @param expectedRevision - the descriptor `revision` the caller read; a
+ *   namespace that moved past it rejects with {@link SettingsConflictError}.
+ */
+replaceOwned(ns: SettingsNamespace, section: object, expectedRevision?: number): Promise<void>
+
+/**
+ * Owner-aware path mutation; providers without owner storage fall back to {@link mutate}'s deployment document.
+ * @param ns - the registered namespace to edit.
+ * @param ops - ordered path edits; later ops observe earlier ones.
+ * @param expectedRevision - the descriptor `revision` the caller read; a
+ *   namespace that moved past it rejects with {@link SettingsConflictError}.
+ */
+mutateOwned(ns: SettingsNamespace, ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<void>
+
+/**
+ * Observe owner-document commits without publishing them as deployment
+ * settings events. Transport consumers must compare the captured request
+ * principal before forwarding a notification.
+ * @param watcher - Called after an owner document commit.
+ * @returns a disposer for this exact watcher.
+ */
+onOwnedDocumentUpdated( watcher: (ownerUserId: string, ns: SettingsNamespace, revision: number) => void, ): () => void
+
+/**
  * Read one registered namespace's resolved value.
  * @param ns - the namespace to read.
  * @returns the resolved value, or `undefined` while unregistered.

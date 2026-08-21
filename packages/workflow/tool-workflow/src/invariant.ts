@@ -139,7 +139,7 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
     traces.set(session, trace)
     return trace
   }
-  ctx.sessions.list().forEach(seed)
+  ctx.sessions.list('trusted-internal').forEach(seed)
   ctx.on('session/created', (session) => { seed(session) }, { global: true })
   ctx.on('internal/dispatch', (_mode, eventName, args) => {
     if (eventName !== 'session/event') return

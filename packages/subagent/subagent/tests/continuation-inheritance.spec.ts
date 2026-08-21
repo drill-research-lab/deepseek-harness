@@ -65,7 +65,7 @@ function startSpec(parent: Agent, provider = 'spawn') {
 /** Wait until a child's Activation is gone, i.e. its handle finished disposal. */
 async function waitNoActivation(ctx: Context, childId: SessionId): Promise<void> {
   await vi.waitFor(() => {
-    expect(ctx.agents.get(childId)).toBeUndefined()
+    expect(ctx.agents.get(childId, 'trusted-internal')).toBeUndefined()
   }, { timeout: 15_000 })
 }
 

@@ -60,13 +60,13 @@ describe('dsh-subagent-fork-in-process', () => {
     const { ctx, parent } = await setup([textResponse('child answer')])
     let childAtStart: ReturnType<typeof ctx.agents.get>
     ctx.on('subagent/start', (info) => {
-      if (info.provider === 'fork') childAtStart = ctx.agents.get(info.id)
+      if (info.provider === 'fork') childAtStart = ctx.agents.get(info.id, 'trusted-internal')
     })
 
     const starting = start(ctx, 'fork', { prompt: [{ type: 'text', text: 'child q' }], parent })
     expect(childAtStart).toBeUndefined()
     const run = await starting
-    expect(childAtStart).toBe(ctx.agents.get(run.id))
+    expect(childAtStart).toBe(ctx.agents.get(run.id, 'trusted-internal'))
     expect(childAtStart?.id).toBe(run.id)
 
     await run.result
@@ -81,7 +81,7 @@ describe('dsh-subagent-fork-in-process', () => {
     const result = await run.result
     expect(result.stopReason).toBe('completed')
     expect(text(result.output)).toBe('fresh child')
-    const child = ctx.agents.get(run.id)!
+    const child = ctx.agents.get(run.id, 'trusted-internal')!
     // Only the child's own turn — no seeded parent turns.
     expect(child.session.events.filter(e => e.type === 'turn/end')).toHaveLength(1)
     expect(child.session.header.seedLength).toBeUndefined()
@@ -98,7 +98,7 @@ describe('dsh-subagent-fork-in-process', () => {
 
     const run = await start(ctx, 'fork', { prompt: [{ type: 'text', text: 'child q' }], parent })
     await run.result
-    const child = ctx.agents.get(run.id)!
+    const child = ctx.agents.get(run.id, 'trusted-internal')!
     expect(child.session.header.seedLength).toBe(parentPrefixLen)
     expect(child.session.events.slice(0, parentPrefixLen).at(-1)?.type).toBe('turn/end')
     expect(child.session.events.slice(0, parentPrefixLen).filter(e => e.type === 'turn/end')).toHaveLength(2)
@@ -116,7 +116,7 @@ describe('dsh-subagent-fork-in-process', () => {
     expect(result.stopReason).toBe('completed')
     expect(text(result.output)).toBe('child answer')
 
-    const child = ctx.agents.get(run.id)!
+    const child = ctx.agents.get(run.id, 'trusted-internal')!
     // The child's log STARTS with the parent's prefix (seeded), then its own turn.
     expect(child.session.events.length).toBeGreaterThan(parentPrefixLen)
     // The seeded prefix carried the parent's user message.
@@ -148,7 +148,7 @@ describe('dsh-subagent-fork-in-process', () => {
     expect(result.stopReason).toBe('completed')
     expect(text(result.output)).toBe('child')
 
-    const child = ctx.agents.get(run.id)!
+    const child = ctx.agents.get(run.id, 'trusted-internal')!
     // The child's seed has exactly the ONE completed parent turn (the open one excluded).
     const seedTurnEnds = child.session.events.filter(e => e.type === 'turn/end')
     // 1 from the seeded parent turn + 1 from the child's own completed turn.

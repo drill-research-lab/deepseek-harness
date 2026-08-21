@@ -711,7 +711,7 @@ export function defineCoverageCases(group: CoverageGroup): void {
       // handle disposal, matching continuable Activation settlement.
       ctx.emit(subagentCarrier(ctx), 'subagent/start', identity)
       await childHandle.dispose()
-      expect(ctx.agents.get(childHandle.agent.id)).toBeUndefined()
+      expect(ctx.agents.get(childHandle.agent.id, 'trusted-internal')).toBeUndefined()
       ctx.emit(subagentCarrier(ctx), 'subagent/end', { ...identity, stopReason: 'completed' })
 
       await waitFor(() => existsSync(marker))

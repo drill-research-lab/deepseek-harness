@@ -20,7 +20,29 @@ import SessionPersistence, {
 import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
+import { OwnershipService } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal, UserHome } from '@deepseek-ai/dsh-ownership'
 import MessageFeedbackService from '../src/index.ts'
+
+/** Test double for a request/background owner principal. */
+class TestOwnership extends OwnershipService {
+  principal: OwnerPrincipal | undefined
+
+  currentPrincipal(): OwnerPrincipal {
+    if (this.principal === undefined) throw new Error('no test owner')
+    return this.principal
+  }
+
+  currentPrincipalOrUndefined(): OwnerPrincipal | undefined { return this.principal }
+
+  backgroundPrincipal(userId: OwnerPrincipal['userId']): OwnerPrincipal {
+    return { userId, source: 'background' }
+  }
+
+  resolveUserHome(): Promise<UserHome> {
+    throw new Error('not used by these tests')
+  }
+}
 
 export interface MessageFixture {
   readonly session: Session
@@ -125,6 +147,14 @@ class TestPersistence extends SessionPersistence {
   create(_meta: SessionHeader): Promise<void> { return Promise.resolve() }
   append(_id: SessionId, _events: readonly SessionEvent[]): Promise<void> { return Promise.resolve() }
 
+  /** Mirrors the real JSONL backend's owner scoping: unfiltered without an ownership service. */
+  private ownerVisible(meta: SessionHeader): boolean {
+    const ownership = this.ctx.root.get('ownership')
+    if (ownership === undefined) return true
+    const ownerUserId = ownership.currentPrincipalOrUndefined()?.userId
+    return ownerUserId !== undefined && meta.ownerUserId === ownerUserId
+  }
+
   load(id: SessionId): Promise<SessionInspection> {
     return this.readFrom(id, 0)
   }
@@ -133,11 +163,11 @@ class TestPersistence extends SessionPersistence {
     this.inspectCalls += 1
     if (this.inspectFailure !== undefined) return Promise.reject(this.inspectFailure)
     const explicit = this.logical.get(id)
-    if (explicit !== undefined) return Promise.resolve(explicit)
-    const live = this.ctx.sessions.get(id)
-    if (live !== undefined) return Promise.resolve({ meta: live.header, events: live.events })
+    if (explicit !== undefined && this.ownerVisible(explicit.meta)) return Promise.resolve(explicit)
+    const live = this.ctx.sessions.get(id, 'trusted-internal')
+    if (live !== undefined && this.ownerVisible(live.header)) return Promise.resolve({ meta: live.header, events: live.events })
     const stored = this.durable.get(id)
-    return stored === undefined
+    return stored === undefined || !this.ownerVisible(stored.meta)
       ? Promise.reject(new Error(`test persistence: session '${id}' not found`))
       : Promise.resolve(stored)
   }
@@ -149,21 +179,24 @@ class TestPersistence extends SessionPersistence {
     this.readFromCalls += 1
     await this.onReadFrom?.()
     const stored = this.durable.get(id)
-    return stored === undefined
+    return stored === undefined || !this.ownerVisible(stored.meta)
       ? Promise.reject(new Error(`test persistence: session '${id}' not found`))
       : { meta: stored.meta, events: stored.events.filter(event => event.seq >= fromSeq) }
   }
 
   list(): Promise<SessionHeader[]> {
-    return Promise.resolve([...this.durable.values()].map(value => value.meta))
+    return Promise.resolve([...this.durable.values()].map(value => value.meta).filter(meta => this.ownerVisible(meta)))
   }
 
   async listSnapshots(): Promise<SessionPersistenceSnapshot[]> {
     await this.onListSnapshots?.()
-    return [...this.durable.values()].map((value, index) => ({
-      header: value.meta,
-      revision: SessionPersistenceRevision(`test:${index}:${value.events.length}`),
-    }))
+    return [...this.durable.values()]
+      .map((value, index) => ({ value, index }))
+      .filter(({ value }) => this.ownerVisible(value.meta))
+      .map(({ value, index }) => ({
+        header: value.meta,
+        revision: SessionPersistenceRevision(`test:${index}:${value.events.length}`),
+      }))
   }
 
   persist(session: Session): void {
@@ -178,17 +211,19 @@ class TestPersistence extends SessionPersistence {
 export interface TestHarness {
   readonly ctx: Context
   readonly persistence: TestPersistence
+  readonly ownership: TestOwnership | undefined
   readonly root: string
   disposeFeedback(): Promise<void>
   dispose(): Promise<void>
 }
 
 /** Compose the service over the real storage hub/domain/JSON backend. */
-export async function setupHarness(maxNoteBytes = 64): Promise<TestHarness> {
+export async function setupHarness(maxNoteBytes = 64, options: { ownership?: boolean } = {}): Promise<TestHarness> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-message-feedback-test-'))
   const ctx = new Context()
   let disposeFeedback: (() => Promise<void>) | undefined
   try {
+    if (options.ownership === true) await ctx.plugin(TestOwnership)
     await ctx.plugin(SessionStore)
     await ctx.plugin(TestPersistence)
     await ctx.plugin(Storage)
@@ -205,6 +240,7 @@ export async function setupHarness(maxNoteBytes = 64): Promise<TestHarness> {
   return {
     ctx,
     persistence: ctx.sessionPersistence as unknown as TestPersistence,
+    ownership: ctx.get('ownership') as TestOwnership | undefined,
     root,
     disposeFeedback,
     async dispose() {
