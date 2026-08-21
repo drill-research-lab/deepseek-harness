@@ -272,7 +272,7 @@ export class WorkspaceRegistry extends Service {
       if (beforeId !== undefined && !visible.includes(beforeId)) {
         throw new WorkspaceOrderInvalidError(beforeId)
       }
-      if (beforeId === id) return visible
+      if (beforeId === id) return state.workspaceIds
       const ownerSet = new Set(visible)
       const reordered = visible.filter(workspaceId => workspaceId !== id)
       const at = beforeId === undefined ? reordered.length : reordered.indexOf(beforeId)
@@ -282,7 +282,7 @@ export class WorkspaceRegistry extends Service {
         ownerSet.has(workspaceId) ? reordered[ownerIndex++] as WorkspaceId : workspaceId)
       if (sameIds(workspaceIds, state.workspaceIds)) return state.workspaceIds
       await this.setState({ ...state, workspaceIds })
-      return reordered
+      return workspaceIds
     })
   }
 

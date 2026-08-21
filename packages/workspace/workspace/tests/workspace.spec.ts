@@ -1019,6 +1019,24 @@ describe('WorkspaceRegistry ownership isolation', () => {
       .rejects.toThrow(WorkspaceOrderInvalidError)
   })
 
+  it('returns the complete cross-owner order for every successful reorder path', async () => {
+    const result = await harness({ ownership: true })
+    const ownership = result.ownership!
+
+    ownership.principal = alice
+    const aliceFirst = await result.registry.create(await makeDir('order-shape-alice-first'))
+    ownership.principal = bob
+    const bobWorkspace = await result.registry.create(await makeDir('order-shape-bob'))
+    ownership.principal = alice
+    const aliceSecond = await result.registry.create(await makeDir('order-shape-alice-second'))
+
+    const complete = [aliceSecond.id, bobWorkspace.id, aliceFirst.id]
+    await expect(result.registry.insertBefore(aliceSecond.id, aliceSecond.id)).resolves.toEqual(complete)
+    await expect(result.registry.insertBefore(aliceSecond.id, aliceFirst.id)).resolves.toEqual(complete)
+    await expect(result.registry.insertBefore(aliceFirst.id, aliceSecond.id))
+      .resolves.toEqual([aliceFirst.id, bobWorkspace.id, aliceSecond.id])
+  })
+
   it('keeps the archive set and startup bootstrap independent per owner', async () => {
     const aliceSession = ownedHeader('alice-session', await makeDir('bootstrap-alice'), alice)
     const bobSession = ownedHeader('bob-session', await makeDir('bootstrap-bob'), bob)
