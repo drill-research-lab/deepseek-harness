@@ -898,7 +898,11 @@ Requires: `auth`
 ```ts config-catalog
 /** File-backed ownership configuration. */
 export interface Config {
-  /** Root containing hashed per-owner homes. Defaults to `$DSH_USERS_HOME` or `$DSH_HOME/users`. */
+  /**
+   * Root containing hashed per-owner homes. An omitted or blank value uses
+   * `resolveDshHome()/users`; the Web bundle maps `DSH_USERS_HOME` into this
+   * field because this provider does not read that environment variable.
+   */
   usersRoot?: string
 }
 ```
