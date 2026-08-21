@@ -889,6 +889,26 @@ export interface Config {
 
 Source: [`packages/host/frontend-static/src/index.ts:28`](../packages/host/frontend-static/src/index.ts)
 
+<a id="deepseek-aidsh-host-ownership-file"></a>
+
+## `@deepseek-ai/dsh-host-ownership-file`
+
+Requires: `auth`
+
+```ts config-catalog
+/** File-backed ownership configuration. */
+export interface Config {
+  /**
+   * Root containing hashed per-owner homes. An omitted or blank value uses
+   * `resolveDshHome()/users`; the Web bundle maps `DSH_USERS_HOME` into this
+   * field because this provider does not read that environment variable.
+   */
+  usersRoot?: string
+}
+```
+
+Source: [`packages/host/ownership-file/src/index.ts:21`](../packages/host/ownership-file/src/index.ts)
+
 <a id="deepseek-aidsh-host-webserver"></a>
 
 ## `@deepseek-ai/dsh-host-webserver`
@@ -3207,6 +3227,7 @@ Abstract service classes — a deployment loads a concrete implementation packag
 - `@deepseek-ai/dsh-fs` — abstract `FileSystem` ([`packages/fs/fs/src/index.ts`](../packages/fs/fs/src/index.ts))
 - `@deepseek-ai/dsh-host-directory-picker` — abstract `DirectoryPicker` ([`packages/host/directory-picker/src/index.ts`](../packages/host/directory-picker/src/index.ts))
 - `@deepseek-ai/dsh-jobs` — abstract `JobRegistry` ([`packages/jobs/jobs/src/index.ts`](../packages/jobs/jobs/src/index.ts))
+- `@deepseek-ai/dsh-ownership` — abstract `OwnershipService` ([`packages/identity/ownership/src/index.ts`](../packages/identity/ownership/src/index.ts))
 - `@deepseek-ai/dsh-sandbox` — abstract `SandboxProvider` ([`packages/sandbox/sandbox/src/index.ts`](../packages/sandbox/sandbox/src/index.ts))
 - `@deepseek-ai/dsh-session-persistence` — abstract `SessionPersistence` ([`packages/session/session-persistence/src/index.ts`](../packages/session/session-persistence/src/index.ts))
 - `@deepseek-ai/dsh-session-query` — abstract `SessionQueryEngine` ([`packages/session-query/session-query/src/index.ts`](../packages/session-query/session-query/src/index.ts))

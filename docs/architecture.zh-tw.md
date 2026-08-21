@@ -18,6 +18,8 @@
 
 **profile** 是存放在 Harness home 中的具名組裝。它列出自己疊放的組合包，存放自己安裝的樹外外掛程式，並保存使用者自己的 `cordis.patch.yml`。`web` 和 `headless` 作為樣板隨發行版交付。
 
+產品 launcher 在初始化或修復 profile 前取得一把以 resolved `DSH_HOME` 為鍵的 Linux writer lease。該 lease 會附加到 root Cordis context 並貫穿 application shutdown，因此競爭行程會在修改 shared deployment 前失敗；ownership service injection 是可變 Web provider 隨後使用的 service availability requirement。
+
 **組合包**是 Cordis 設定項及其掛載程式碼的分發格式，因此它插入的內容始終可被其上各層 patch。
 
 兩者都在各自的 `package.json` 中透過 `dsh` 欄位聲明自己：`dsh.profile` 列出一個 profile 的組合包，`dsh.bundle` 指向一個組合包的 patch 文件。

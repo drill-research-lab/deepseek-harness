@@ -47,6 +47,8 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/identity/auth-local': { kind: 'none', reason: 'The local account store runs only in the external authentication gateway and registers nothing model-facing.' },
   'packages/identity/auth-gateway-ldap': { kind: 'none', reason: 'The external authentication gateway is outside DSH and registers nothing model-facing.' },
   'packages/host/authentication': { kind: 'none', reason: 'The verifier supplies request identity to the transport and registers nothing model-facing.' },
+  'packages/identity/ownership': { kind: 'none', reason: 'Trusted owner identities and rooted Host paths register no prompt, schema, tool, or provider request.' },
+  'packages/host/ownership-file': { kind: 'none', reason: 'The file provider resolves Host persistence and registers nothing model-facing.' },
   'packages/attachment/attachment': { kind: 'indirect', reason: 'The storage seam delegates model request rendering to provider adapters.' },
   'packages/attachment/attachment-local': { kind: 'indirect', reason: 'The local backend delegates model request rendering to provider adapters.' },
   'packages/shell/shell': { kind: 'indirect', reason: 'The service interface delegates all model rendering to dsh-tool-bash.' },

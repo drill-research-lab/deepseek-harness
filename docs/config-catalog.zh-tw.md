@@ -891,6 +891,26 @@ export interface Config {
 
 來源：[`packages/host/frontend-static/src/index.ts:28`](../packages/host/frontend-static/src/index.ts)
 
+<a id="deepseek-aidsh-host-ownership-file"></a>
+
+## `@deepseek-ai/dsh-host-ownership-file`
+
+需要：`auth`
+
+```ts config-catalog
+/** File-backed ownership configuration. */
+export interface Config {
+  /**
+   * Root containing hashed per-owner homes. An omitted or blank value uses
+   * `resolveDshHome()/users`; the Web bundle maps `DSH_USERS_HOME` into this
+   * field because this provider does not read that environment variable.
+   */
+  usersRoot?: string
+}
+```
+
+來源：[`packages/host/ownership-file/src/index.ts:21`](../packages/host/ownership-file/src/index.ts)
+
 <a id="deepseek-aidsh-host-webserver"></a>
 
 ## `@deepseek-ai/dsh-host-webserver`
@@ -3209,6 +3229,7 @@ export interface Config {
 - `@deepseek-ai/dsh-fs` — 抽象 `FileSystem`（[`packages/fs/fs/src/index.ts`](../packages/fs/fs/src/index.ts)）
 - `@deepseek-ai/dsh-host-directory-picker` — 抽象 `DirectoryPicker`（[`packages/host/directory-picker/src/index.ts`](../packages/host/directory-picker/src/index.ts)）
 - `@deepseek-ai/dsh-jobs` — 抽象 `JobRegistry`（[`packages/jobs/jobs/src/index.ts`](../packages/jobs/jobs/src/index.ts)）
+- `@deepseek-ai/dsh-ownership` — 抽象 `OwnershipService`（[`packages/identity/ownership/src/index.ts`](../packages/identity/ownership/src/index.ts)）
 - `@deepseek-ai/dsh-sandbox` — 抽象 `SandboxProvider`（[`packages/sandbox/sandbox/src/index.ts`](../packages/sandbox/sandbox/src/index.ts)）
 - `@deepseek-ai/dsh-session-persistence` — 抽象 `SessionPersistence`（[`packages/session/session-persistence/src/index.ts`](../packages/session/session-persistence/src/index.ts)）
 - `@deepseek-ai/dsh-session-query` — 抽象 `SessionQueryEngine`（[`packages/session-query/session-query/src/index.ts`](../packages/session-query/session-query/src/index.ts)）
