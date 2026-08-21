@@ -32,6 +32,12 @@ A3's boundary is deliberately narrow: "is this capability approved for productio
 
 **A startup FAIL LOUD assertion, not silent trust in the config.** `validateDrillProductionPolicy()` is shared by startup and unit tests. After every patch layer it requires the exact approved set `{drill-production}`, default `drill-production`, `includeUserRoot: false`, the exact permission ids and mappings for `read-only` and `workspace-write`, an unmounted `dynamicCordisRunner`, and (when a sqlite session-query engine is mounted at all) `openAt: 'never'`. It throws a named diagnostic rather than clamping.
 
+## Assessed inactive paths
+
+`packages/core/agent-loop/src/index.ts` does not propagate owner context when configured `resumeSessionId` or `restoreOrCreateConfigured` startup work reaches `resumeWith()` without a principal. The base bundle configures `agent-loop.config.agents: []`, while web-app and drill-production do not override it, so this path is unreachable in the shipped Drill production composition; any patch layer or new bundle that supplies configured agents with `sessionId` or `resumeSessionId` must reassess owner propagation before deployment. Evidence: `2026-08-21-startup-resume-and-import-sideeffect-assessment.md` (2026-08-21).
+
+Finding 2's `instanceof SqliteSessionQueryEngine` narrowing uses a value import from `@deepseek-ai/dsh-session-query-sqlite`. The module tops of `index.ts`, `schema.ts`, and `query.ts` perform only pure schema, constant, type, and declaration initialization: registration, file/database opening, connections, and timers do not run at import time; `openSearchDatabase()` opens the database during engine service initialization under `config.openAt`, which the value import does not bypass. Evidence: `2026-08-21-startup-resume-and-import-sideeffect-assessment.md` (2026-08-21).
+
 ## Blocked capability roster
 
 `cordis` (dynamic self-modification), `minimal` (bare `fs-local`), any user-authored preset, `tool-bash`/`tool-pwsh`/`tool-fs`/`tool-fs-search`, `tool-workflow`/`tool-ralph`, external-process subagents, `danger-full-access`, the native/browse directory picker, and `cordis-host-runner`.
