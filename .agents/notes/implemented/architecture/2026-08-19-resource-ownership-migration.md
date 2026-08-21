@@ -32,6 +32,10 @@ JSONL session persistence roots each owner's physical log tree under `UserHome.p
 
 **Build a dedicated owner-checked spill-read tool, or add read-time owner confinement to the generic filesystem capability.** Rejected/deferred: `SpillStore`'s Service Definition has only `saveText`; retrieval is a raw host path rendered into the model's own conversation and read back through the generic `read`/`grep` filesystem tools, which apply no read confinement of any kind for any resource today (`fs-sandbox`'s own documentation: "Reads always pass through — every mode permits reading"). Closing that is a first-of-its-kind capability decision belonging to the filesystem/sandbox boundary (A3/PR B), not a resource-by-resource ownership migration; this change scopes to owner-rooted spill *persistence* only.
 
+## Audit exclusion
+
+The ownership foundation and resource migration enforce authorization but do not record cross-owner security events. A rejected lookup deliberately uses not-found semantics, which limits resource disclosure but is not an audit record. Adding security-event retention, operators, queries, and product policy is a separate product and engineering decision outside A1/A2/A3.
+
 ## Deferred
 
 `session-persistence-sqlite`: unsupported, out of the production security surface; production composition closure that keeps a multi-user profile from selecting it belongs to A3.

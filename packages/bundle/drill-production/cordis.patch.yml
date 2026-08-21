@@ -1,0 +1,108 @@
+# The dsh-drill-production bundle patch: A3 Production Composition Closure.
+# Stack this AFTER `@deepseek-ai/dsh-web-app` in a profile's
+# `dsh.profile.bundles` (e.g. `[dsh-base, dsh-web-app, dsh-drill-production]`,
+# the same "additional overlay layer" pattern `dsh-headless` already uses over
+# `dsh-web-app`). Generic `dsh-web-app` deployments (single-user, self-hosted,
+# upstream-compatible) are UNCHANGED — this bundle is opt-in per deployment,
+# not a modification of `dsh-web-app` itself.
+#
+# A patch replaces the targeted row's whole `config`; rows below name only
+# the `id` and the fields this layer actually overrides.
+
+# ── preset roster: production capability policy ─────────────────────────────
+#
+# `approvedIds` (added to `dsh-agent-presets` for A3) narrows list()/resolve()/
+# mount() to exactly this set — a blocked preset (`cordis`, `minimal`, or any
+# future addition to config/agent-presets/ that isn't re-approved here) reads
+# exactly like an unconfigured id, never a distinguishable "blocked" signal.
+# `includeUserRoot: false` disables user-authored preset composition entirely
+# for v1 (5.4): Drill production does not yet support an allowlist model for
+# arbitrary user-supplied plugin graphs, so the simpler, stricter answer is no
+# custom composition at all, not a denylist a user could route around by
+# naming an as-yet-unlisted package.
+- id: agent-presets
+  config:
+    default: drill-production
+    approvedIds: [drill-production]
+    includeUserRoot: false
+
+# ── permission presets: danger-full-access closure (5.7) ────────────────────
+#
+# Full replacement of the table, not an addition: `danger-full-access` is
+# absent, so it cannot be selected through the `/permission` command, the
+# `permission` settings namespace (built from the table's own keys), or the
+# `permissions` session-projection UI catalog — there is no other write path
+# to `sandbox/mode` (`packages/sandbox/sandbox-policy`'s `setSandboxMode` has
+# exactly one caller in the whole repository: this service). A session whose
+# PERSISTED events already carry a `danger-full-access` selection from before
+# this policy applied is not separately re-guarded here: `danger-full-access`
+# only has an effect through `bash-sandbox`/`fs-sandbox`'s escalation path,
+# and neither tool is in the `drill-production` preset's approved roster, so
+# the persisted mode value is inert for any session running on it.
+- id: permission
+  config:
+    presets:
+      read-only:
+        sandbox: read-only
+        approval: ask
+      workspace-write:
+        sandbox: workspace-write
+        approval: ask
+
+# ── directory picker: closed, not root-confined (5.5) ────────────────────────
+#
+# No architecture in this repo currently derives a safe, non-UserHome,
+# user-facing browse root (`workspace.create`/`directory-picker-browse` accept
+# arbitrary absolute paths with no containment — see the A3 Phase 0 audit).
+# Confining the picker to `UserHome` itself is explicitly wrong: that
+# directory holds sessions, credentials, auth state, and other DSH-private
+# data, not a user-facing workspace root. Per 5.5, the correct A3 answer when
+# no such root exists is DISABLED, not inventing a new Product Workspace
+# filesystem architecture to manufacture one.
+#
+# `packages/host/apiproxy` hard-requires `ctx.directoryPicker`
+# (`inject: ['directoryPicker', ...]`), so the row cannot simply be
+# `disabled: true` with nothing replacing it. A patch's `name` field is a
+# same-package safety check, not an override (a mismatch skips the whole
+# patch with a warning — `vendor/include`'s `applyEntryPatches`), so the
+# original row is disabled here and a replacement is INSERTED under a new
+# id below, reporting an unrecognized capability kind, which the client
+# already treats as "hide the picking affordance" by documented default.
+- id: directory-picker
+  disabled: true
+
+# ── dynamic Cordis / self-modification: closed (5.2) ─────────────────────────
+#
+# Belt-and-suspenders on top of the preset closure above: `tool-cordis` (the
+# only model-facing surface for this capability) already cannot appear in any
+# approved preset, but this additionally removes the HOST-plane service
+# itself, so "cordis-host-runner absent" holds unconditionally, not only
+# "unreachable through every preset this deployment currently ships."
+# `dsh-drill-production/index.ts`'s startup check reads `ctx.get('dynamicCordisRunner')`
+# after every patch layer and fails boot if a later patch layer (an operator's
+# own `$DSH_HOME/cordis.patch.yml` or a `--patch` overlay) flips this row back
+# to `disabled: false`.
+- id: cordis-host-runner
+  disabled: true
+
+# ── session-query-sqlite: explicit lock, checked at startup (5.9) ────────────
+#
+# Already dormant in the layers below (`openAt: never`); restated here,
+# unchanged, as a self-documenting invariant this bundle asserts rather than
+# assumes. `dsh-drill-production/index.ts`'s startup check additionally
+# narrows the mounted `ctx.sessionQuery` to `SqliteSessionQueryEngine` and
+# asserts `config.openAt === 'never'` after every patch layer, so it refuses
+# to boot if a later patch layer (an operator's own `$DSH_HOME/cordis.patch.yml`
+# or a `--patch` overlay) changes it.
+- id: session-query-sqlite
+  config:
+    path: ':memory:'
+    openAt: never
+
+- insert:
+    - id: directory-picker-disabled
+      name: '@deepseek-ai/dsh-drill-production/startup'
+
+    - id: drill-production-startup-check
+      name: '@deepseek-ai/dsh-drill-production'
+      inject: [agentPresets, permissionPresets]

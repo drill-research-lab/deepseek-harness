@@ -389,7 +389,11 @@ Discovery is unmemoized: `list()` and `resolve()` re-read the roots on every cal
 
 ```ts cordis-catalog
 /**
- * Every preset the configured roots currently supply.
+ * Every preset the configured roots currently supply, narrowed to
+ * {@link Config.approvedIds} when the deployment set one. `resolve()` and
+ * `mount()` read this method, so the production capability policy applies
+ * uniformly across every entry point — there is no "list hides it, mount
+ * still accepts it" gap.
  * @returns the presets, first-root-wins per id.
  */
 async list(): Promise<AgentPreset[]>
@@ -734,7 +738,7 @@ list(access: 'trusted-internal'): Agent[]
 roots(access: 'trusted-internal'): Agent[]
 ```
 
-Source: [`packages/core/agent/src/index.ts:257`](../../packages/core/agent/src/index.ts)
+Source: [`packages/core/agent/src/index.ts:259`](../../packages/core/agent/src/index.ts)
 
 <a id="agent-events"></a>
 

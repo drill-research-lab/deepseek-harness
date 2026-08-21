@@ -198,10 +198,15 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     return this.rootScope.run(root, () => this.coordinator.append(id, snapshot))
   }
 
-  override async prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation> {
-    const preparation = await this.runForId(id, () => this.coordinator.prepare(id, signal))
+  override async prepare(
+    id: SessionId,
+    signal?: AbortSignal,
+    ownerHint?: SessionHeader['ownerUserId'],
+  ): Promise<SessionPreparation> {
+    const preparation = await this.runForId(id, () => this.coordinator.prepare(id, signal), ownerHint)
     try {
       this.assertOwned(preparation.session.header)
+      this.assertHintMatches(preparation.session.header, ownerHint)
       if (preparation.session.header.ownerUserId !== undefined) {
         this.rememberOwner(id, preparation.session.header.ownerUserId)
       }
@@ -218,14 +223,29 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     return value
   }
 
-  async inspect(id: SessionId, signal?: AbortSignal): Promise<SessionInspection> {
-    return this.authorize(await this.runForId(id, () => this.coordinator.inspect(id, signal)))
+  async inspect(
+    id: SessionId,
+    signal?: AbortSignal,
+    ownerHint?: SessionHeader['ownerUserId'],
+  ): Promise<SessionInspection> {
+    return this.authorize(
+      await this.runForId(id, () => this.coordinator.inspect(id, signal), ownerHint),
+      ownerHint,
+    )
   }
 
   // JSONL is sequential media: no loadStoredFrom hook, so the coordinator
   // parses the stored prefix (both encodings) and skips forward to fromSeq.
-  async readFrom(id: SessionId, fromSeq: number, signal?: AbortSignal): Promise<{ meta: SessionHeader; events: SessionEvent[] }> {
-    return this.authorize(await this.runForId(id, () => this.coordinator.readFrom(id, fromSeq, signal)))
+  async readFrom(
+    id: SessionId,
+    fromSeq: number,
+    signal?: AbortSignal,
+    ownerHint?: SessionHeader['ownerUserId'],
+  ): Promise<{ meta: SessionHeader; events: SessionEvent[] }> {
+    return this.authorize(
+      await this.runForId(id, () => this.coordinator.readFrom(id, fromSeq, signal), ownerHint),
+      ownerHint,
+    )
   }
 
   // One method serves both public `list` and the backend hook; delegating it to
@@ -540,6 +560,13 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     if (!this.isOwned(header)) throw new Error(`session "${header.id}" not found`)
   }
 
+  /** Reject a trusted lookup hint that does not match the selected durable lifecycle. */
+  private assertHintMatches(header: SessionHeader, ownerHint?: SessionHeader['ownerUserId']): void {
+    if (ownerHint !== undefined && header.ownerUserId !== ownerHint) {
+      throw new Error(`session "${header.id}" not found`)
+    }
+  }
+
   /** Active physical namespace for low-level file mechanics. */
   private activeRoot(): string {
     return this.rootScope.getStore() ?? this.root
@@ -573,13 +600,17 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
   }
 
   /** Resolve an exact lookup from current authority, never by scanning user homes. */
-  private async rootForId(id: SessionId): Promise<string | undefined> {
+  private async rootForId(
+    id: SessionId,
+    ownerHint?: SessionHeader['ownerUserId'],
+  ): Promise<string | undefined> {
     const active = this.rootScope.getStore()
     if (active !== undefined) return active
     const ownership = this.ctx.root.get('ownership')
     if (ownership === undefined) return this.root
     const current = ownership.currentPrincipalOrUndefined()
     if (current !== undefined) return this.ownerRoot(current.userId)
+    if (ownerHint !== undefined) return this.ownerRoot(ownerHint)
     const owners = this.sessionOwners.get(id)
     if (owners === undefined || owners.size !== 1) return undefined
     return this.ownerRoot([...owners][0] as AuthenticatedUserId)
@@ -599,8 +630,9 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
   private async runForId<T>(
     id: SessionId,
     operation: () => Promise<T>,
+    ownerHint?: SessionHeader['ownerUserId'],
   ): Promise<T> {
-    const root = await this.rootForId(id)
+    const root = await this.rootForId(id, ownerHint)
     if (root === undefined) throw new Error(`session "${id}" not found`)
     return this.rootScope.run(root, operation)
   }
@@ -613,8 +645,12 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
   }
 
   /** Apply exact-resource authorization before returning a logical read. */
-  private authorize<T extends { meta: SessionHeader }>(value: T): T {
+  private authorize<T extends { meta: SessionHeader }>(
+    value: T,
+    ownerHint?: SessionHeader['ownerUserId'],
+  ): T {
     this.assertOwned(value.meta)
+    this.assertHintMatches(value.meta, ownerHint)
     return value
   }
 

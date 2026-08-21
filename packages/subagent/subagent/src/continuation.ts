@@ -889,7 +889,7 @@ export class SubagentContinuationManager {
     const persistence = this.requirePersistence()
     let loaded: Awaited<ReturnType<typeof persistence.inspect>>
     try {
-      loaded = await persistence.inspect(childId, options.signal)
+      loaded = await persistence.inspect(childId, options.signal, parent.session.header.ownerUserId)
     } catch (error: unknown) {
       options.signal.throwIfAborted()
       throw new SubagentError(`subagent "${childId}" is unavailable`, 'NOT_RESUMABLE', { cause: error })
@@ -1011,6 +1011,7 @@ export class SubagentContinuationManager {
         resumeSessionId: childId,
         agentOptions: inputs.agentOptions,
         signal: inputs.signal,
+        ownerHint: parent.session.header.ownerUserId,
         setup,
       })
       : await this.ownerCtx.agents.create({

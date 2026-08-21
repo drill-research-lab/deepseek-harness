@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { UnknownPresetError } from '@deepseek-ai/dsh-agent-presets'
 import SessionStore from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import { createApiRemoteAgentResolver } from '@deepseek-ai/dsh-api-remotes'
@@ -132,6 +133,26 @@ describe('API Remote Agent resolver races', () => {
     if (provider === undefined) throw new Error('Agent Host Context provider was not mounted')
 
     await expect(provider.resolve(sessionId)).resolves.toBe(agentCtx)
+    await ctx.fiber.dispose()
+  })
+
+  it('maps a cold-resume rejected by a closed preset roster to agent-preset-not-found, not internal', async () => {
+    const ctx = await createContext()
+    const sessionId = sid('legacy-preset-cold-resume')
+    const meta = header(sessionId)
+    provideSession(ctx, meta, () => Promise.resolve({ meta, events: [] }))
+    vi.spyOn(ctx.agents, 'resume').mockImplementation(async () => {
+      throw new UnknownPresetError('minimal', ['drill-production'])
+    })
+
+    const result = await createApiRemoteAgentResolver(ctx, {})(sessionId)
+
+    expect(result).toMatchObject({
+      error: {
+        code: 'agent-preset-not-found',
+        details: { agentPreset: 'minimal', available: ['drill-production'] },
+      },
+    })
     await ctx.fiber.dispose()
   })
 

@@ -384,7 +384,7 @@ async function resolveColdIdentity(
   assertListingNotCancelled(signal)
   let inspected: { meta: SessionHeader; events: readonly SessionEvent[] }
   try {
-    inspected = await persistence.inspect(childId, signal)
+    inspected = await persistence.inspect(childId, signal, header.ownerUserId)
   } catch {
     // Per-child isolation: the child vanished or its backend read failed —
     // one diagnostic row, and the listing itself still succeeds.

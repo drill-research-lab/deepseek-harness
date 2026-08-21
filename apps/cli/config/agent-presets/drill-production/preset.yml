@@ -1,0 +1,3 @@
+name: Drill Production
+description: Drill multi-user production approved capability subset — Bash/PowerShell and generic filesystem tools are withheld pending Issue #5 sandbox hardening.
+order: 100

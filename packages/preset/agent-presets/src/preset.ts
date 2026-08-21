@@ -59,6 +59,18 @@ export interface Config {
    * configured root. False mounts a roster over `roots` alone.
    */
   includeUserRoot: boolean
+  /**
+   * Production capability policy: when set, `list()` (and therefore
+   * `resolve()`/`mount()`, which read `list()`) only ever sees these ids —
+   * everything else reads exactly like an unconfigured id, not like a
+   * distinguishable "blocked" state. This deliberately reuses
+   * {@link UnknownPresetError} rather than a separate error: a caller
+   * probing for a disallowed preset must not be able to distinguish "exists
+   * but is not approved for this deployment" from "does not exist," the same
+   * not-found-not-403 posture this harness already applies to cross-owner
+   * resource access. Undefined preserves the unrestricted upstream roster.
+   */
+  approvedIds?: readonly string[]
 }
 
 /**

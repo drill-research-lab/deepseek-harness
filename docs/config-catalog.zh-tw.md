@@ -184,6 +184,18 @@ export interface Config {
    * configured root. False mounts a roster over `roots` alone.
    */
   includeUserRoot: boolean
+  /**
+   * Production capability policy: when set, `list()` (and therefore
+   * `resolve()`/`mount()`, which read `list()`) only ever sees these ids —
+   * everything else reads exactly like an unconfigured id, not like a
+   * distinguishable "blocked" state. This deliberately reuses
+   * {@link UnknownPresetError} rather than a separate error: a caller
+   * probing for a disallowed preset must not be able to distinguish "exists
+   * but is not approved for this deployment" from "does not exist," the same
+   * not-found-not-403 posture this harness already applies to cross-owner
+   * resource access. Undefined preserves the unrestricted upstream roster.
+   */
+  approvedIds?: readonly string[]
 }
 
 /** One directory scanned for preset subdirectories. */
@@ -3191,6 +3203,7 @@ export interface Config {
 - `@deepseek-ai/dsh-command-goal` — 需要 `commands` · `goals`（[`packages/goal/command-goal/src/index.ts`](../packages/goal/command-goal/src/index.ts)）
 - `@deepseek-ai/dsh-commands`（[`packages/interaction/commands/src/index.ts`](../packages/interaction/commands/src/index.ts)）
 - `@deepseek-ai/dsh-cordis-client-runner`（[`packages/extensions/cordis-client-runner/src/index.ts`](../packages/extensions/cordis-client-runner/src/index.ts)）
+- `@deepseek-ai/dsh-drill-production` — 需要 `agentPresets` · `permissionPresets`（[`packages/bundle/drill-production/src/index.ts`](../packages/bundle/drill-production/src/index.ts)）
 - `@deepseek-ai/dsh-fs-e2b` — 需要 `e2b`（[`packages/e2b/fs-e2b/src/index.ts`](../packages/e2b/fs-e2b/src/index.ts)）
 - `@deepseek-ai/dsh-fs-observation-policy`（[`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts)）
 - `@deepseek-ai/dsh-goal-round-driver` — 需要 `agents` · `goals` · `sessions`（[`packages/goal/goal-round-driver/src/index.ts`](../packages/goal/goal-round-driver/src/index.ts)）
