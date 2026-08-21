@@ -1,14 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import { AuthService, authenticatedUserId } from '@deepseek-ai/dsh-auth'
+import type { AuthenticatedUser, AuthenticatedUserId } from '@deepseek-ai/dsh-auth'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { OwnershipService, UserHome } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal } from '@deepseek-ai/dsh-ownership'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as SubagentFork from '@deepseek-ai/dsh-subagent-fork-in-process'
 import type { GenerateOptions, MessageId, StreamChunk } from '@deepseek-ai/dsh-llm'
@@ -55,6 +59,65 @@ const roots: string[] = []
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
+
+class ContinuationOwnershipAuth extends AuthService {
+  authenticateRequest(): Promise<AuthenticatedUser | undefined> { return Promise.resolve(undefined) }
+}
+
+class ContinuationOwnership extends OwnershipService {
+  static inject = ['auth']
+
+  constructor(ctx: Context, private readonly usersRoot: string) { super(ctx) }
+
+  currentPrincipal(): OwnerPrincipal {
+    const user = this.ctx.auth.currentUser()
+    if (user === undefined) throw new Error('no continuation test owner')
+    return { userId: user.userId, source: 'request' }
+  }
+
+  currentPrincipalOrUndefined(): OwnerPrincipal | undefined {
+    const user = this.ctx.auth.currentUser()
+    return user === undefined ? undefined : { userId: user.userId, source: 'request' }
+  }
+
+  backgroundPrincipal(userId: AuthenticatedUserId): OwnerPrincipal {
+    return { userId, source: 'background' }
+  }
+
+  resolveUserHome(principal: OwnerPrincipal): Promise<UserHome> {
+    const root = join(this.usersRoot, String(principal.userId).replaceAll(':', '-'))
+    mkdirSync(root, { recursive: true })
+    return Promise.resolve(new UserHome(principal, {
+      schemaVersion: 1,
+      userId: principal.userId,
+      createdAt: '2026-08-21T00:00:00.000Z',
+      updatedAt: '2026-08-21T00:00:00.000Z',
+    }, root))
+  }
+}
+
+async function setupOwnedContinuation(
+  script: Script,
+  persistenceRoot: string,
+  usersRoot: string,
+  owner: AuthenticatedUser,
+) {
+  const ctx = new Context()
+  await mountAgentLoopTestDependencies(ctx)
+  await ctx.plugin(ContinuationOwnershipAuth)
+  await ctx.plugin(ContinuationOwnership, usersRoot)
+  await ctx.plugin(JsonlSessionPersistence, { root: persistenceRoot, writeBatchMaxDelayMs: 1 })
+  await ctx.plugin(AgentLoop, { agents: [] })
+  await ctx.plugin(SubagentRuntime)
+  await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
+  ctx.llm.registerAdapter(['mock'], new MockAdapter(script))
+  const parent = ctx.auth.runAs(owner, () => ctx.agentLoop.create(
+    SessionId('owned-restart-parent'),
+    { provider: 'mock', model: 'mock' },
+    { ownerUserId: owner.userId } as never,
+  ))
+  return { ctx, parent }
+}
 
 /** Boot the full continuable stack: loop, persistence, providers, and subagents. */
 async function setupWith(adapter: LlmAdapter, options: { persistence?: boolean } = {}) {
@@ -437,6 +500,43 @@ describe('SubagentRuntime.startContinuable', () => {
 })
 
 describe('SubagentRuntime.followup residency routing', () => {
+  it('cold-resumes after restart from the durable parent owner without a process-local owner cache', { timeout: 20_000 }, async () => {
+    const persistenceRoot = mkdtempSync(join(tmpdir(), 'dsh-subagent-owned-persistence-'))
+    const usersRoot = mkdtempSync(join(tmpdir(), 'dsh-subagent-owned-users-'))
+    roots.push(persistenceRoot, usersRoot)
+    const alice: AuthenticatedUser = {
+      userId: authenticatedUserId('ldap:continuation-alice'),
+      username: 'alice',
+    }
+    const first = await setupOwnedContinuation([textResponse('first')], persistenceRoot, usersRoot, alice)
+    parkParent(first.ctx, first.parent)
+    expect(first.parent.session.header.ownerUserId).toBe(alice.userId)
+    const started = await first.ctx.auth.runAs(
+      alice,
+      () => first.ctx.subagents.startContinuable(startSpec(first.parent)),
+    )
+    await waitNoActivation(first.ctx, started.childId)
+    await first.ctx.fiber.dispose()
+
+    const restarted = await setupOwnedContinuation([textResponse('after restart')], persistenceRoot, usersRoot, alice)
+    parkParent(restarted.ctx, restarted.parent)
+    await expect(followup(
+      restarted.ctx,
+      restarted.parent,
+      started.childId,
+      message('continue after restart'),
+    )).resolves.toBeTypeOf('string')
+    await waitNoActivation(restarted.ctx, started.childId)
+
+    const loaded = await restarted.ctx.sessionPersistence.inspect(
+      started.childId,
+      undefined,
+      alice.userId,
+    )
+    expect(userTexts(loaded.events)).toEqual(['child task', 'continue after restart'])
+    await restarted.ctx.fiber.dispose()
+  })
+
   it('enqueues in the same Activation while it is running, preserving one inbox FIFO', async () => {
     const releaseFirst = Promise.withResolvers<undefined>()
     const adapter = new GatedAdapter([

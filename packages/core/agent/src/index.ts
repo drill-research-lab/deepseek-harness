@@ -11,7 +11,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { isPromise } from 'node:util/types'
 import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
-import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type { TypertContext, TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-ownership'
 import type { Agent, AgentOptions } from './runtime-types.ts'
@@ -144,6 +144,8 @@ export interface ResumeAgentOptions {
   readonly agentOptions?: AgentOptions
   /** Optional creation-only cancellation signal for persistence load/setup; detached before return. */
   readonly signal?: AbortSignal
+  /** Trusted durable owner used to select an owner-scoped persistence namespace outside a request. */
+  readonly ownerHint?: SessionHeader['ownerUserId']
   /**
    * Resume-time composition of the agent's fresh scoped world. Persistence is
    * loaded first; the factory then mints `agentCtx` and awaits setup while the
@@ -208,7 +210,7 @@ export interface AgentFactory {
    * `sessionPersistence`). Publication follows the same setup-commit and
    * ordered boundary as {@link createAgent}.
    * @param ownerCtx - caller-bound context that owns load, setup, and the live handle.
-   * @param options - persisted identity, configuration, and optional setup.
+   * @param options - persisted identity, configuration, trusted owner hint, and optional setup.
    * @returns the owned handle after setup, both announcements, and loop start complete.
    */
   resume(ownerCtx: Context, options: ResumeAgentOptions): Promise<AgentHandle>

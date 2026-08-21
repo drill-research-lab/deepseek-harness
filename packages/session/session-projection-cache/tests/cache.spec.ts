@@ -302,7 +302,7 @@ describe('SessionProjectionCache cold read', () => {
     const aliceSnapshot = await cache.coldSnapshot(id)
     expect(aliceSnapshot.values['cache-test/marks']).toEqual({ marks: ['a', 'b'] })
     // Alice's read used the cache row: bounded tail from the anchored floor.
-    expect(persistence.readFrom).toHaveBeenCalledWith(id, 1, undefined)
+    expect(persistence.readFrom).toHaveBeenCalledWith(id, 1, undefined, alice.userId)
     persistence.readFrom.mockClear()
 
     ownership!.principal = bob

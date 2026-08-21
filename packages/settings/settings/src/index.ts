@@ -486,7 +486,6 @@ export abstract class SettingsProvider extends Service {
       this.document,
       ns => this.registrations.get(ns)?.revision ?? 0,
       options,
-      true,
     )
   }
 
@@ -495,7 +494,6 @@ export abstract class SettingsProvider extends Service {
     document: Record<string, unknown>,
     revision: (ns: SettingsNamespace) => number,
     options?: SettingsDescribeOptions,
-    useCommittedValue = false,
   ): SettingsDescriptor[] {
     return [...this.registrations.values()].map((registration) => {
       let user: Record<string, unknown> | undefined
@@ -509,12 +507,11 @@ export abstract class SettingsProvider extends Service {
       }
       const base = registration.base === undefined ? undefined : structuredClone(registration.base)
       const detachedUser = user === undefined ? undefined : structuredClone(user)
+      const resolved = deepFreeze(this.resolve(registration.schema, registration.base, user, registration.validate))
       const descriptor: SettingsDescriptor = {
         ns: registration.ns,
         schema: registration.schema.toJSON(),
-        value: useCommittedValue
-          ? registration.resolved
-          : deepFreeze(this.resolve(registration.schema, registration.base, user, registration.validate)),
+        value: resolved,
         revision: revision(registration.ns),
         ...base === undefined ? {} : { base },
         ...detachedUser === undefined ? {} : { user: detachedUser },
@@ -522,7 +519,7 @@ export abstract class SettingsProvider extends Service {
       }
       if (options?.redactSecrets !== true) return descriptor
       const schema = registration.schema as z<never>
-      const redacted = redactSecrets(schema, registration.resolved)
+      const redacted = redactSecrets(schema, resolved)
       return {
         ...descriptor,
         value: redacted.value,

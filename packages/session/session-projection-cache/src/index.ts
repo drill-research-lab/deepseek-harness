@@ -171,17 +171,21 @@ export class SessionProjectionCache extends Service {
       ? candidate
       : undefined
     const cached = record?.rows ?? {}
-    const floor = this.ctx.sessionProjections.restoreFloor(cached)
+    const ownerHint = record?.identity.ownerUserId
     const persistence = this.ctx.sessionPersistence
+    const readFrom = (fromSeq: number) => ownerHint === undefined
+      ? persistence.readFrom(id, fromSeq, signal)
+      : persistence.readFrom(id, fromSeq, signal, ownerHint)
+    const floor = this.ctx.sessionProjections.restoreFloor(cached)
     if (floor === undefined) {
       // No unit registered: nothing to fold, but the not-found contract must
       // hold in this topology too — the probe read rejects for an absent log
       // and dates the empty cut for a present one.
-      const probe = await persistence.readFrom(id, 0, signal)
+      const probe = await readFrom(0)
       return { asOfSeq: probe.events.at(-1)?.seq ?? -1, values: {} }
     }
     let restored: { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint }
-    const tail = await persistence.readFrom(id, floor, signal)
+    const tail = await readFrom(floor)
     // The tail's stored header is the identity witness: a record bound to a
     // different lifecycle (recreated id, swapped store) is discarded whole
     // before any of its rows can seed a fold.
@@ -194,7 +198,7 @@ export class SessionProjectionCache extends Service {
       // overreaching the stored log end (or predating the floor). Both imply
       // floor > 0 (baseSeq-0 restores never throw and an unrelated record
       // still carried a usable watermark), so the full log is a fresh read.
-      const whole = await persistence.readFrom(id, 0, signal)
+      const whole = await readFrom(0)
       restored = this.ctx.sessionProjections.restore({}, whole.events, 0)
     }
     await this.putSoft(id, identityOf(tail.meta), restored.checkpoint, 'cold-read write-back')
