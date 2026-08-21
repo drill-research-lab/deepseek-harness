@@ -90,9 +90,10 @@ export class AgentPresets extends Service {
       trust: z.union(['system', 'user'] as const).default('user'),
     })).default([]),
     includeUserRoot: z.boolean().default(true),
-    // Explicit `undefined` default: schemastery arrays otherwise default to
-    // `[]`, which would make an unconfigured deployment approve nothing
-    // instead of leaving the upstream roster unrestricted.
+    // Schemastery arrays default to `[]` and expose no optional/undefined
+    // combinator. Override that runtime default so omission leaves the roster
+    // unrestricted while an explicit empty array approves nothing. The cast is
+    // confined to this schema declaration; Config keeps the honest optional type.
     approvedIds: z.array(z.string()).default(undefined as unknown as string[]),
   }) as z<Config>
 
