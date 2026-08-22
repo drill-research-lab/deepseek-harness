@@ -27,7 +27,7 @@
 - `activeRuns` —— 每個定義唯一的運送中活動：`awaiting-approval`（要回答的 requestId，加上這次詢問的工作階段、包名與用途）或 `orchestrating`（這次 run 是為哪個工作階段在跑）。兩條臂都帶工作階段，因為歸組屬於這次 run 而不屬於它的階段；待確認那條還帶著詢問自己的文字，因為 `cordis_define` 什麼都不播 —— 一個請求可以點名上一次登錄檔讀取沒覆蓋到的定義，那時這條活動就是那一行唯一的來源。介面從它算繪、自己不留副本 —— 這正是控制元件能活過 remount 的原因。
 - `renderFailures` —— **本頁**最後一次算繪崩潰，按定義索引（槽位、教學 message、以及這次崩潰是否已把 entry 從格位上摘掉），與 live 集合共用同一條通知通道。它按構造就是「本頁當前」：包 stop、被 retract、或重新裝載成功時即清空，所以介面可以直接照著算繪。host 那邊另存一份「跨頁面最後一次」給模型 —— 兩份的歸屬與壽命本來就不同，介面**不要**改成回讀 host 那份。
 - `lastRunError` —— 本頁自己那次嘗試為何失敗，按定義索引。它比活動活得更久：host 只拆失敗請求自己啟動的那半，所以一個頁面可能看著 host 報告為「在跑」的定義，而自己什麼都沒裝上。
-- `approve(requestId)` / `decline(requestId)` / `startUserRun({ agentId, id, hasClientHalf })` —— 兩條入口。三者都冪等（按 requestId，使用者自發的 run 按定義 id），所以連點兩次不會起兩次 run。`hasClientHalf` 是必填：純 host 定義沒有原始碼可取，所以由呼叫方從它正在操作的登錄檔行裡把這個事實說出來，而不是讓編排器從一次失敗的取碼裡反推。可回答的請求必然帶瀏覽器半 —— 純 host 定義是 host 自己起的，它不會去問頁面。
+- `approve(requestId)` / `decline(requestId)` / `startUserRun({ agentId, id, hasClientHalf })` —— 兩條入口。三者都冪等（按 requestId，使用者自發的 run 按定義 id），所以連點兩次不會起兩次 run。轉發的核准與直接 run 都必須帶 `hasClientHalf`：純 host 定義沒有原始碼可取，所以由 Host 事件或面板呼叫方提供登錄檔中的事實，而不是讓編排器從一次失敗的取碼裡反推。純 host 請求獲准後到 `runHostHalf` 即結束；Host 會結算其 pending request。
 - `subscribe()` / `getSnapshot()` / `isLoaded(id)` —— 這一頁裝了什麼。`isLoaded` 是頁面本機的事實，永遠不等於 host 說的「在跑」。
 
 ## 模型體驗

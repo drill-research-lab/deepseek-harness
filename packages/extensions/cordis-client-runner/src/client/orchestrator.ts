@@ -100,6 +100,7 @@ export interface CordisRunRequest {
   name: string
   purpose: string
   requiresApproval: boolean
+  hasClientHalf: boolean
 }
 
 /** Direct panel activation request. */
@@ -155,7 +156,7 @@ export class CordisRunOrchestrator {
         packageId: request.packageId,
         mode: request.mode,
         requestId: request.requestId,
-        hasClientHalf: true,
+        hasClientHalf: request.hasClientHalf,
       }).catch((error: unknown) => {
         console.error(`[cordis-client-runner] automatic activation ${request.requestId} failed:`, error)
       })
@@ -198,6 +199,7 @@ export class CordisRunOrchestrator {
         name: pkg.name,
         purpose: pkg.purpose,
         requiresApproval: attempt.requiresApproval ?? attempt.status === 'awaiting-approval',
+        hasClientHalf: pkg.hasClientHalf,
       })
     }
 
@@ -271,7 +273,7 @@ export class CordisRunOrchestrator {
       mode: request.mode,
       requestId,
       approveFutureVersions,
-      hasClientHalf: true,
+      hasClientHalf: request.hasClientHalf,
     })
   }
 

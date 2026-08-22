@@ -359,6 +359,7 @@ describe('browser half', () => {
       name: 'demo',
       purpose: 'show a clock',
       requiresApproval: true,
+      hasClientHalf: true,
     })
     await bench.settle()
     // The event's own fields reach the activity: a surface groups the row by

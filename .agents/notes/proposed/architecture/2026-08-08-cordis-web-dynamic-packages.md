@@ -117,12 +117,12 @@ A row awaiting approval shows only per-Package allow, cross-version allow, and r
 
 ### Client activation orchestration
 
-The Host sends Client activation requests through `cordis/request-run`. A request includes only request identity, Session, Plugin, Package, mode, name, purpose, and whether approval is required; it does not broadcast source code.
+The Host sends activation requests through `cordis/request-run`. A request includes only request identity, Session, Plugin, Package, mode, name, purpose, whether approval is required, and whether the Package has a Client half; it does not broadcast source code. Host-only and dual-half Packages use the same Package/version authorization records because approval authorizes the requested Package activation, not one runtime half.
 
 An authorized page executes the following fixed sequence:
 
 1. Call `runHostHalf` to start the target Host half or bind to the same attempt's already-started Host Run.
-2. After Host success, call `getClientCode` with `pluginId + pluginRunId` to retrieve only the exact current Run's Client source.
+2. After Host success, stop when `hasClientHalf` is false; the Host commits the activation, claims the pending request, and broadcasts completion. Otherwise call `getClientCode` with `pluginId + pluginRunId` to retrieve only the exact current Run's Client source.
 3. The Client Runner evaluates the plugin in the page, establishes its Loader entry/Fiber, and installs its Guard, styles, Slots, and page-local state.
 4. The page reports success, waiting, or failure through `resolveRequestRun` or `settleUserRun`.
 5. The Host accepts the report only for the still-current exact Run, commits current or saves diagnostics, and broadcasts request completion so other pages clear their activities.
@@ -241,7 +241,7 @@ After a model-initiated asynchronous Run succeeds, is rejected, or fails technic
 
 - A new Plugin can be created only from a 3-to-6-character lowercase English prefix; final Plugin, Package, and Run IDs are allocated by the Host and use branded types.
 - `cordis_define` validates only parameters and plain JavaScript syntax and returns an immutable Package; one Plugin can append versions while old source remains inspectable.
-- `cordis_run` strictly validates run/update; Host-only activation completes synchronously, while a Client-bearing activation returns `awaiting-approval` or `starting` without waiting for the final browser outcome.
+- `cordis_run` strictly validates run/update; every model-requested activation returns `awaiting-approval` or `starting`, and Host-only code has no effect before approval. An approved Host-only activation commits and clears its pending request without fetching Client source.
 - A single check authorizes only the current Package, and a double check authorizes future versions of the same Plugin. Authorization survives technical failure, while rejection executes neither half.
 - The Host activates first and the Client then fetches source for the exact Run. A Client-bearing Package does not commit current before Client success, and current/next permit retry and rollback after failure.
 - One Plugin has at most one physical Run at a time. Stop tears down both halves while retaining definitions and pointers; undefine deletes every Package, authorization, and state.
