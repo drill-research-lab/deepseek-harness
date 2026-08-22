@@ -191,6 +191,8 @@ export interface DynamicCordisRunRequest {
   purpose: string
   /** Whether a page must wait for an explicit user decision before activation. */
   requiresApproval: boolean
+  /** Whether the Package has Client code for the answering page to load. */
+  hasClientHalf: boolean
 }
 
 /** One settled model-driven Client activation request broadcast to all pages. */

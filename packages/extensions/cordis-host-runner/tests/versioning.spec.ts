@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AGENT_A, CLIENT_CODE, setup } from './helpers.ts'
+import { AGENT_A, CLIENT_CODE, runApprovedHostOnly, setup } from './helpers.ts'
 
 const HOST = 'return { apply() {} }'
 
@@ -13,7 +13,7 @@ describe('dynamic Plugin versions', () => {
       purpose: 'show time',
       code: { host: HOST },
     })
-    await expect(runner.run(AGENT_A, first.pluginId, first.packageId, 'run')).resolves.toMatchObject({ ok: true })
+    await expect(runApprovedHostOnly(runner, first.pluginId, first.packageId, 'run')).resolves.toMatchObject({ ok: true })
 
     const second = runner.define({
       sessionId: AGENT_A.id,
@@ -22,15 +22,15 @@ describe('dynamic Plugin versions', () => {
       purpose: 'show time',
       code: { host: 'throw new Error("broken update")' },
     })
-    await expect(runner.run(AGENT_A, first.pluginId, second.packageId, 'update'))
-      .resolves.toMatchObject({ ok: false, reason: 'host-half-failed' })
+    await expect(runApprovedHostOnly(runner, first.pluginId, second.packageId, 'update'))
+      .resolves.toMatchObject({ ok: false })
     expect(runner.inventory()[0]).toMatchObject({
       currentPackageId: first.packageId,
       nextPackageId: second.packageId,
     })
     expect(runner.inventory()[0]?.activeRun).toBeUndefined()
 
-    await expect(runner.run(AGENT_A, first.pluginId, first.packageId, 'run')).resolves.toMatchObject({ ok: true })
+    await expect(runApprovedHostOnly(runner, first.pluginId, first.packageId, 'run')).resolves.toMatchObject({ ok: true })
     expect(runner.inventory()[0]).toMatchObject({
       currentPackageId: first.packageId,
       activeRun: { packageId: first.packageId },

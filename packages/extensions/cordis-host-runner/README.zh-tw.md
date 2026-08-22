@@ -9,7 +9,7 @@
 分兩個階段：`define` 只做登記，一切帶副作用的動作都掛在一次 run 上。
 
 - `define`／`undefine` 掌管一個定義的生命週期。`define` 對中繼資料做首尾去空白與必填校驗，透過編譯預檢每一半的文法（不執行任何程式碼），鑄出 `dyn-<n>`，並把該定義登記在發起呼叫的工作階段名下——它沒有任何可回滾的副作用，所以無法解析的程式碼在拿到 id 之前就被拒絕。`undefine` 先停掉正在執行的定義，再把它忘掉。兩者都不上 wire：只有模型自己的工具呼叫才會 define。
-- `run` 回答模型「執行某個定義」的請求，它的兩種形態取決於這個包是誰的事。只有 host 半的包是本行程自己的事：host 半在 `cordis-dynamic` group fiber 之下於 vm 中求值，呼叫隨即返回。帶瀏覽器半的包必須由一個頁面來執行，於是 `run` 變成一次可作答的往返——它 emit `cordis/request-run`、掛起，並由某個人允許或拒絕來結束。這裡沒有定時器；呼叫方的 `AbortSignal`（提問的那一輪次被取消）是唯一的另一條出路，而且它會把這次取消播報出去，讓其他頁面不再提供作答入口。請求寄出時**並不知道**會不會有人作答——收到它的頁面也可能永遠不答，所以沒有頁面連線的部署與其他未作答請求一樣掛起，最終以 `cancelled` 收場。`run` 沒有 wire 面——`cordis_run` 在行程內呼叫它。
+- `run` 為純 host 包與雙半包傳送同一條核准往返。它 emit 帶 `hasClientHalf` 的 `cordis/request-run`、掛起，並由某個人允許或拒絕來結束。作答頁面呼叫 `runHostHalf`；純 host 包由 Host 在這裡提交並結算請求，雙半包則繼續裝載 Client 並呼叫 `resolveRequestRun`。這裡沒有定時器；呼叫方的 `AbortSignal` 是唯一的另一條出路，而且它會把取消播報出去，讓所有頁面撤下作答入口。`run` 沒有 wire 面——`cordis_run` 在行程內呼叫它。
 - `runHostHalf`／`getClientCode` 是獲得允許的頁面依次走的步驟，host 半在先，因此 host 半失敗會在瀏覽器還沒動作之前短路。`runHostHalf` 在約定上是冪等的：已在執行的包只做綁定，不再求值；針對同一個定義的並行呼叫只求值一次，`startedHere` 指出求值的是哪一個呼叫方。隨後 `getClientCode` 把瀏覽器半的原始碼交給這一個頁面；定義已消失、沒有瀏覽器半、或未在執行時期，它會拒絕。程式碼從不搭乘任何播報，所以這是它到達瀏覽器的唯一途徑。
 - `resolveRequestRun` 用作答頁面的結論結束這次往返，並 emit `cordis/request-run-resolved`，讓其他每個頁面撤下待作答的入口。首答即成；更晚的或未知的 request id 會被接受並忽略。命名了登錄檔已越過的版本的成功結論會被拒絕而非應用（`accepted: false`，請求仍處於掛起），因為作答的那個頁面裝載的是一個已不再存活的下發。失敗的結論只會在 host 半正是由這次請求求值時才將它回退，因此某個頁面裝不上自己那一半，絕不會把其他頁面正在使用的包停掉。
 - `stop` 回退一次存活的下發——丟棄 handler、把 host 半 fiber dispose（資源釋放）到完全靜止、emit `dynamicCordisRunner/retract`——並讓該定義仍然可執行。

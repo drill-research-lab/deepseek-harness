@@ -86,7 +86,7 @@ function boot(overrides: {
 }
 
 /** Register one request the way the `cordis/request-run` event does. */
-function ask(bench: Bench, requestId: ApprovalRequestId = REQ): void {
+function ask(bench: Bench, requestId: ApprovalRequestId = REQ, hasClientHalf = true): void {
   bench.orchestrator.open({
     requestId,
     agentId: AGENT,
@@ -96,6 +96,7 @@ function ask(bench: Bench, requestId: ApprovalRequestId = REQ): void {
     name: 'demo',
     purpose: 'draw a clock',
     requiresApproval: true,
+    hasClientHalf,
   })
 }
 
@@ -228,6 +229,40 @@ describe('the waiting affordance', () => {
 })
 
 describe('approve', () => {
+  it('starts an approved host-only request without fetching Client code or reporting a Client failure', async () => {
+    const bench = boot()
+    ask(bench, REQ, false)
+
+    await bench.orchestrator.approve(REQ, false)
+
+    expect(bench.host.runHostHalf).toHaveBeenCalledWith(AGENT, PLUGIN, PACKAGE, 'run', REQ, false)
+    expect(bench.host.getClientCode).not.toHaveBeenCalled()
+    expect(bench.load).not.toHaveBeenCalled()
+    expect(bench.host.resolveRequestRun).not.toHaveBeenCalled()
+    expect(bench.orchestrator.lastRunError.getSnapshot().size).toBe(0)
+  })
+
+  it('automatically starts an authorized host-only request without fetching Client code', async () => {
+    const bench = boot()
+    bench.orchestrator.open({
+      requestId: REQ,
+      agentId: AGENT,
+      pluginId: PLUGIN,
+      packageId: PACKAGE,
+      mode: 'run',
+      name: 'demo',
+      purpose: 'draw a clock',
+      requiresApproval: false,
+      hasClientHalf: false,
+    })
+    await vi.waitFor(() => { expect(bench.host.runHostHalf).toHaveBeenCalledTimes(1) })
+
+    expect(bench.host.getClientCode).not.toHaveBeenCalled()
+    expect(bench.load).not.toHaveBeenCalled()
+    expect(bench.host.resolveRequestRun).not.toHaveBeenCalled()
+    expect(bench.orchestrator.lastRunError.getSnapshot().size).toBe(0)
+  })
+
   it('runs the host half first, then loads the browser half, then answers', async () => {
     const bench = boot()
     ask(bench)

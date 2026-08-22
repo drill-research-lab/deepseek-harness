@@ -4,7 +4,9 @@ import { CallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRegistry from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
-import type { CordisDynamicPluginId } from '../src/types.ts'
+import type {
+  CordisDynamicPackageId, CordisDynamicPluginId, CordisDynamicRunMode, DynamicCordisHostHalfResult,
+} from '../src/types.ts'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import DynamicCordisRunnerService from '../src/index.ts'
@@ -64,7 +66,7 @@ export async function setup(config?: Config): Promise<Harness> {
     // verbs, so the round trip under test is the real one.
     if (gateway.answer === undefined) return
     const answer = gateway.answer
-    const { requestId, pluginId, packageId, mode } = request
+    const { requestId, pluginId, packageId, mode, hasClientHalf } = request
     gateway.answering = Promise.resolve().then(async (): Promise<void> => {
       if (answer === 'reject') {
         await runner.resolveRequestRun(requestId, { ok: false, reason: 'rejected', message: 'not now' })
@@ -77,6 +79,7 @@ export async function setup(config?: Config): Promise<Harness> {
         })
         return
       }
+      if (!hasClientHalf) return
       if (typeof answer === 'object') {
         await runner.resolveRequestRun(requestId, {
           ok: false,
@@ -120,8 +123,8 @@ export function running(runner: DynamicCordisRunnerService, agent: Agent): { id:
 let definitionCounter = 0
 
 /**
- * Define and run one host half in one step, the way the ported suites exercise
- * the sandbox: a failure in either verb rejects with the runner's own
+ * Define, approve, and run one host half, the way the ported suites exercise
+ * the sandbox: a failure in any verb rejects with the runner's own
  * model-facing message, so a spec asserts teaching text through `rejects`.
  * @param harness - the live tree.
  * @param code - the host-half source.
@@ -136,9 +139,27 @@ export async function mount(harness: Harness, code: string): Promise<CordisDynam
     purpose: 'spec fixture',
     code: { host: code },
   })
-  const receipt = await harness.runner.run(AGENT_A, pluginId, packageId, 'run')
-  if (!receipt.ok) throw new Error(receipt.message)
+  const started = await runApprovedHostOnly(harness.runner, pluginId, packageId, 'run')
+  if (!started.ok) throw new Error(started.message)
   return pluginId
+}
+
+/** Run the page-side approval round trip for one host-only test fixture. */
+export async function runApprovedHostOnly(
+  runner: DynamicCordisRunnerService,
+  pluginId: CordisDynamicPluginId,
+  packageId: CordisDynamicPackageId,
+  mode: CordisDynamicRunMode,
+): Promise<DynamicCordisHostHalfResult> {
+  const receipt = await runner.run(AGENT_A, pluginId, packageId, mode)
+  if (!receipt.ok) return { ok: false, message: receipt.message }
+  const requestId = runner.inventory().find(row => row.pluginId === pluginId)?.latestRun?.approvalRequestId
+  if (requestId === undefined) return { ok: false, message: 'host-only fixture did not create an approval request' }
+  const started = await runner.runHostHalf(AGENT_A, pluginId, packageId, mode, requestId, false)
+  if (!started.ok) {
+    await runner.resolveRequestRun(requestId, { ok: false, reason: 'host-half-failed', message: started.message })
+  }
+  return started
 }
 
 let callCounter = 0

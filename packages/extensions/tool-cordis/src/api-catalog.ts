@@ -3090,7 +3090,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'DynamicCordisRunRequest',
-    declaration: 'export interface DynamicCordisRunRequest {\n    requestId: ApprovalRequestId;\n    agentId: SessionId;\n    pluginId: CordisDynamicPluginId;\n    packageId: CordisDynamicPackageId;\n    mode: CordisDynamicRunMode;\n    name: string;\n    purpose: string;\n    requiresApproval: boolean;\n}',
+    declaration: 'export interface DynamicCordisRunRequest {\n    requestId: ApprovalRequestId;\n    agentId: SessionId;\n    pluginId: CordisDynamicPluginId;\n    packageId: CordisDynamicPackageId;\n    mode: CordisDynamicRunMode;\n    name: string;\n    purpose: string;\n    requiresApproval: boolean;\n    hasClientHalf: boolean;\n}',
   },
   {
     name: 'EditGoalRequest',
