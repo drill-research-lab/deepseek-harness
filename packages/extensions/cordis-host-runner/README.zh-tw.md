@@ -21,7 +21,7 @@
 
 別的工作階段登記的定義讀起來是不存在，而不是被禁止，因此不會跨工作階段洩漏任何東西。`invoke` 與 `resolveRequestRun` 完全不攜帶工作階段：元件的一次呼叫和頁面的一次作答都是頁面全域性的事實，不屬於某一個工作階段。
 
-本功能擁有四條轉發事件，由本包在其 client-safe 的 [`./types`](src/types.ts) 子路徑上聲明，並由 [`@deepseek-ai/dsh-api-remotes`](../../api/remotes/README.md) 的白名單準許投遞——正是這一點讓瀏覽器能經 `ctx.remote.$on` 收到它們：`cordis/request-run`（`{requestId, agentId, id, name, purpose}`——只有中繼資料，絕無程式碼）、`cordis/request-run-resolved`（`{requestId, outcome}`）、`dynamicCordisRunner/package`（`{id, name, rev}`），以及 `dynamicCordisRunner/retract`（`{id, rev}`）。後兩者是對稱的一對執行狀態播報：每次全新啟動與每次停止都播，與該包有沒有瀏覽器半無關。
+本功能擁有四條轉發事件，由本包在其 client-safe 的 [`./types`](src/types.ts) 子路徑上聲明，並由 [`@deepseek-ai/dsh-api-remotes`](../../api/remotes/README.md) 的白名單準許投遞——正是這一點讓瀏覽器能經 `ctx.remote.$on` 收到它們：`cordis/request-run`（`{requestId, agentId, pluginId, packageId, mode, name, purpose, requiresApproval, hasClientHalf}`——只有中繼資料，絕無程式碼）、`cordis/request-run-resolved`（`{requestId, outcome}`）、`dynamicCordisRunner/package`（`{id, name, rev}`），以及 `dynamicCordisRunner/retract`（`{id, rev}`）。後兩者是對稱的一對執行狀態播報：每次全新啟動與每次停止都播，與該包有沒有瀏覽器半無關。
 
 ## 儲存立場
 

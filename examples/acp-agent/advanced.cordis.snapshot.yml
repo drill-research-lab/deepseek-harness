@@ -27,6 +27,8 @@
             name: '@deepseek-ai/dsh-code-runtime-worker-thread'
           - id: cordis-host-runner
             name: '@deepseek-ai/dsh-cordis-host-runner'
+          - id: cordis-host-only-approval
+            name: './tests/fixtures/cordis-host-only-approval.ts'
           - id: tool-cordis
             name: '@deepseek-ai/dsh-tool-cordis'
           - id: llm-replay

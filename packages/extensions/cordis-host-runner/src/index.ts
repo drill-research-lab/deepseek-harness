@@ -861,7 +861,20 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
       if (requestId !== undefined) {
         const pending = this.registry.peekRequest(requestId)
         if (pending !== undefined) {
-          await this.settleRequestRun(pending, plugin, requestId, { ok: true, pluginRunId: run.pluginRunId })
+          const resolution = { ok: true as const, pluginRunId: run.pluginRunId }
+          await this.completeRequestRun(
+            pending,
+            requestId,
+            resolution,
+            () => Promise.resolve(this.runResponse(plugin, {
+              ok: true,
+              pluginId: plugin.pluginId,
+              packageId: run.packageId,
+              pluginRunId: run.pluginRunId,
+              waitingFor: missingFor(this.ctx, run),
+              startedHere: false,
+            })),
+          )
         }
       }
     } else {
@@ -1020,8 +1033,22 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
     requestId: ApprovalRequestId,
     resolution: DynamicCordisRunResolution,
   ): Promise<void> {
+    await this.completeRequestRun(
+      pending,
+      requestId,
+      resolution,
+      () => this.settleActivation(plugin, resolution, requestId),
+    )
+  }
+
+  private async completeRequestRun(
+    pending: DynamicCordisPendingRequest,
+    requestId: ApprovalRequestId,
+    resolution: DynamicCordisRunResolution,
+    settle: () => Promise<DynamicCordisRunResponse>,
+  ): Promise<void> {
     this.registry.claimRequest(requestId)
-    const settled = await this.settleActivation(plugin, resolution, requestId)
+    const settled = await settle()
     this.announceResolved(requestId, resolution, pending.requiresApproval ? undefined : 'completed')
     this.steerRunOutcome(pending, settled)
   }

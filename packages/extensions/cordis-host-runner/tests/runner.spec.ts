@@ -183,6 +183,7 @@ describe('dynamic runner dispatch', () => {
 
     expect(started).toMatchObject({ ok: true, pluginId, packageId, pluginRunId: 'run-1' })
     expect(ctx.get('dynDoubler')).toEqual({ ok: true })
+    expect(runner.inventory()[0]?.latestRun?.client.status).toBe('absent')
     expect(runner['registry'].pendingRequestFor(pluginId)).toBeUndefined()
     expect(gateway.events.map(([name]) => name)).toEqual([
       'cordis/request-run', 'cordis/dynamic-package', 'cordis/request-run-resolved',
