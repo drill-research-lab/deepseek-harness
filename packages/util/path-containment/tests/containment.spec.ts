@@ -6,19 +6,19 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, parse } from 'node:path'
-import { isPathUnder } from '../src/containment.ts'
+import { isPathUnder } from '../src/index.ts'
 
 let base: string
 
 beforeEach(async () => {
-  base = await mkdtemp(join(tmpdir(), 'dsh-fssbx-containment-'))
+  base = await mkdtemp(join(tmpdir(), 'dsh-path-containment-'))
 })
 
 afterEach(async () => {
   await rm(base, { recursive: true, force: true })
 })
 
-describe('filesystem sandbox containment', () => {
+describe('path containment', () => {
   it('accepts equal paths, descendants, and a filesystem-root boundary', async () => {
     expect(await isPathUnder(base, base)).toBe(true)
     expect(await isPathUnder(join(base, 'child'), base)).toBe(true)

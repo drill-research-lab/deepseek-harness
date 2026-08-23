@@ -4336,6 +4336,9 @@ importers:
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-path-containment':
+        specifier: workspace:^
+        version: link:../../util/path-containment
       '@deepseek-ai/dsh-sandbox':
         specifier: workspace:^
         version: link:../../sandbox/sandbox
@@ -4821,6 +4824,9 @@ importers:
       '@deepseek-ai/dsh-goal':
         specifier: workspace:^
         version: link:../../goal/goal
+      '@deepseek-ai/dsh-home-paths':
+        specifier: workspace:^
+        version: link:../../util/home-paths
       '@deepseek-ai/dsh-host-directory-picker':
         specifier: workspace:^
         version: link:../directory-picker
@@ -4833,6 +4839,9 @@ importers:
       '@deepseek-ai/dsh-native-command':
         specifier: workspace:^
         version: link:../../util/native-command
+      '@deepseek-ai/dsh-path-containment':
+        specifier: workspace:^
+        version: link:../../util/path-containment
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
@@ -8219,6 +8228,15 @@ importers:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
 
+  packages/util/path-containment:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+
   packages/util/timeout:
     devDependencies:
       '@deepseek-ai/cordis':
@@ -8570,6 +8588,9 @@ importers:
       '@deepseek-ai/dsh-ownership':
         specifier: workspace:^
         version: link:../../identity/ownership
+      '@deepseek-ai/dsh-path-containment':
+        specifier: workspace:^
+        version: link:../../util/path-containment
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session

@@ -38,7 +38,7 @@ import type { FsEditOutcome, FsEditRequest, FsTarget, FsVersion, FsWriteIntent, 
 import { writableRoots } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
-import { isPathUnder } from './containment.ts'
+import { isPathUnder } from '@deepseek-ai/dsh-path-containment'
 
 /**
  * Plugin config: the local backend's knobs verbatim (`cwd` resolution default

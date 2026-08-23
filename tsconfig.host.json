@@ -121,6 +121,7 @@
     { "path": "./packages/util/launch-environment" },
     { "path": "./packages/util/native-command" },
     { "path": "./packages/util/home-paths" },
+    { "path": "./packages/util/path-containment" },
     { "path": "./packages/util/timeout" },
     { "path": "./packages/util/output-retention" },
     { "path": "./packages/util/atomic-write" },

@@ -520,6 +520,15 @@
         "tests/**/*.ts"
       ]
     },
+    "packages/util/path-containment": {
+      "entry": [
+        "tests/**/*.spec.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "tests/**/*.ts"
+      ]
+    },
     "packages/web/web-search-exa": {
       "entry": [
         "tests/**/*.spec.ts",
