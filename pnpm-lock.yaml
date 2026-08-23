@@ -8475,6 +8475,22 @@ importers:
         specifier: workspace:^
         version: link:../../typert/protocol
 
+  packages/writing/writing-compile:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-shell':
+        specifier: workspace:^
+        version: link:../../shell/shell
+
   python/sdk-runtime:
     dependencies:
       '@deepseek-ai/cordis':
