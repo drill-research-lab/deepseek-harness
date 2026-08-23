@@ -247,5 +247,5 @@ async resolveByPath(path: string): Promise<Workspace | undefined>
 
 Types: [OwnerPrincipal](ownership.md) · [SessionId](core.md)
 
-Source: [`packages/workspace/workspace/src/index.ts:93`](../../packages/workspace/workspace/src/index.ts)
+Source: [`packages/workspace/workspace/src/index.ts:105`](../../packages/workspace/workspace/src/index.ts)
 <!-- END GENERATED cordis-surface -->

@@ -2,6 +2,6 @@
 # side as of the last confirmed-consistent state. All languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/ownership.md
-ownership.md: 2ba561648c8e124ac90ebfe8088e93b7b6a10e0b
-ownership.zh.md: 267f782518ea2d7c3ff4c0b22d56dff433786b63
-ownership.zh-tw.md: 5bafcef03bcf85a0c97245e72adef1b1c54bdec2
+ownership.md: ad43bae6e813b6bed7e1d3674daba910ace0c9cc
+ownership.zh.md: 0111be489657c91b616f01f12140425dde7579b2
+ownership.zh-tw.md: f3e20afca9f8ee82b4aff43c360b1c7a3c22b44f

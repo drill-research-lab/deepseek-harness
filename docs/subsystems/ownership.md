@@ -53,7 +53,15 @@ abstract backgroundPrincipal(userId: AuthenticatedUserId): OwnerPrincipal
  * @returns A validated owner-scoped home.
  */
 abstract resolveUserHome(principal: OwnerPrincipal): Promise<UserHome>
+
+/**
+ * Resolve the canonical containment root for a trusted principal. Chosen
+ * workspace and session paths must stay beneath this root.
+ * @param principal - Server-trusted owner identity.
+ * @returns The canonical owner root.
+ */
+abstract resolveOwnerRoot(principal: OwnerPrincipal): Promise<OwnerRoot>
 ```
 
-Source: [`packages/identity/ownership/src/index.ts:66`](../../packages/identity/ownership/src/index.ts)
+Source: [`packages/identity/ownership/src/index.ts:81`](../../packages/identity/ownership/src/index.ts)
 <!-- END GENERATED cordis-surface -->

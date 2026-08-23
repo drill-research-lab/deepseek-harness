@@ -918,10 +918,15 @@ export interface Config {
    * field because this provider does not read that environment variable.
    */
   usersRoot?: string
+  /**
+   * Root containing hashed per-owner containment roots. An omitted or blank
+   * value uses `resolveDshHome()/owner-roots`.
+   */
+  ownerRoots?: string
 }
 ```
 
-來源：[`packages/host/ownership-file/src/index.ts:21`](../packages/host/ownership-file/src/index.ts)
+來源：[`packages/host/ownership-file/src/index.ts:22`](../packages/host/ownership-file/src/index.ts)
 
 <a id="deepseek-aidsh-host-webserver"></a>
 
@@ -3277,6 +3282,7 @@ export interface Config {
 - `@deepseek-ai/dsh-loader-smoke`（[`packages/test-support/loader-smoke/src/index.ts`](../packages/test-support/loader-smoke/src/index.ts)）
 - `@deepseek-ai/dsh-native-command`（[`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts)）
 - `@deepseek-ai/dsh-output-retention`（[`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts)）
+- `@deepseek-ai/dsh-path-containment`（[`packages/util/path-containment/src/index.ts`](../packages/util/path-containment/src/index.ts)）
 - `@deepseek-ai/dsh-sandbox-windows-acl`（[`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts)）
 - `@deepseek-ai/dsh-scope`（[`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts)）
 - `@deepseek-ai/dsh-sdk-client`（[`packages/sdk/client/src/index.ts`](../packages/sdk/client/src/index.ts)）
