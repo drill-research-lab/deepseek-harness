@@ -107,6 +107,16 @@ export class LatexCompileService extends Service {
     }
   }
 
+  /**
+   * Resolve the artifact PDF path for a report, when one exists.
+   * @param reportId - the report's safe id.
+   * @returns the absolute PDF path, or `undefined` when it has not been compiled.
+   */
+  async pdfPath(reportId: string): Promise<string | undefined> {
+    const path = join(this.artifactRoot, assertSafeSegment(reportId), 'main.pdf')
+    return await this.exists(path) ? path : undefined
+  }
+
   private async readLog(path: string): Promise<string> {
     try {
       return await readFile(path, 'utf8')

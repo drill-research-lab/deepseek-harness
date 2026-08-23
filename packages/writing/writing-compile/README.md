@@ -22,6 +22,10 @@ None. The compile service is an engine seam — it never enters model input. The
 
 None; the compile service assembles no provider requests.
 
+## Delivery interface
+
+A compiled report is programmatically deliverable: `latexCompile.pdfPath(reportId)` resolves the artifact `main.pdf` for a report (or `undefined` when it has not compiled), and `ctx.reports.get(reportId)` yields its source. Together these are the export seam a knowledge-base/Library integration consumes; the writing tools live on top of the same seam.
+
 ## Known Limitations and Deferred Work
 
 - The parser targets the classic pdflatex log vocabulary; a different engine (e.g. xelatex/latexmk) may need parser extension.

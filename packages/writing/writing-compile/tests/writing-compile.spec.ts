@@ -94,3 +94,17 @@ describe('parseLatexLog', () => {
     expect(diagnostics[1]?.severity).toBe('warning')
   })
 })
+
+describe('delivery PDF path', () => {
+  it('is undefined before compile and resolves after a successful one', async () => {
+    const { ctx } = await harness()
+    expect(await ctx.latexCompile.pdfPath('report-e')).toBeUndefined()
+
+    const another = await harness({
+      onRun: async (workdir) => { await writeArtifacts(workdir, { log: '', pdf: true }) },
+    })
+    const output = await another.ctx.latexCompile.compile({ reportId: 'report-e', source: 'x' })
+    expect(output.ok).toBe(true)
+    expect(await another.ctx.latexCompile.pdfPath('report-e')).toBe(output.pdfPath)
+  })
+})
