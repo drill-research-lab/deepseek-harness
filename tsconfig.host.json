@@ -158,6 +158,7 @@
     { "path": "./packages/writing/writing" },
     { "path": "./packages/writing/writing-compile" },
     { "path": "./packages/writing/tool-writing" },
+    { "path": "./packages/writing/agent-writer" },
     { "path": "./packages/session/session-title" },
     { "path": "./packages/session/session-title-llm" },
     { "path": "./packages/session/session-title-first-prompt-llm" },
