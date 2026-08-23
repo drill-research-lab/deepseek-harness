@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -60,5 +60,39 @@ describe('fs-sandbox composition', () => {
     })
     const trustedTarget = await ctx.fs.resolve(join(home, '.dsh/skills/home-skill.md'))
     await expect(ctx.fs.readText(trustedTarget)).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+  })
+
+  it('does not load a skill whose directory symlink escapes its configured root', async () => {
+    const base = await tempRoot('escape')
+    const home = join(base, 'home')
+    const project = join(base, 'project')
+    const outside = join(base, 'outside')
+    await Promise.all([
+      mkdir(join(project, '.git'), { recursive: true }),
+      writeSkill(join(home, '.dsh/skills'), 'home-skill', 'home body'),
+      mkdir(outside),
+    ])
+    await writeFile(
+      join(outside, 'SKILL.md'),
+      '---\nname: escape-skill\ndescription: escape\n---\n\nsecret body\n',
+    )
+    await symlink(outside, join(home, '.dsh/skills/escape'), process.platform === 'win32' ? 'junction' : 'dir')
+
+    const ctx = new Context()
+    contexts.push(ctx)
+    // The deployment default root is the whole sandbox base, so the escape
+    // target sits under the fallback but outside the configured skill root.
+    await ctx.plugin(SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: base })
+    await ctx.plugin(SandboxedFileSystem, { cwd: base })
+    await ctx.plugin(SkillRegistry)
+    await ctx.plugin(SkillFileSystem, {
+      dshHome: join(home, '.dsh'),
+      agentsHome: join(home, '.agents'),
+      watch: false,
+    })
+
+    const names = (await ctx.skills.list({ cwd: project })).map(skill => skill.name)
+    expect(names).not.toContain('escape-skill')
+    await expect(ctx.skills.get('escape-skill', { cwd: project })).resolves.toBeUndefined()
   })
 })
