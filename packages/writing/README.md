@@ -7,5 +7,8 @@ The writing family gives the harness an Overleaf-like report workflow: durable r
 | Package | Role | ctx key |
 |---|---|---|
 | `writing/` | Report project registry: durable reports, version snapshots, templates | `reports` |
+| `writing-compile/` | LaTeX compilation with diagnostics parsing | `latexCompile` |
+| `tool-writing/` | Model-facing writing tools (create/write/read/compile/versions/restore) | — |
+| `agent-writer/` | `writer` subagent provider (fresh child + writing persona) | — |
 
 Each child reference owns its contract and detailed behavior.
