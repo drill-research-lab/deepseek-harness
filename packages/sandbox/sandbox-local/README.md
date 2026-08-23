@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh.md) | [繁體中文](README.zh-tw.md)
 
-Local implementation of the [`dsh-sandbox`](../sandbox/) seam. It selects and caches one platform runner: Linux prefers a working `bwrap` then Landlock; macOS uses Seatbelt; Windows uses the ACL restricted-token runner. Multiple candidates are probed in order, while a sole candidate is selected directly.
+Local implementation of the [`dsh-sandbox`](../sandbox/) seam. It selects and caches one platform runner: Linux prefers a working `bwrap`, then a compound PID-isolation-plus-Landlock runner; macOS uses Seatbelt; Windows uses the ACL restricted-token runner. Multiple candidates are probed in order, while a sole candidate is selected directly.
 
 The package root exports the default and named `LocalSandboxProvider` plugin and `Config`; platform profile builders stay internal.
 
@@ -15,6 +15,8 @@ The Seatbelt profile is allow-default with `(deny file-write*)` plus write allow
 The Windows rung keeps one deterministic write SID and standing ACE per workspace, but gives every live session/workspace pair a random private temp directory with a distinct SID and revocable ACE. Sessions sharing a workspace therefore share its intended write authority without inheriting one another's temp authority. A fresh provider always chooses a new temp path and SID, so crash residue cannot block or authorize a resumed session; agentless calls receive the same per-invocation isolation from the runner. A workspace equal to or containing the platform temp root fails before any ACL mutation because its inheritable workspace ACE would otherwise reach every private temp child.
 
 [`@deepseek-ai/node-addon-landlock-run`](https://www.npmjs.com/package/@deepseek-ai/node-addon-landlock-run) supplies the platform launcher, functional probe, and CLI argument vocabulary. This provider owns only mode-to-grant mapping and runner selection. Keeping path resolution and probe parsing with the versioned binary prevents contract drift.
+
+The Linux Landlock profile permits reads from the session workspace plus `/usr`, `/etc/ld.so.cache`, and `/etc/alternatives`; writes remain mode-specific. This intentionally supports system executables and merged-usr loader symlinks without granting user-managed runtime trees outside the workspace. The outer [`@deepseek-ai/node-addon-pid-isolate-run`](../../../native/pid-isolate-run/) launcher supplies a private PID namespace and procfs before the inner Landlock launcher applies filesystem rules. Deployments must apply `setcap cap_sys_admin,cap_setpcap+ep` to its installed binary and verify `--probe`; otherwise the compound rung is unavailable and selection fails closed when no earlier runner works. Bubblewrap does not use this privileged helper.
 
 ```yaml
 - id: sandbox

@@ -88,16 +88,18 @@ jobs:
       - name: Pack the vendored framework for verification
         run: pnpm run release:pack --family vendor --out dist/npm-vendor
 
-      # dsh-sandbox-local declares the Landlock entry as a runtime dependency, so
-      # the verification needs its tarball. Its platform packages stay out: they
-      # are optional, and building them needs a musl toolchain per architecture.
-      - name: Pack the Landlock entry for verification
+      # dsh-sandbox-local declares both native entries as runtime dependencies,
+      # so verification needs their tarballs. Platform packages stay out: they
+      # are optional and require native builders plus deployment capabilities.
+      - name: Pack native entries for verification
         run: |
           pnpm --dir native/landlock-run run build:ts
           pnpm --dir native/landlock-run/packages/entry pack --pack-destination "$PWD/dist/npm-landlock"
+          pnpm --dir native/pid-isolate-run run build:ts
+          pnpm --dir native/pid-isolate-run/packages/entry pack --pack-destination "$PWD/dist/npm-pid-isolate"
 
       - name: Verify packed install
-        run: pnpm run release:verify-packed-install --family dsh --from dist/npm --from dist/npm-vendor --from dist/npm-landlock
+        run: pnpm run release:verify-packed-install --family dsh --from dist/npm --from dist/npm-vendor --from dist/npm-landlock --from dist/npm-pid-isolate
 
       - uses: actions/upload-artifact@v4
         with:

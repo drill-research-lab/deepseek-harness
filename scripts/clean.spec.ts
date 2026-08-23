@@ -60,18 +60,26 @@ describe('RepositoryCleaner', () => {
     expect(existsSync(join(root, 'products/shell/lib'))).toBe(true)
   })
 
-  it('removes the native Landlock entry output and solution build info', async () => {
+  it('removes native entry outputs and solution build info', async () => {
     const root = fixture()
-    const entry = 'native/landlock-run/packages/entry'
-    addProject(root, entry, 'lib')
-    write(join(root, entry, 'lib/index.js'))
+    const landlockEntry = 'native/landlock-run/packages/entry'
+    const pidEntry = 'native/pid-isolate-run/packages/entry'
+    addProject(root, landlockEntry, 'lib')
+    addProject(root, pidEntry, 'lib')
+    write(join(root, 'tsconfig.json'), JSON.stringify({ files: [], references: [{ path: landlockEntry }, { path: pidEntry }] }))
+    write(join(root, landlockEntry, 'lib/index.js'))
+    write(join(root, pidEntry, 'lib/index.js'))
     write(join(root, 'native/landlock-run/tsconfig.tsbuildinfo'))
+    write(join(root, 'native/pid-isolate-run/tsconfig.tsbuildinfo'))
 
     await new RepositoryCleaner(root).clean()
 
-    expect(existsSync(join(root, entry, 'lib'))).toBe(false)
-    expect(existsSync(join(root, entry, 'src/index.ts'))).toBe(true)
+    expect(existsSync(join(root, landlockEntry, 'lib'))).toBe(false)
+    expect(existsSync(join(root, pidEntry, 'lib'))).toBe(false)
+    expect(existsSync(join(root, landlockEntry, 'src/index.ts'))).toBe(true)
+    expect(existsSync(join(root, pidEntry, 'src/index.ts'))).toBe(true)
     expect(existsSync(join(root, 'native/landlock-run/tsconfig.tsbuildinfo'))).toBe(false)
+    expect(existsSync(join(root, 'native/pid-isolate-run/tsconfig.tsbuildinfo'))).toBe(false)
   })
 
   it('refuses project outputs reached through a symlink outside the repository', async () => {

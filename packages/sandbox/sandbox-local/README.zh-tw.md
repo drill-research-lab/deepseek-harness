@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh.md) | 繁體中文
 
-[`dsh-sandbox`](../sandbox/) seam 的本機實作。它選擇並快取一個平臺 runner：Linux 優先選擇可工作的 `bwrap`，否則選擇 Landlock；macOS 使用 Seatbelt；Windows 使用 ACL 受限權杖 runner。多個候選項會按順序探測，只有一個候選項時則直接選擇。
+[`dsh-sandbox`](../sandbox/) seam 的本機實作。它選擇並快取一個平臺 runner：Linux 優先選擇可工作的 `bwrap`，其次選擇 PID 隔離與 Landlock 組成的 runner；macOS 使用 Seatbelt；Windows 使用 ACL 受限權杖 runner。多個候選項會按順序探測，只有一個候選項時則直接選擇。
 
 包根目錄匯出預設及命名的 `LocalSandboxProvider` 外掛程式和 `Config`；平臺 profile builder 仍為內部實作。
 
@@ -15,6 +15,8 @@ Seatbelt profile 預設允許，但帶 `(deny file-write*)` 和寫入 allow-list
 Windows 檔為每個工作區保留一個確定性寫入 SID 和常駐 ACE，但為每個活躍的工作階段/工作區對分配一個隨機私有臨時目錄，以及不同的 SID 和可撤銷 ACE。因此，共享工作區的工作階段會共享預期的寫權限，卻不會繼承彼此的臨時目錄權限。新的提供方總會選擇新的臨時路徑和 SID，因此崩潰殘留既無法阻止復原的工作階段，也無法向其授權；runner 會為無 agent（代理）的呼叫提供同樣的逐呼叫隔離。如果工作區等於或包含平臺臨時根目錄，呼叫會在任何 ACL 改動發生前失敗，因為否則其可繼承的工作區 ACE 會延伸到每個私有臨時子目錄。
 
 [`@deepseek-ai/node-addon-landlock-run`](https://www.npmjs.com/package/@deepseek-ai/node-addon-landlock-run) 提供平臺 launcher、功能探測和 CLI 參數詞彙。該提供方只負責模式到授權的對映與 runner 選擇。把路徑解析和探測解析保留在帶版本的 binary 中，可防止約定漂移。
+
+Linux Landlock profile 允許讀取工作階段 workspace 以及 `/usr`、`/etc/ld.so.cache`、`/etc/alternatives`；寫入權限仍由模式決定。這支援系統執行檔與 merged-usr loader symlink（符號連結），但不會授權 workspace 之外由使用者管理的 runtime 目錄。外層 [`@deepseek-ai/node-addon-pid-isolate-run`](../../../native/pid-isolate-run/) launcher 先建立獨立 PID namespace 與 procfs，內層 Landlock launcher 再施加檔案系統規則。部署必須對已安裝的 binary 執行 `setcap cap_sys_admin,cap_setpcap+ep` 並驗證 `--probe`；否則組合 runner 不可用，且沒有更前面的 runner 時會失敗閉合。Bubblewrap 不使用此特權 helper。
 
 ```yaml
 - id: sandbox

@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-[`dsh-sandbox`](../sandbox/) seam 的本地实现。它选择并缓存一个平台 runner：Linux 优先选择可工作的 `bwrap`，否则选择 Landlock；macOS 使用 Seatbelt；Windows 使用 ACL 受限令牌 runner。多个候选项会按顺序探测，只有一个候选项时则直接选择。
+[`dsh-sandbox`](../sandbox/) seam 的本地实现。它选择并缓存一个平台 runner：Linux 优先选择可工作的 `bwrap`，其次选择 PID 隔离与 Landlock 组成的 runner；macOS 使用 Seatbelt；Windows 使用 ACL 受限令牌 runner。多个候选项会按顺序探测，只有一个候选项时则直接选择。
 
 包根目录导出默认及命名的 `LocalSandboxProvider` 插件和 `Config`；平台 profile builder 仍为内部实现。
 
@@ -15,6 +15,8 @@ Seatbelt profile 默认允许，但带 `(deny file-write*)` 和写入 allow-list
 Windows 档为每个工作区保留一个确定性写入 SID 和常驻 ACE，但为每个活跃的会话/工作区对分配一个随机私有临时目录，以及不同的 SID 和可撤销 ACE。因此，共享工作区的会话会共享预期的写权限，却不会继承彼此的临时目录权限。新的提供方总会选择新的临时路径和 SID，因此崩溃残留既无法阻止恢复的会话，也无法向其授权；runner 会为无 agent（智能体）的调用提供同样的逐调用隔离。如果工作区等于或包含平台临时根目录，调用会在任何 ACL 改动发生前失败，因为否则其可继承的工作区 ACE 会延伸到每个私有临时子目录。
 
 [`@deepseek-ai/node-addon-landlock-run`](https://www.npmjs.com/package/@deepseek-ai/node-addon-landlock-run) 提供平台 launcher、功能探测和 CLI 参数词汇。该提供方只负责模式到授权的映射与 runner 选择。把路径解析和探测解析保留在带版本的 binary 中，可防止约定漂移。
+
+Linux Landlock profile 允许读取会话工作区以及 `/usr`、`/etc/ld.so.cache`、`/etc/alternatives`；写入权限仍由模式决定。这支持系统可执行文件与 merged-usr loader symlink（符号链接），但不会授权工作区之外由用户管理的 runtime 目录。外层 [`@deepseek-ai/node-addon-pid-isolate-run`](../../../native/pid-isolate-run/) launcher 先建立独立 PID namespace 与 procfs，内层 Landlock launcher 再施加文件系统规则。部署必须对已安装的 binary 执行 `setcap cap_sys_admin,cap_setpcap+ep` 并验证 `--probe`；否则组合 runner 不可用，且没有更前面的 runner 时会失败闭合。Bubblewrap 不使用此特权 helper。
 
 ```yaml
 - id: sandbox

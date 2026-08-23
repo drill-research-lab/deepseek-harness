@@ -9,6 +9,14 @@ import { writableRoots } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 
 /**
+ * System roots required to execute dynamically linked programs under
+ * Landlock. `/usr` owns merged-usr binaries, loaders, libraries, and locale;
+ * the remaining file and directory resolve the dynamic-loader cache and
+ * alternatives selected by those programs.
+ */
+export const LANDLOCK_SYSTEM_READ_ROOTS = ['/usr', '/etc/ld.so.cache', '/etc/alternatives'] as const
+
+/**
  * Build the bwrap profile arguments for one file-effect policy.
  * @param policy - file-effect policy to express as bwrap mounts.
  * @returns profile arguments before the trailing separator and command argv.
@@ -28,11 +36,12 @@ export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
  * @returns launcher grant arguments before the trailing separator and command argv.
  */
 export function landlockProfileArgs(policy: SandboxPolicy): string[] {
+  const readOnly = [...LANDLOCK_SYSTEM_READ_ROOTS, policy.workspaceRoot]
   const readWrite = ['/dev/null']
   if (policy.mode === 'workspace-write') {
     readWrite.push('/tmp', policy.workspaceRoot)
   }
-  return landlockGrantArgs({ readOnly: ['/'], readWrite })
+  return landlockGrantArgs({ readOnly, readWrite })
 }
 
 /** Quote one path as an SBPL string literal. */

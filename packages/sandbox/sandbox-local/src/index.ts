@@ -1,6 +1,6 @@
 /**
  * Local sandbox backend. It selects the platform runner chain (Linux bwrap then
- * Landlock; macOS Seatbelt; Windows the ACL restricted-token runner), functionally probes
+ * PID-isolated Landlock; macOS Seatbelt; Windows the ACL restricted-token runner), functionally probes
  * competing candidates once, and reports each wrap's enforcement and stderr
  * classification facts. Missing or unusable confinement fails closed rather
  * than returning the original argv.
@@ -31,6 +31,12 @@ import {
   launcherPath as landlockLauncherPath,
   probe as defaultProbeLandlock,
 } from '@deepseek-ai/node-addon-landlock-run'
+import {
+  LAUNCHER_BIN as PID_ISOLATE_LAUNCHER_BIN,
+  LAUNCHER_FAILURE_EXIT as PID_ISOLATE_FAILURE_EXIT,
+  launcherPath as pidIsolateLauncherPath,
+  probe as defaultProbePidIsolate,
+} from '@deepseek-ai/node-addon-pid-isolate-run'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { assertNever } from '@deepseek-ai/dsh-llm'
@@ -121,10 +127,14 @@ export interface SandboxInternals {
   probeBwrap?: () => boolean
   /** Replaces the functional Landlock launcher probe (the Linux chain's second rung). */
   probeLandlock?: (launcher: string) => SandboxEnforcement | 'unusable'
+  /** Replaces the functional PID-isolation probe required by the Landlock rung. */
+  probePidIsolate?: (launcher: string) => boolean
   /** Replaces the functional Seatbelt probe (the darwin chain's sole rung — only consulted if that chain ever grows). */
   probeSeatbelt?: (seatbeltExec: string) => boolean
   /** Replaces the resolved `landlock-run` launcher path (a fake launcher script). */
   landlockLauncher?: string
+  /** Replaces the resolved `pid-isolate-run` launcher path (a fake launcher script). */
+  pidIsolateLauncher?: string
   /** Replaces the `sandbox-exec` executable the probe and wraps invoke (a fake script). */
   seatbeltExec?: string
   /** Replaces the resolved windows-acl runner argv prefix (a fake runner). */
@@ -138,7 +148,7 @@ export interface SandboxInternals {
 }
 
 /** The chain's verdict: which runner confines, and how completely it enforces. */
-type SelectedRunner = { runner: 'bwrap' | 'landlock' | 'seatbelt' | 'windows-acl'; enforcement: SandboxEnforcement }
+type SelectedRunner = { runner: 'bwrap' | 'landlock-pid' | 'seatbelt' | 'windows-acl'; enforcement: SandboxEnforcement }
 
 /** One live session/workspace pair's private temp directory and capability. */
 interface AclTempCapability {
@@ -157,7 +167,7 @@ interface AclTempCapability {
  * candidate, selected without any probe.
  */
 const PLATFORM_CHAINS: Record<string, readonly SelectedRunner['runner'][]> = {
-  linux: ['bwrap', 'landlock'],
+  linux: ['bwrap', 'landlock-pid'],
   darwin: ['seatbelt'],
   // The Windows restricted-token runner (@deepseek-ai/dsh-sandbox-windows-acl):
   // a sole candidate, selected without a probe — its execution-time refusal
@@ -176,7 +186,7 @@ const PLATFORM_CHAINS: Record<string, readonly SelectedRunner['runner'][]> = {
  */
 const STATIC_ENFORCEMENT: Record<SelectedRunner['runner'], SandboxEnforcement> = {
   bwrap: 'full',
-  landlock: 'full',
+  'landlock-pid': 'full',
   seatbelt: 'full',
   // WRITE_RESTRICTED needs Everyone in both restricting lists for process
   // initialization. An external object that grants Everyone write access
@@ -204,7 +214,7 @@ function assertPositiveFinite(name: string, value: number): void {
  */
 const DENIAL_SIGNATURES = {
   bwrap: ['read-only file system'],
-  landlock: ['permission denied'],
+  'landlock-pid': ['permission denied'],
   seatbelt: ['operation not permitted'],
   // pwsh/.NET: "Access to the path '...' is denied."; cmd: "Access is denied.";
   // node EACCES: "permission denied".
@@ -230,11 +240,17 @@ const WINDOWS_ACL_RUNNER_FAILURE_EXIT = 127
  */
 const RUNNER_FAILURE_RULES = {
   bwrap: [{ fatalSignatures: ['bwrap: '] }],
-  landlock: [{
-    allowedExitCodes: [LAUNCHER_FAILURE_EXIT],
-    fatalSignatures: [`${LAUNCHER_BIN}: `],
-    informationalLines: [`${LAUNCHER_BIN}: partial enforcement (older Landlock ABI)`],
-  }],
+  'landlock-pid': [
+    {
+      allowedExitCodes: [PID_ISOLATE_FAILURE_EXIT],
+      fatalSignatures: [`${PID_ISOLATE_LAUNCHER_BIN}: `],
+    },
+    {
+      allowedExitCodes: [LAUNCHER_FAILURE_EXIT],
+      fatalSignatures: [`${LAUNCHER_BIN}: `],
+      informationalLines: [`${LAUNCHER_BIN}: partial enforcement (older Landlock ABI)`],
+    },
+  ],
   seatbelt: [{ fatalSignatures: ['sandbox-exec: '] }],
   'windows-acl': [{ allowedExitCodes: [WINDOWS_ACL_RUNNER_FAILURE_EXIT], fatalSignatures: ['windows-acl-run: '] }],
 } as const satisfies Record<SelectedRunner['runner'], readonly RunnerFailureRule[]>
@@ -336,7 +352,10 @@ export class LocalSandboxProvider extends SandboxProvider {
   private runnerArgv(runner: SelectedRunner['runner'], policy: SandboxPolicy): string[] {
     switch (runner) {
       case 'bwrap': return ['bwrap', ...bwrapProfileArgs(policy)]
-      case 'landlock': return [this.landlockLauncher(), ...landlockProfileArgs(policy)]
+      case 'landlock-pid': return [
+        this.pidIsolateLauncher(), '--',
+        this.landlockLauncher(), ...landlockProfileArgs(policy),
+      ]
       case 'seatbelt': return [this.seatbeltExec(), ...seatbeltProfileArgs(policy)]
       case 'windows-acl': return this.windowsAclRunnerArgv(policy)
       default: return assertNever(runner)
@@ -521,7 +540,10 @@ export class LocalSandboxProvider extends SandboxProvider {
         const probe = this.internals.probeBwrap ?? (() => defaultProbeBwrap(this.probeTimeoutMs))
         return probe() ? 'full' : 'unusable'
       }
-      case 'landlock': {
+      case 'landlock-pid': {
+        const probePid = this.internals.probePidIsolate
+          ?? (launcher => defaultProbePidIsolate(launcher, { timeoutMs: this.probeTimeoutMs }))
+        if (!probePid(this.pidIsolateLauncher())) return 'unusable'
         const probe = this.internals.probeLandlock ?? (launcher => defaultProbeLandlock(launcher, { timeoutMs: this.probeTimeoutMs }))
         return probe(this.landlockLauncher())
       }
@@ -541,6 +563,11 @@ export class LocalSandboxProvider extends SandboxProvider {
   /** The Landlock launcher to probe and exec (test hook over the resolved one). */
   private landlockLauncher(): string {
     return this.internals.landlockLauncher ?? landlockLauncherPath()
+  }
+
+  /** The PID-isolation launcher required by the Landlock rung. */
+  private pidIsolateLauncher(): string {
+    return this.internals.pidIsolateLauncher ?? pidIsolateLauncherPath()
   }
 
   /** The `sandbox-exec` executable to probe and exec (test hook over the system one). */
