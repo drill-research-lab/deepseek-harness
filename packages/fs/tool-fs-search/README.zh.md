@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-**面向模型的文件系统发现工具**（`glob`、`grep`）由 **打包的 ripgrep 二进制**（`@vscode/ripgrep`）支持，而不是由 `ctx.fs` 提供方方法或系统 `rg` 安装支持。注册是无条件的：二进制随 NPM 依赖一起交付，因此没有加载期可用性探针。每次调用都通过 `ctx.subprocess` seam 以固定 argv 向量 spawn 该二进制（前缀 `--no-config`，使宿主的 `RIPGREP_CONFIG_PATH` 无法向不受约束的 spawn 注入 `--pre` 预处理器；模型控制的值是普通 argv 元素——不存在 shell 层，因此不涉及 shell 引号处理），解析原始 `rg` 输出，并返回相对于工作目录的规范值。本包注入 `tools`、`systemPrompt` 和 `subprocess`，有意**不**注入 `fs`；格式化结果 spill 为可选功能，因此机会性读取 `ctx.spillStore`，调用方式为 `ctx.get()`。
+**面向模型的文件系统发现工具**（`glob`、`grep`）由**打包的 ripgrep 二进制**（`@vscode/ripgrep`）支持，而不是由 `ctx.fs` 提供方方法或系统 `rg` 安装支持。注册是无条件的：二进制随 NPM 依赖一起交付，因此没有加载期可用性探针。每次调用都会解析调用会话的沙箱策略，拒绝规范化后位于工作区外的搜索根，前置 `--no-config` 以阻止宿主 `RIPGREP_CONFIG_PATH` 注入 `--pre` 预处理器，通过 `ctx.sandbox.confine()` 包装受限运行，并且只把返回的 argv 交给 `ctx.subprocess` spawn。模型控制的值仍是普通 argv 元素，不存在 shell 层。本包注入 `tools`、`systemPrompt`、`subprocess`、`sandbox` 和 `sandboxPolicy`，有意**不**注入 `fs`；格式化结果 spill 为可选功能，因此机会性通过 `ctx.get()` 读取 `ctx.spillStore`。
 
 ```ts ignore-check
 // A deployment chooses how over-cap glob pages are selected.
@@ -16,7 +16,7 @@ await ctx.plugin(LocalSpillStore)                           // @deepseek-ai/dsh-
 
 ## 部署要求：无需宿主 rg，但工作目录与文件系统需共置
 
-二进制随包交付，覆盖所有受支持平台（macOS/Linux/Windows，x64/arm64），因此无需宿主 `rg` 安装，工具在每个部署上都注册。返回路径会相对于解析后的工作目录显示（调用方 agent（智能体）有会话 cwd 时使用该 cwd，否则使用 `process.cwd()`）；只有该工作目录与文件系统根目录是同一工作区时，才能用 `read` 继续读取。这项共置要求不附带运行时跨服务校验；远程或虚拟文件系统搜索需等待共享工作区约定或特定提供方的搜索后端。
+二进制随包交付，覆盖所有受支持平台（macOS/Linux/Windows，x64/arm64），因此无需宿主 `rg` 安装，工具在每个部署上都注册。返回路径会相对于解析后的工作目录显示（调用方 agent（智能体）有会话 cwd 时使用该 cwd，否则使用 `process.cwd()`）。受限调用的显式搜索路径经规范化符号链接解析后，必须仍位于已解析的工作区根目录下。远程或虚拟文件系统搜索仍需要特定提供方的搜索后端，因为本包运行共置进程。
 
 ## 配置
 
@@ -48,7 +48,7 @@ await ctx.plugin(LocalSpillStore)                           // @deepseek-ai/dsh-
 
 ## 错误
 
-搜索失败会携带由本包定义的 `SearchError`（`HarnessError` 子类），并以 `{ name, code }` 的形式呈现在 `isError` 结果上：`SEARCH_INVALID_PATTERN`（ripgrep 拒绝正则/glob）、`SEARCH_FAILED`（`rg` 启动失败、目标不可访问、信号终止、`--json` 输出格式错误）、`SEARCH_RAW_OUTPUT_OVERFLOW`（原始输出超过 `rawOutputMaxBytes`，或在请求 stdout 捕获预算后仍 lossy）和 `SEARCH_ABORTED`（协作式工具超时或调用方取消）。ripgrep 的退出语义由工具负责处理：退出 0 表示成功且有结果，退出 1 表示成功的空搜索（`No files found` / `No matches found`），只有其他退出值表示失败。模型参数错误（空白 pattern、列表值 `include`）仍是普通工具参数错误。
+搜索失败会携带由本包定义的 `SearchError`（`HarnessError` 子类），并以 `{ name, code }` 的形式呈现在 `isError` 结果上：`SEARCH_INVALID_PATTERN`（ripgrep 拒绝正则/glob）、`SEARCH_FAILED`（外部搜索根、`rg` 启动失败、目标不可访问、信号终止或 `--json` 输出格式错误）、`SEARCH_RAW_OUTPUT_OVERFLOW`（原始输出超过 `rawOutputMaxBytes`，或在请求 stdout 捕获预算后仍 lossy）和 `SEARCH_ABORTED`（协作式工具超时或调用方取消）。ripgrep 的退出语义由工具负责处理：退出 0 表示成功且有结果，退出 1 表示成功的空搜索（`No files found` / `No matches found`），只有其他退出值表示失败。模型参数错误（空白 pattern、列表值 `include`）仍是普通工具参数错误。
 
 ## 模型体验
 
@@ -128,7 +128,7 @@ glob 描述声明了配置的超过上限排序方式。生成的 [`glob` 和 `g
 
 ## 已知限制与暂缓事项
 
-- **搜索与文件访问没有共享工作区证明**——只有当工作目录与文件系统根目录指向同一工作区时，返回路径才可继续读取；本包不执行运行时跨服务校验。
+- **搜索仍是共置进程能力**——根目录围栏与沙箱包装覆盖本地工作区执行；远程或虚拟文件系统需要另一个搜索消费方。
 - **打包二进制固定在依赖版本上**——`@vscode/ripgrep` 覆盖其随附的平台（macOS/Linux/Windows，x64/arm64）；不支持的平台或损坏的安装会以 `SEARCH_FAILED` 使调用失败。远程或虚拟文件系统需要共置的工作区或另一个搜索消费方。
 - **schema 只暴露一个有界页面**——偏移分页、大小写开关、替代输出模式与提供方支撑的发现仍不在本包范围内；达到上限的完整输出需要 spill 后端。
 - **启用采样时仅按搜索根正下方的第一段路径分组**——超过上限的 `glob` 页面在这些顶层条目之间平衡，因此集中在更深处的结果（一棵均匀树里某个繁忙目录）在该层级之下仍会呈现不均；递归平衡被延期。

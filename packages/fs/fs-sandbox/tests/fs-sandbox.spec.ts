@@ -1,7 +1,8 @@
 /**
  * Tests for the sandbox-enforcing filesystem backend: the per-call policy fence
- * on write/edit (read-only denies, workspace-write contains, danger-full-access
- * passes through), reads always passing through, the capability fact, and the
+ * on reads and write/edit (confined reads stay inside the workspace, read-only
+ * denies mutations, workspace-write contains them, danger-full-access passes
+ * through), the capability fact, and the
  * containment matrix — `..` traversal, absolute paths outside, and symlink
  * escapes (a symlinked directory inside the workspace pointing out, and a new
  * file created under one). The fence is exercised on a real filesystem: a
@@ -17,7 +18,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { FsError, FsTargetKey } from '@deepseek-ai/dsh-fs'
 import type { FsTarget } from '@deepseek-ai/dsh-fs'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
-import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
+import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import { SandboxedFileSystem } from '@deepseek-ai/dsh-fs-sandbox'
 
 let base: string
@@ -56,6 +57,52 @@ function target(path: string): Promise<FsTarget> {
   return fs.resolve(path)
 }
 
+type ReadOperation = 'stat' | 'lstat' | 'readText' | 'streamText' | 'readBytes' | 'listDir'
+
+const READ_OPERATIONS: readonly ReadOperation[] = ['stat', 'lstat', 'readText', 'streamText', 'readBytes', 'listDir']
+
+async function prepareReadPath(root: string, operation: ReadOperation): Promise<string> {
+  if (operation === 'listDir') {
+    const dir = join(root, 'listed')
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, 'child.txt'), 'child')
+    return dir
+  }
+  const path = join(root, `${operation}.txt`)
+  await writeFile(path, 'content')
+  return path
+}
+
+async function readValue(
+  operation: ReadOperation,
+  path: string,
+  policy?: SandboxExecutionPolicy,
+): Promise<unknown> {
+  if (operation === 'lstat') return (await fs.lstat(path, undefined, undefined, policy))?.type
+  const resolved = await target(path)
+  switch (operation) {
+    case 'stat':
+      return (await fs.stat(resolved, undefined, policy))?.type
+    case 'readText':
+      return fs.readText(resolved, undefined, policy)
+    case 'streamText': {
+      let content = ''
+      for await (const chunk of await fs.streamText(resolved, undefined, policy)) content += chunk
+      return content
+    }
+    case 'readBytes':
+      return Buffer.from(await fs.readBytes(resolved, undefined, 1024, policy)).toString('utf8')
+    case 'listDir':
+      return (await fs.listDir(resolved, undefined, policy)).map(entry => entry.name)
+  }
+}
+
+function expectedReadValue(operation: ReadOperation): unknown {
+  if (operation === 'stat' || operation === 'lstat') return 'file'
+  if (operation === 'listDir') return ['child.txt']
+  return 'content'
+}
+
 describe('the capability fact', () => {
   it('reports the deployment default mode (what the tool layer advertises against)', async () => {
     await boot('workspace-write')
@@ -80,10 +127,48 @@ describe('read-only', () => {
     expect(await readFile(path, 'utf8')).toBe('original')
   })
 
-  it('allows reads (every mode permits reading)', async () => {
+  it('allows reads inside the workspace', async () => {
     const path = join(workspace, 'readable.txt')
     await writeFile(path, 'hello')
     expect(await fs.readText(await target(path))).toBe('hello')
+  })
+})
+
+describe('read containment', () => {
+  beforeEach(() => boot('workspace-write'))
+
+  it.each(READ_OPERATIONS)('%s reads a workspace path', async (operation) => {
+    const path = await prepareReadPath(workspace, operation)
+    await expect(readValue(operation, path)).resolves.toEqual(expectedReadValue(operation))
+  })
+
+  it.each(READ_OPERATIONS)('%s denies an absolute path outside the workspace', async (operation) => {
+    const path = await prepareReadPath(outside, operation)
+    await expect(readValue(operation, path)).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+  })
+
+  it.each(READ_OPERATIONS)('%s denies Bob\'s workspace under Alice\'s per-call policy', async (operation) => {
+    const bobWorkspace = join(outside, 'bob-home', 'workspace')
+    await mkdir(bobWorkspace, { recursive: true })
+    const path = await prepareReadPath(bobWorkspace, operation)
+    const alicePolicy: SandboxExecutionPolicy = { mode: 'workspace-write', workspaceRoot: workspace }
+    await expect(readValue(operation, path, alicePolicy)).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+  })
+
+  it('lstat checks the in-workspace link path without following its final symlink', async () => {
+    const outsideFile = join(outside, 'linked.txt')
+    const link = join(workspace, 'linked.txt')
+    await writeFile(outsideFile, 'outside')
+    await symlink(outsideFile, link)
+    await expect(fs.lstat(link)).resolves.toMatchObject({ type: 'symlink' })
+    await expect(fs.readText(await target(link))).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+  })
+
+  it('read-only also denies an outside read', async () => {
+    await fiber.dispose()
+    await boot('read-only')
+    const path = await prepareReadPath(outside, 'readText')
+    await expect(readValue('readText', path)).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
   })
 })
 
@@ -191,6 +276,11 @@ describe('danger-full-access', () => {
     const path = join(outside, 'free.txt')
     await fs.writeText(await target(path), 'free')
     expect(await readFile(path, 'utf8')).toBe('free')
+  })
+
+  it('reads anywhere, unfenced', async () => {
+    const path = await prepareReadPath(outside, 'readText')
+    await expect(readValue('readText', path)).resolves.toBe('content')
   })
 })
 

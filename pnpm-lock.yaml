@@ -3828,6 +3828,9 @@ importers:
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-sandbox':
+        specifier: workspace:^
+        version: link:../../sandbox/sandbox
 
   packages/e2b/subprocess-e2b:
     dependencies:
@@ -4306,6 +4309,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-sandbox':
+        specifier: workspace:^
+        version: link:../../sandbox/sandbox
 
   packages/fs/fs-observation-policy:
     devDependencies:
@@ -4431,6 +4437,15 @@ importers:
       '@deepseek-ai/dsh-output-retention':
         specifier: workspace:^
         version: link:../../util/output-retention
+      '@deepseek-ai/dsh-path-containment':
+        specifier: workspace:^
+        version: link:../../util/path-containment
+      '@deepseek-ai/dsh-sandbox':
+        specifier: workspace:^
+        version: link:../../sandbox/sandbox
+      '@deepseek-ai/dsh-sandbox-policy':
+        specifier: workspace:^
+        version: link:../../sandbox/sandbox-policy
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session

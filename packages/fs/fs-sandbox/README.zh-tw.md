@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh.md) | 繁體中文
 
-`SandboxedFileSystem` 擴充 [`LocalFileSystem`](../fs-local/README.md) 並註冊為 `ctx.fs`。它逐字繼承全部文字儲存機制（解析、stat、讀取／流式讀取、列出、原子寫入、按讀取、匹配、寫入順序執行的編輯臨界區），只為 `writeText`/`editText` 增加按呼叫的模式圍欄。讀取始終直接透過：所有模式都允許讀取。
+`SandboxedFileSystem` 擴充 [`LocalFileSystem`](../fs-local/README.md) 並註冊為 `ctx.fs`。它繼承本機儲存機制，並增加按呼叫的讀取和變更圍欄。兩種受限模式都只允許讀取呼叫工作階段的工作區；寫入仍使用各模式的可寫根規則。
 
 它原樣複用本機後端設定：`cwd` 仍是相對路徑的解析預設值，`diffBasisMaxBytes` 則限制選填的覆寫上下文 diff 基礎。
 
@@ -15,6 +15,8 @@
 - `read-only`：以結構化 `FS_SANDBOX_DENIED` 拒絕所有變更；
 - `workspace-write`：只有目標規範化後位於可寫根目錄下，才允許變更。可寫根包括工作區根目錄和平臺臨時區域（`/tmp`、`os.tmpdir()`），與 Seatbelt profile 授權的集合相同；該集合由唯一的 [`writableRoots`](../../sandbox/README.md) 函式派生，使 fs 圍欄與 bash runner 不會漂移。規範拼寫使用詞法快速路徑；基於身份的祖先回退可以識別 Windows 長名稱和 8.3 名稱等別名等價根目錄，而不會把無關前綴視為包含關係。委託前會立即重新規範化目標，因此工具解析後被替換的祖先符號連結也會被發現；
 - `danger-full-access`：不加圍欄直接委託。
+
+對於讀取，`read-only` 和 `workspace-write` 都只允許由 [`readableRoots`](../../sandbox/README.md) 派生的規範化工作區根目錄。接收已解析目標的方法檢查提供方的規範化目標身分。`lstat` 會先規範化並檢查父目錄，再檢查最後一個路徑條目，因此可以報告工作區內的符號連結，而不會跟隨該連結進入工作區外。`stat`、文字／位元組讀取或目錄列舉若跟隨最終符號連結解析到外部目標，則會被拒絕。
 
 ## 威脅模型：策略圍欄，而非核心邊界
 
@@ -41,5 +43,6 @@
 ## 已知限制與暫緩事項
 
 - **策略圍欄，而非核心邊界**：該檢查是可信程式碼處理模型控制的路徑，因此解析到系統呼叫之間殘留的 TOCTOU 會被原位重新規範化縮小，但不會消除；對抗性宿主行程不在範圍內。不可信程式碼的核心級隔離仍屬於 `ctx.shell`。
+- **讀取圍欄位於行程內**：它限制 `ctx.fs` 讀取和明確的 `tool-fs-search` 根目錄；通用 shell 程式碼的核心級讀取隔離屬於獨立的行程沙盒工作。
 - **圍欄與 runner 的一致性由單一所有方派生**：可寫集合來自 `writableRoots`，該函式與 Seatbelt profile 共享；在其他位置定義可寫集合的 runner profile 會發生漂移。
 - **要求 `ctx.sandboxPolicy`**：工具使用它解析每個工作階段策略，後端用它處理無 agent（代理）呼叫的回退；未組合該服務時，後端不會實施約束。

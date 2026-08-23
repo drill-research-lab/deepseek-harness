@@ -11,7 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -19,12 +19,21 @@ import { CallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
+import { SandboxProvider } from '@deepseek-ai/dsh-sandbox'
+import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
+import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
 import * as ToolFsSearch from '@deepseek-ai/dsh-tool-fs-search'
 
 const testToolSignal = new AbortController().signal
 
 let dir: string
 let ctx: Context
+
+class PassthroughSandbox extends SandboxProvider {
+  override confine(argv: readonly string[], _policy: SandboxPolicy): ConfinedArgv {
+    return { argv: [...argv], enforcement: 'full', denialSignatures: [], runnerFailureRules: [] }
+  }
+}
 
 let callCounter = 0
 function call(name: string, args: unknown, agentObj?: object) {
@@ -42,7 +51,7 @@ function text(result: { content: { type: string; text?: string }[] }): string {
 }
 
 /** The fixture workspace as a session cwd, so relative paths resolve inside `dir`. */
-const agent = () => ({ session: { header: { id: 'session-int', cwd: dir } } })
+const agent = () => ({ session: { id: 'session-int', header: { id: 'session-int', cwd: dir }, events: [] } })
 
 describe('search tools over the real subprocess service + the packaged rg', () => {
   beforeEach(async () => {
@@ -63,6 +72,8 @@ describe('search tools over the real subprocess service + the packaged rg', () =
     ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    await ctx.plugin(SandboxPolicyService, { mode: 'workspace-write' })
+    await ctx.plugin(PassthroughSandbox)
     await ctx.plugin(LocalSubprocessRuntime)
     await ctx.plugin(ToolFsSearch, { sampleOverCapGlobResults: true })
   })
@@ -86,6 +97,34 @@ describe('search tools over the real subprocess service + the packaged rg', () =
     it('scopes to a directory search root (path arg)', async () => {
       const result = await call('glob', { pattern: '*.ts', path: 'src' }, agent())
       expect(text(result).split('\n').sort()).toEqual([join('src', 'alpha.ts'), join('src', 'beta.ts')])
+    })
+
+    it('rejects an absolute search root outside the calling workspace', async () => {
+      const outside = await mkdtemp(join(tmpdir(), 'dsh-search-outside-'))
+      try {
+        await writeFile(join(outside, 'secret.ts'), 'const secret = true\n')
+        const result = await call('glob', { pattern: '*.ts', path: outside }, agent())
+        expect(result.isError).toBe(true)
+        expect(result.error).toMatchObject({ info: { code: 'SEARCH_FAILED' } })
+        expect(text(result)).toContain('outside the active workspace')
+      } finally {
+        await rm(outside, { recursive: true, force: true })
+      }
+    })
+
+    it('rejects an in-workspace search root that resolves through a symlink outside', async () => {
+      const outside = await mkdtemp(join(tmpdir(), 'dsh-search-outside-'))
+      try {
+        await writeFile(join(outside, 'secret.ts'), 'const secret = true\n')
+        const link = join(dir, 'outside-link')
+        await symlink(outside, link, process.platform === 'win32' ? 'junction' : 'dir')
+        const result = await call('glob', { pattern: '*.ts', path: link }, agent())
+        expect(result.isError).toBe(true)
+        expect(result.error).toMatchObject({ info: { code: 'SEARCH_FAILED' } })
+        expect(text(result)).toContain('resolves outside the active workspace')
+      } finally {
+        await rm(outside, { recursive: true, force: true })
+      }
     })
 
     it('reports zero discoveries as No files found', async () => {
@@ -164,7 +203,7 @@ describe('search tools over the real subprocess service + the packaged rg', () =
       const sessionDir = await mkdtemp(join(tmpdir(), 'dsh-search-session-'))
       try {
         await writeFile(join(sessionDir, 'only-here.ts'), 'const sessionFile = true\n')
-        const agentObj = { session: { header: { id: 'session-int', cwd: sessionDir } } }
+        const agentObj = { session: { id: 'session-int', header: { id: 'session-int', cwd: sessionDir }, events: [] } }
         const globbed = await call('glob', { pattern: '*.ts' }, agentObj)
         expect(text(globbed)).toBe('only-here.ts')
         const grepped = await call('grep', { pattern: 'sessionFile' }, agentObj)
@@ -191,7 +230,7 @@ describe('search tools over the real subprocess service + the packaged rg', () =
 
     it('an unusable session cwd (spawn failure) is SEARCH_FAILED', async () => {
       const gone = join(dir, 'deleted-session-dir')
-      const result = await call('glob', { pattern: '*' }, { session: { header: { id: 'session-int', cwd: gone } } })
+      const result = await call('glob', { pattern: '*' }, { session: { id: 'session-int', header: { id: 'session-int', cwd: gone }, events: [] } })
       expect(result.isError).toBe(true)
       expect(result.error).toMatchObject({ info: { name: 'SearchError', code: 'SEARCH_FAILED' } })
       expect(text(result)).toContain('could not start')

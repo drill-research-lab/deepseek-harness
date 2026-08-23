@@ -49,4 +49,4 @@ schema 提供針對絕對路徑的 `view`、`create`、`str_replace` 與 `insert
 
 - 操作面向 UTF-8 文字，不支援二進位檔案。
 - `str_replace` 刻意拒絕零匹配或多匹配，且沒有 `replace_all` 參數。
-- 每個修改操作都會經過 `fs/write-intent` 或 `fs/edit-intent`，解析當前工作階段的沙盒策略，並交由掛載的檔案系統與策略外掛程式實施約束。
+- 每次檢視和變更都會解析當前工作階段的沙盒策略，並交由掛載的檔案系統實施約束；變更還會經過 `fs/write-intent` 或 `fs/edit-intent`。

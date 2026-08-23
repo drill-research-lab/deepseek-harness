@@ -3,9 +3,8 @@
  * `@deepseek-ai/dsh-fs` Service Definition. It extends `LocalFileSystem` so all
  * text-storage mechanics — resolve, stat, read/stream, list, the atomic
  * write and the read-match-write edit critical section — are the local
- * implementation's, verbatim; this package adds only the per-call POLICY fence
- * on the two mutations. Reads pass through untouched: every mode permits
- * reading.
+ * implementation's, verbatim; this package adds per-call POLICY fences to
+ * reads and mutations.
  *
  * The fence is a policy check in TRUSTED code over a MODEL-CONTROLLED path,
  * NOT a kernel boundary — the operations are the seam's own (open, rename),
@@ -17,7 +16,8 @@
  * syscall) is narrowed by re-canonicalizing immediately before delegating and
  * is accepted for this threat model.
  *
- * Per-call policy: `read-only` denies every mutation; `workspace-write` allows
+ * Per-call policy: both confined modes restrict reads to the workspace root;
+ * `read-only` denies every mutation; `workspace-write` allows
  * a mutation only when the target canonicalizes under the policy's workspace
  * root or a platform temp area (the SAME writable-root set Seatbelt grants,
  * derived from the one `writableRoots` function so bash and fs cannot drift);
@@ -31,11 +31,12 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
+import { basename, dirname, join, resolve } from 'node:path'
 import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local'
 import type { Config as LocalConfig } from '@deepseek-ai/dsh-fs-local'
-import { FsError } from '@deepseek-ai/dsh-fs'
-import type { FsEditOutcome, FsEditRequest, FsTarget, FsVersion, FsWriteIntent, FsWriteOutcome } from '@deepseek-ai/dsh-fs'
-import { writableRoots } from '@deepseek-ai/dsh-sandbox'
+import { FsError, FsTargetKey } from '@deepseek-ai/dsh-fs'
+import type { FsDirEntry, FsEditOutcome, FsEditRequest, FsInfo, FsPathInfo, FsTarget, FsVersion, FsWriteIntent, FsWriteOutcome } from '@deepseek-ai/dsh-fs'
+import { readableRoots, writableRoots } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import { isPathUnder } from '@deepseek-ai/dsh-path-containment'
@@ -53,8 +54,8 @@ export type Config = LocalConfig
  * INSTEAD OF `dsh-fs-local`, together with a `ctx.sandboxPolicy`, is the whole
  * swap — the model-facing tools are untouched). Its configured default mode is
  * the capability fact exposed by {@link sandboxMode}; `dsh-tool-fs` resolves
- * each session's mode and cwd into a policy for every mutation, while an
- * approved escalation may stamp a strictly wider mode for one call.
+ * each session's mode and cwd into a policy for every operation, while an
+ * approved escalation may stamp a strictly wider mode for one mutation.
  */
 export class SandboxedFileSystem extends LocalFileSystem {
   static inject = ['sandboxPolicy']
@@ -68,6 +69,67 @@ export class SandboxedFileSystem extends LocalFileSystem {
   /** The deployment default mode — the capability fact the tool layer reads to advertise escalation. */
   override get sandboxMode(): SandboxMode {
     return this.defaultMode
+  }
+
+  override async stat(
+    target: FsTarget,
+    signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<FsInfo | undefined> {
+    await this.checkedReadTarget(target, sandboxPolicy)
+    return super.stat(target, signal)
+  }
+
+  override async lstat(
+    path: string,
+    opts?: { cwd?: string },
+    signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<FsPathInfo | undefined> {
+    const absolutePath = resolve(opts?.cwd ?? this.config.cwd, path)
+    const parent = await this.resolve(dirname(absolutePath), signal === undefined ? undefined : { signal })
+    await this.checkedReadTarget({
+      displayPath: absolutePath,
+      targetKey: FsTargetKey(join(String(parent.targetKey), basename(absolutePath))),
+    }, sandboxPolicy)
+    return super.lstat(path, opts, signal)
+  }
+
+  override async readText(
+    target: FsTarget,
+    signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<string> {
+    await this.checkedReadTarget(target, sandboxPolicy)
+    return super.readText(target, signal)
+  }
+
+  override async streamText(
+    target: FsTarget,
+    signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<AsyncIterable<string>> {
+    await this.checkedReadTarget(target, sandboxPolicy)
+    return super.streamText(target, signal)
+  }
+
+  override async readBytes(
+    target: FsTarget,
+    signal: AbortSignal | undefined,
+    maxBytes: number,
+    sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<Uint8Array> {
+    await this.checkedReadTarget(target, sandboxPolicy)
+    return super.readBytes(target, signal, maxBytes)
+  }
+
+  override async listDir(
+    target: FsTarget,
+    signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<FsDirEntry[]> {
+    await this.checkedReadTarget(target, sandboxPolicy)
+    return super.listDir(target, signal)
   }
 
   /**
@@ -110,6 +172,23 @@ export class SandboxedFileSystem extends LocalFileSystem {
     sandboxPolicy?: SandboxExecutionPolicy,
   ): Promise<FsEditOutcome> {
     return super.editText(await this.checkedTarget(target, sandboxPolicy), edit, expected, signal)
+  }
+
+  /**
+   * Enforce one read against the canonical workspace root without replacing the caller's target.
+   * @param target - canonical target identity the caller will read.
+   * @param sandboxPolicy - per-call policy; omit to use the deployment fallback.
+   */
+  private async checkedReadTarget(target: FsTarget, sandboxPolicy?: SandboxExecutionPolicy): Promise<void> {
+    const policy = sandboxPolicy ?? this.ctx.sandboxPolicy.resolve()
+    if (policy.mode === 'danger-full-access') return
+    for (const root of readableRoots(policy)) {
+      if (await isPathUnder(String(target.targetKey), root)) return
+    }
+    throw new FsError(
+      `cannot read "${target.displayPath}": file access denied under ${policy.mode} mode`,
+      'FS_SANDBOX_DENIED',
+    )
   }
 
   /**

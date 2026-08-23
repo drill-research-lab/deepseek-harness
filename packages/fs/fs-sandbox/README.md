@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh.md) | [繁體中文](README.zh-tw.md)
 
-`SandboxedFileSystem` extends [`LocalFileSystem`](../fs-local/README.md) and registers as `ctx.fs`. It inherits every text-storage mechanic verbatim (resolve, stat, read/stream, list, the atomic write, the read-match-write edit critical section) and adds only a per-call MODE fence on `writeText`/`editText`. Reads always pass through — every mode permits reading.
+`SandboxedFileSystem` extends [`LocalFileSystem`](../fs-local/README.md) and registers as `ctx.fs`. It inherits the local storage mechanics and adds per-call read and mutation fences. Reads are limited to the calling session workspace under both confined modes; writes retain the mode-specific writable-root rules.
 
 Its plugin config is the local backend config unchanged: `cwd` remains the relative-path resolution default, and `diffBasisMaxBytes` bounds the optional overwrite contextual-diff basis.
 
@@ -15,6 +15,8 @@ The per-call policy carries the effective mode (session override or escalation g
 - `read-only` — denies every mutation with the structured `FS_SANDBOX_DENIED`.
 - `workspace-write` — allows a mutation only when the target canonicalizes under a writable root: the workspace root plus the platform temp areas (`/tmp`, `os.tmpdir()`), the SAME set the Seatbelt profile grants, derived from the one [`writableRoots`](../../sandbox/README.md) function so the fs fence and the bash runner cannot drift. Canonical spellings use a lexical fast path; an identity-based ancestor fallback recognizes alias-equivalent roots such as Windows long names and 8.3 names without treating unrelated prefixes as contained. The target is re-canonicalized immediately before delegating, so an ancestor symlink swapped since the tool resolved it is caught.
 - `danger-full-access` — delegates unfenced.
+
+For reads, `read-only` and `workspace-write` both allow only the canonical workspace root derived by [`readableRoots`](../../sandbox/README.md). Resolved-target methods check the provider's canonical target identity. `lstat` canonicalizes and checks the parent before inspecting the final path entry, so it can report an in-workspace symlink without following that symlink outside the workspace. A final symlink followed by `stat`, text/byte reads, or directory listing resolves to its external target and is denied.
 
 ## Threat model: a policy fence, not a kernel boundary
 
@@ -41,5 +43,6 @@ A standing-policy change appends an owner-rendered superseding runtime-context s
 ## Known Limitations and Deferred Work
 
 - **A policy fence, not a kernel boundary** — the check is trusted code over a model-controlled path, so the residual resolve-to-syscall TOCTOU is narrowed (by the in-place re-canonicalization) but not eliminated; adversarial host processes are out of scope. Kernel-grade isolation of untrusted code stays `ctx.shell`'s.
+- **Read fencing is in-process** — it confines `ctx.fs` reads and the explicit `tool-fs-search` root; kernel-level read isolation for general shell code is a separate process-sandbox concern.
 - **Fence-vs-runner parity is derived from one owner** — the writable set comes from `writableRoots`, shared with the Seatbelt profile; a runner profile that defines its writable set elsewhere would drift.
 - **Requires `ctx.sandboxPolicy`** — tools use it to resolve each session policy and the backend uses it for agentless-call fallbacks; the backend does not confine without it composed.

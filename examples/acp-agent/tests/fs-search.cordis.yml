@@ -8,6 +8,12 @@
 - id: subprocess
   name: '@deepseek-ai/dsh-subprocess-local'
 
+- id: sandbox
+  name: '@deepseek-ai/dsh-sandbox-local'
+
+- id: sandbox-policy
+  name: './fixtures/danger-sandbox-policy.ts'
+
 - id: bash
   name: '@deepseek-ai/dsh-bash-local'
 

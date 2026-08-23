@@ -759,12 +759,46 @@ describe('read caps are plugin config', () => {
   })
 })
 
-describe('sandbox escalation API (write/edit)', () => {
+describe('sandbox policy API', () => {
   /** A confining fake `ctx.fs`: reports a default mode, records each per-call policy, and can arm a sandbox denial. */
   class SandboxingFakeFs extends FakeFs {
     stamped: (SandboxExecutionPolicy | undefined)[] = []
+    readStamped: (SandboxExecutionPolicy | undefined)[] = []
     override get sandboxMode(): SandboxMode {
       return 'workspace-write'
+    }
+    override async stat(
+      target: FsTarget,
+      _signal?: AbortSignal,
+      sandboxPolicy?: SandboxExecutionPolicy,
+    ): Promise<FsInfo | undefined> {
+      this.readStamped.push(sandboxPolicy)
+      return super.stat(target)
+    }
+    override async readText(
+      target: FsTarget,
+      _signal?: AbortSignal,
+      sandboxPolicy?: SandboxExecutionPolicy,
+    ): Promise<string> {
+      this.readStamped.push(sandboxPolicy)
+      return super.readText(target)
+    }
+    override async streamText(
+      target: FsTarget,
+      _signal?: AbortSignal,
+      sandboxPolicy?: SandboxExecutionPolicy,
+    ): Promise<AsyncIterable<string>> {
+      this.readStamped.push(sandboxPolicy)
+      return super.streamText(target)
+    }
+    override async readBytes(
+      target: FsTarget,
+      signal: AbortSignal | undefined,
+      maxBytes: number,
+      sandboxPolicy?: SandboxExecutionPolicy,
+    ): Promise<Uint8Array> {
+      this.readStamped.push(sandboxPolicy)
+      return super.readBytes(target, signal, maxBytes)
     }
     override async writeText(
       target: FsTarget,
@@ -849,6 +883,16 @@ describe('sandbox escalation API (write/edit)', () => {
     const { ctx, fs } = await setupConfining()
     await call(ctx, 'write', { file_path: 'a.txt', content: 'x' }, escalationAgent())
     expect(fs.stamped).toEqual([{ mode: 'workspace-write', workspaceRoot: resolve('/session-project') }])
+  })
+
+  it('a plain read stamps stat and content reads with the calling session root', async () => {
+    const { ctx, fs } = await setupConfining()
+    fs.files.set('key:a.txt', 'alpha')
+    await call(ctx, 'read', { file_path: 'a.txt' }, escalationAgent())
+    expect(fs.readStamped).toEqual([
+      { mode: 'workspace-write', workspaceRoot: resolve('/session-project') },
+      { mode: 'workspace-write', workspaceRoot: resolve('/session-project') },
+    ])
   })
 
   it('a standing session override folds onto the stamp', async () => {

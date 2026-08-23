@@ -1,11 +1,12 @@
 /**
- * The sandbox-escalation API shared by the `write` and `edit` tools: the
+ * The sandbox-policy API shared by the filesystem tools: the
  * per-call policy resolution, the advertised escalation fields, and the denial-marker
  * mapping — all delegating the vocabulary and the fail-closed approval
  * sequence to `@deepseek-ai/dsh-sandbox` (the same pieces `@deepseek-ai/dsh-tool-bash`
- * uses), so bash and fs escalate identically. Built ONCE per plugin from
+ * uses), so bash and mutating fs calls escalate identically. Built ONCE per plugin from
  * `ctx.fs.sandboxMode` (the capability fact — is a confining backend mounted?)
- * and shared by both mutating tools.
+ * and shared by all filesystem tools; reads resolve standing policy without
+ * exposing escalation arguments.
  *
  * @module @deepseek-ai/dsh-tool-fs/sandbox
  */
@@ -73,15 +74,15 @@ export class FsSandboxController {
   }
 
   /**
-   * The policy to stamp onto this mutation: an approved escalation grant (a
+   * The policy to stamp onto this filesystem operation: an approved escalation grant (a
    * strictly wider retry resolved through `ctx.approval` before anything
    * executes), else the session's standing mode. The calling session's cwd is
    * always carried as the workspace root. Validates the escalation argument
    * pairing first.
-   * @param toolName - the mutating tool's name, for the approval audit trail.
+   * @param toolName - the tool's name, for the approval audit trail when escalation is requested.
    * @param args - the call's escalation arguments.
    * @param exec - the tool-execution context (agent, callId, signal).
-   * @returns the policy to pass to the mutation, or undefined for an
+   * @returns the policy to pass to the filesystem operation, or undefined for an
    *   unsandboxed backend.
    */
   async resolvePolicy(toolName: string, args: FsEscalationArgs, exec: ToolExecution): Promise<SandboxExecutionPolicy | undefined> {
