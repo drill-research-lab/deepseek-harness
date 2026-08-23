@@ -30,6 +30,12 @@
       "path": "../../util/brand"
     },
     {
+      "path": "../../util/home-paths"
+    },
+    {
+      "path": "../../util/path-containment"
+    },
+    {
       "path": "../../attachment/attachment"
     },
     {

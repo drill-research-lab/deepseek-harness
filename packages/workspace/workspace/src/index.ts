@@ -14,6 +14,7 @@ import type { AuthenticatedUserId } from '@deepseek-ai/dsh-auth'
 import type { OwnerPrincipal } from '@deepseek-ai/dsh-ownership'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { DomainGlobal, KvTable } from '@deepseek-ai/dsh-storage-domain'
+import { isPathUnder } from '@deepseek-ai/dsh-path-containment'
 import { WorkspaceEntity } from './entity.ts'
 import type { WorkspaceEntityHost } from './entity.ts'
 
@@ -65,6 +66,17 @@ export class WorkspaceOrderInvalidError extends Error {
   }
 }
 
+/** A workspace creation named a path outside the current owner's containment root. */
+export class WorkspaceOutsideOwnerRootError extends Error {
+  /**
+   * @param path - The canonical path that lies outside the owner root.
+   */
+  constructor(readonly path: string) {
+    super(`cannot create a workspace at '${path}': the path is outside the owner root`)
+    this.name = 'WorkspaceOutsideOwnerRootError'
+  }
+}
+
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -106,6 +118,7 @@ export class WorkspaceRegistry extends Service {
 
   private readonly host: WorkspaceEntityHost = {
     authorize: (record) => { this.assertOwned(record) },
+    assertContained: path => this.assertContained(path),
     table: () => this.requireTable(),
     sessionPath: id => this.sessionPaths.get(id),
     readSessionHeader: id => this.readSessionHeader(id),
@@ -200,6 +213,7 @@ export class WorkspaceRegistry extends Service {
     if (!(await stat(canonical)).isDirectory()) {
       throw new Error(`cannot create a workspace at '${canonical}': path is not a directory`)
     }
+    if (!(await this.isContained(canonical))) throw new WorkspaceOutsideOwnerRootError(canonical)
     return await this.enqueueOperation(() => this.createCanonical(canonical, title))
   }
 
@@ -749,6 +763,31 @@ export class WorkspaceRegistry extends Service {
     const ownership = this.ctx.root.get('ownership')
     return header !== undefined
       && (ownership === undefined || header.ownerUserId === ownership.currentPrincipal().userId)
+  }
+
+  /**
+   * Whether a canonical path lies beneath the current owner's containment
+   * root. Deployments without an ownership service have no per-owner root, so
+   * every path is accepted.
+   * @param path - Canonical path to validate.
+   */
+  private async isContained(path: string): Promise<boolean> {
+    const ownership = this.ctx.root.get('ownership')
+    if (ownership === undefined) return true
+    const ownerRoot = await ownership.resolveOwnerRoot(ownership.currentPrincipal())
+    return isPathUnder(path, ownerRoot.path)
+  }
+
+  /**
+   * Reject a canonical path outside the current owner's containment root. This
+   * is the attach-time defense-in-depth guard: it re-validates a durable record
+   * path that may have been written before create-time containment existed.
+   * @param path - Canonical path to validate.
+   */
+  private async assertContained(path: string): Promise<void> {
+    if (!(await this.isContained(path))) {
+      throw new Error(`workspace path '${path}' is outside the owner root`)
+    }
   }
 
   private requireTable(): KvTable<WorkspaceId, WorkspaceRecord> {

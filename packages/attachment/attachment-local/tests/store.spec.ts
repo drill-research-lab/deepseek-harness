@@ -10,7 +10,7 @@ import { Context } from '@deepseek-ai/cordis'
 import type { ImageAttachmentLimits } from '@deepseek-ai/dsh-attachment'
 import LocalAttachmentStore from '../src/index.ts'
 import { OwnershipService, UserHome } from '@deepseek-ai/dsh-ownership'
-import type { OwnerPrincipal } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal, OwnerRoot } from '@deepseek-ai/dsh-ownership'
 import { readImageFile, saveImageFile } from '../src/store.ts'
 
 const fsControl = vi.hoisted(() => ({
@@ -70,6 +70,10 @@ class TestOwnership extends OwnershipService {
   backgroundPrincipal(userId: OwnerPrincipal['userId']): OwnerPrincipal {
     return { userId, source: 'background' }
   }
+  resolveOwnerRoot(): Promise<OwnerRoot> {
+    throw new Error('not used by these tests')
+  }
+
   async resolveUserHome(principal: OwnerPrincipal): Promise<UserHome> {
     const homeRoot = join(this.usersRoot, String(principal.userId).replaceAll(':', '-'))
     await mkdir(homeRoot, { recursive: true })

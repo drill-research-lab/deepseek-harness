@@ -10,7 +10,7 @@ import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { AuthService, authenticatedUserId } from '@deepseek-ai/dsh-auth'
 import type { AuthenticatedUser, AuthenticatedUserId } from '@deepseek-ai/dsh-auth'
 import { OwnershipService, UserHome } from '@deepseek-ai/dsh-ownership'
-import type { OwnerPrincipal } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal, OwnerRoot } from '@deepseek-ai/dsh-ownership'
 import {
   encodeSegment, eventLines, logPath, projectDir, projectKey, scanLog, sessionDir, SessionLogScanner, toHeaderLine,
 } from '../src/format.ts'
@@ -58,6 +58,10 @@ class TestOwnership extends OwnershipService {
   backgroundPrincipal(userId: AuthenticatedUserId): OwnerPrincipal {
     return { userId, source: 'background' }
   }
+  resolveOwnerRoot(): Promise<OwnerRoot> {
+    throw new Error('not used by these tests')
+  }
+
   async resolveUserHome(principal: OwnerPrincipal): Promise<UserHome> {
     const root = join(this.usersRoot, String(principal.userId).replaceAll(':', '-'))
     await mkdir(root, { recursive: true })

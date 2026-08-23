@@ -488,6 +488,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   DirectoryPickerCapability: 'workspace.md',
   AuthenticatedUserId: 'ownership.md',
   OwnerPrincipal: 'ownership.md',
+  OwnerRoot: 'ownership.md',
   UserHome: 'ownership.md',
   TypertContribution: 'invariants.md',
   TypertFace: 'invariants.md',

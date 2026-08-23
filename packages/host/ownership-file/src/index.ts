@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { chmod, link, lstat, mkdir, open, readFile, rm } from 'node:fs/promises'
+import { chmod, link, lstat, mkdir, open, readFile, realpath, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -7,6 +7,7 @@ import { authenticatedUserId, type AuthenticatedUserId } from '@deepseek-ai/dsh-
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import {
   OwnershipService,
+  OwnerRoot,
   UserHome,
   type OwnerPrincipal,
   type UserHomeIdentity,
@@ -25,9 +26,17 @@ export interface Config {
    * field because this provider does not read that environment variable.
    */
   usersRoot?: string
+  /**
+   * Root containing hashed per-owner containment roots. An omitted or blank
+   * value uses `resolveDshHome()/owner-roots`.
+   */
+  ownerRoots?: string
 }
 
-export const Config: z<Config> = z.object({ usersRoot: z.string().default('') })
+export const Config: z<Config> = z.object({
+  usersRoot: z.string().default(''),
+  ownerRoots: z.string().default(''),
+})
 
 /**
  * Resolve the deployment-owned users root.
@@ -37,6 +46,16 @@ export const Config: z<Config> = z.object({ usersRoot: z.string().default('') })
 export function resolveUsersRoot(configured?: string): string {
   if (configured !== undefined && configured.trim().length > 0) return resolve(configured)
   return join(resolveDshHome(), 'users')
+}
+
+/**
+ * Resolve the deployment-owned owner-roots root.
+ * @param configured - Explicit plugin configuration.
+ * @returns An absolute owner-roots path.
+ */
+export function resolveOwnerRoots(configured?: string): string {
+  if (configured !== undefined && configured.trim().length > 0) return resolve(configured)
+  return join(resolveDshHome(), 'owner-roots')
 }
 
 /**
@@ -50,6 +69,22 @@ export function userHomeDirectoryKey(userId: AuthenticatedUserId): string {
 
 function isCode(error: unknown, code: string): boolean {
   return (error as NodeJS.ErrnoException | null)?.code === code
+}
+
+/**
+ * Converge concurrent first opens of one per-owner directory through an
+ * in-flight map: the first call opens, repeats await that same promise.
+ * @param inFlight - The resolver's in-flight map.
+ * @param key - The per-owner directory key.
+ * @param open - The open operation to deduplicate.
+ * @returns the shared open result.
+ */
+function convergeOpen<T>(inFlight: Map<string, Promise<T>>, key: string, open: () => Promise<T>): Promise<T> {
+  const existing = inFlight.get(key)
+  if (existing !== undefined) return existing
+  const operation = open().finally(() => inFlight.delete(key))
+  inFlight.set(key, operation)
+  return operation
 }
 
 function parseIdentity(source: string, path: string): UserHomeIdentity {
@@ -128,11 +163,7 @@ export class FileUserHomeResolver {
    */
   resolve(principal: OwnerPrincipal): Promise<UserHome> {
     const key = userHomeDirectoryKey(principal.userId)
-    const existing = this.inFlight.get(key)
-    if (existing !== undefined) return existing
-    const operation = this.open(principal, key).finally(() => this.inFlight.delete(key))
-    this.inFlight.set(key, operation)
-    return operation
+    return convergeOpen(this.inFlight, key, () => this.open(principal, key))
   }
 
   private async open(principal: OwnerPrincipal, key: string): Promise<UserHome> {
@@ -165,16 +196,50 @@ export class FileUserHomeResolver {
   }
 }
 
+/**
+ * File-backed resolver for the canonical per-owner containment root. The
+ * owner identity is already guaranteed by `OwnerPrincipal`, so no identity
+ * file validation is needed — the resolver only creates, hardens, and
+ * canonicalizes the private directory.
+ */
+export class FileOwnerRootResolver {
+  private readonly inFlight = new Map<string, Promise<OwnerRoot>>()
+
+  /** @param ownerRoots - Trusted deployment root, never request input. */
+  constructor(private readonly ownerRoots: string) {}
+
+  /**
+   * Open or create one owner root, converging concurrent first opens.
+   * @param principal - Server-trusted owner principal.
+   * @returns The canonical owner root.
+   */
+  resolve(principal: OwnerPrincipal): Promise<OwnerRoot> {
+    const key = userHomeDirectoryKey(principal.userId)
+    return convergeOpen(this.inFlight, key, () => this.open(principal, key))
+  }
+
+  private async open(principal: OwnerPrincipal, key: string): Promise<OwnerRoot> {
+    await mkdir(this.ownerRoots, { recursive: true, mode: USER_HOME_MODE })
+    await hardenDirectory(this.ownerRoots)
+    const root = join(this.ownerRoots, key)
+    await mkdir(root, { recursive: true, mode: USER_HOME_MODE })
+    await hardenDirectory(root)
+    return new OwnerRoot(principal, await realpath(root))
+  }
+}
+
 /** Host provider for trusted principals and owner-scoped file homes. */
 export class FileOwnershipService extends OwnershipService {
   static inject = ['auth']
   static Config = Config
   private readonly resolver: FileUserHomeResolver
+  private readonly ownerRootResolver: FileOwnerRootResolver
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx)
     const usersRoot = resolveUsersRoot(config.usersRoot)
     this.resolver = new FileUserHomeResolver(usersRoot)
+    this.ownerRootResolver = new FileOwnerRootResolver(resolveOwnerRoots(config.ownerRoots))
   }
 
   currentPrincipal(): OwnerPrincipal {
@@ -194,6 +259,10 @@ export class FileOwnershipService extends OwnershipService {
 
   resolveUserHome(principal: OwnerPrincipal): Promise<UserHome> {
     return this.resolver.resolve(principal)
+  }
+
+  resolveOwnerRoot(principal: OwnerPrincipal): Promise<OwnerRoot> {
+    return this.ownerRootResolver.resolve(principal)
   }
 }
 

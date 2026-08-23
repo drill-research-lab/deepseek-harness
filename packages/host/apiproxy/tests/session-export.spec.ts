@@ -11,7 +11,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { unzipSync, strFromU8 } from 'fflate'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { OwnershipService } from '@deepseek-ai/dsh-ownership'
-import type { OwnerPrincipal, UserHome } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal, OwnerRoot, UserHome } from '@deepseek-ai/dsh-ownership'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionLineageNode } from '@deepseek-ai/dsh-session-query'
@@ -35,6 +35,10 @@ class TestOwnership extends OwnershipService {
   }
 
   resolveUserHome(): Promise<UserHome> {
+    throw new Error('not used by these tests')
+  }
+
+  resolveOwnerRoot(): Promise<OwnerRoot> {
     throw new Error('not used by these tests')
   }
 }

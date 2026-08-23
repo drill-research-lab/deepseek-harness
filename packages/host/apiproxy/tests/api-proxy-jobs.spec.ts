@@ -14,7 +14,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { OwnershipService } from '@deepseek-ai/dsh-ownership'
-import type { OwnerPrincipal, UserHome } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal, OwnerRoot, UserHome } from '@deepseek-ai/dsh-ownership'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import type { JobOutcome } from '@deepseek-ai/dsh-jobs'
@@ -37,6 +37,10 @@ class TestOwnership extends OwnershipService {
   }
 
   resolveUserHome(): Promise<UserHome> {
+    throw new Error('not used by these tests')
+  }
+
+  resolveOwnerRoot(): Promise<OwnerRoot> {
     throw new Error('not used by these tests')
   }
 }

@@ -12,7 +12,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import { OwnershipService } from '@deepseek-ai/dsh-ownership'
-import type { OwnerPrincipal, UserHome } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal, OwnerRoot, UserHome } from '@deepseek-ai/dsh-ownership'
 import type { RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import { createApiProxy } from '@deepseek-ai/dsh-host-apiproxy'
@@ -39,6 +39,10 @@ class TestOwnership extends OwnershipService {
   }
 
   resolveUserHome(): Promise<UserHome> {
+    throw new Error('not used by these tests')
+  }
+
+  resolveOwnerRoot(): Promise<OwnerRoot> {
     throw new Error('not used by these tests')
   }
 }

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, join, parse } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
 import type { StorageBackend } from '@deepseek-ai/dsh-storage'
@@ -9,19 +9,21 @@ import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import type { DomainChanged } from '@deepseek-ai/dsh-storage-domain'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
-import { OwnershipService } from '@deepseek-ai/dsh-ownership'
+import { OwnershipService, OwnerRoot } from '@deepseek-ai/dsh-ownership'
 import type { OwnerPrincipal, UserHome } from '@deepseek-ai/dsh-ownership'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import WorkspaceRegistry, {
   WorkspaceId,
   WorkspaceMoveInvalidError,
   WorkspaceOrderInvalidError,
+  WorkspaceOutsideOwnerRootError,
   WorkspaceUnknownSessionError,
 } from '../src/index.ts'
 import type { WorkspaceDomainState, WorkspaceRecord } from '../src/index.ts'
 
 class TestOwnership extends OwnershipService {
   principal: OwnerPrincipal | undefined
+  ownerRoots = new Map<string, string>()
 
   currentPrincipal(): OwnerPrincipal {
     if (this.principal === undefined) throw new Error('no test owner')
@@ -36,6 +38,14 @@ class TestOwnership extends OwnershipService {
 
   resolveUserHome(): Promise<UserHome> {
     throw new Error('not used by these tests')
+  }
+
+  resolveOwnerRoot(principal: OwnerPrincipal): Promise<OwnerRoot> {
+    // Unconfigured owners get the filesystem root, so tests that exercise
+    // ownership without asserting containment stay permissive; containment
+    // tests set an explicit root per owner.
+    const root = this.ownerRoots.get(principal.userId) ?? parse(process.cwd()).root
+    return Promise.resolve(new OwnerRoot(principal, root))
   }
 }
 
@@ -1115,6 +1125,85 @@ describe('WorkspaceRegistry ownership isolation', () => {
     ownership.principal = alice
     const workspace = await result.registry.create(dir)
     await expect(workspace.attachSession(bobLive.id)).rejects.toThrow(/no such session/)
+    expect(workspace.sessionIds).toEqual([])
+  })
+})
+
+describe('WorkspaceRegistry owner-root containment', () => {
+  async function containmentHarness(owner: OwnerPrincipal, rootName: string) {
+    const root = await makeDir(rootName)
+    const result = await harness({ ownership: true })
+    const ownership = result.ownership!
+    ownership.ownerRoots.set(owner.userId, root)
+    ownership.principal = owner
+    return { result, root }
+  }
+
+  it('accepts a path beneath the owner root and rejects one outside it', async () => {
+    const { result, root } = await containmentHarness(alice, 'contain-legal')
+
+    const inside = join(root, 'project')
+    await mkdir(inside, { recursive: true })
+    expect((await result.registry.create(inside)).path).toBe(inside)
+
+    const outside = await makeDir('contain-outside')
+    await expect(result.registry.create(outside)).rejects.toBeInstanceOf(WorkspaceOutsideOwnerRootError)
+  })
+
+  it('rejects ../ traversal that resolves outside the owner root', async () => {
+    const { result, root } = await containmentHarness(alice, 'contain-traversal')
+    const outside = await makeDir('contain-traversal-outside')
+    const sub = join(root, 'sub')
+    await mkdir(sub, { recursive: true })
+    await expect(result.registry.create(join(sub, '..', '..', 'contain-traversal-outside')))
+      .rejects.toBeInstanceOf(WorkspaceOutsideOwnerRootError)
+    expect(await realpath(join(sub, '..', '..', 'contain-traversal-outside'))).toBe(outside)
+  })
+
+  it('rejects a symlink inside the owner root that resolves outside it', async () => {
+    const { result, root } = await containmentHarness(alice, 'contain-symlink')
+    const outside = await makeDir('contain-symlink-outside')
+    const link = join(root, 'escape')
+    await symlink(outside, link)
+    await expect(result.registry.create(link)).rejects.toBeInstanceOf(WorkspaceOutsideOwnerRootError)
+  })
+
+  it('rejects an owner selecting another owner\'s root as their workspace', async () => {
+    const aliceRoot = await makeDir('contain-cross-alice')
+    const bobRoot = await makeDir('contain-cross-bob')
+    const result = await harness({ ownership: true })
+    const ownership = result.ownership!
+    ownership.ownerRoots.set(alice.userId, aliceRoot)
+    ownership.ownerRoots.set(bob.userId, bobRoot)
+
+    ownership.principal = bob
+    const bobProject = join(bobRoot, 'project')
+    await mkdir(bobProject, { recursive: true })
+    expect((await result.registry.create(bobProject)).path).toBe(bobProject)
+
+    ownership.principal = alice
+    await expect(result.registry.create(bobProject)).rejects.toBeInstanceOf(WorkspaceOutsideOwnerRootError)
+  })
+
+  it('rejects attaching to a durable record whose path escapes the owner root', async () => {
+    // Defense-in-depth: a record written without create-time containment (an
+    // older writer, or a hand-seeded table) still cannot attach a session.
+    const root = await makeDir('contain-defense-root')
+    const outside = await makeDir('contain-defense-outside')
+    const id = WorkspaceId('00000000-0000-4000-8000-0000000000f0')
+    const pool = storedPool(
+      [[id, { ...record(outside, []), ownerUserId: alice.userId }]],
+      { initialized: true, workspaceIds: [id] },
+    )
+    const result = await harness({ ownership: true, pool })
+    const ownership = result.ownership!
+    ownership.ownerRoots.set(alice.userId, root)
+    ownership.principal = alice
+
+    const workspace = result.registry.list()[0]!
+    expect(workspace.path).toBe(outside)
+    await expect(workspace.attachSession(SessionId('unaccounted')))
+      .rejects.toThrow(/outside the owner root/)
     expect(workspace.sessionIds).toEqual([])
   })
 })

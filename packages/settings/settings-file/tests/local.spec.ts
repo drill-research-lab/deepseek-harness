@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { OwnershipService, UserHome } from '@deepseek-ai/dsh-ownership'
-import type { OwnerPrincipal } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal, OwnerRoot } from '@deepseek-ai/dsh-ownership'
 import { FileSettingsProvider, resolveSpec } from '../src/index.ts'
 
 interface ThemeConfig {
@@ -33,6 +33,10 @@ class MutableTestOwnership extends OwnershipService {
   backgroundPrincipal(userId: OwnerPrincipal['userId']): OwnerPrincipal {
     return { userId, source: 'background' }
   }
+  resolveOwnerRoot(): Promise<OwnerRoot> {
+    throw new Error('not used by these tests')
+  }
+
   async resolveUserHome(principal: OwnerPrincipal): Promise<UserHome> {
     const root = join(this.usersRoot, String(principal.userId).replaceAll(':', '-'))
     await mkdir(root, { recursive: true })

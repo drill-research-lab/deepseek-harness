@@ -35,6 +35,12 @@ export interface WorkspaceEntityHost {
   /** Reject a workspace record outside the current authenticated owner scope. */
   authorize(record: WorkspaceRecord): void
   /**
+   * Reject a canonical path outside the current owner's containment root. This
+   * re-validates a durable record path independently of create-time validation.
+   * @param path - Canonical path to validate.
+   */
+  assertContained(path: string): Promise<void>
+  /**
    * Resolve the open `workspaces` table.
    * @returns the table; throws while the registry has not started yet.
    */
@@ -116,6 +122,10 @@ export class WorkspaceEntity implements Workspace {
 
   async attachSession(sessionId: SessionId): Promise<void> {
     this.host.authorize(this.record)
+    // Defense-in-depth: the record path must itself lie beneath the owner root,
+    // not merely match the session's cwd. A durable record written before
+    // create-time containment existed still cannot attach a session here.
+    await this.host.assertContained(this.record.path)
     // Validation is skipped when the settled snapshot already accounts the
     // id: the cwd fact was checked when it first attached and both inputs
     // (stored header cwd, workspace path) are immutable. Membership itself is

@@ -12,7 +12,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { OwnershipService, UserHome } from '@deepseek-ai/dsh-ownership'
-import type { OwnerPrincipal } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal, OwnerRoot } from '@deepseek-ai/dsh-ownership'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as SubagentFork from '@deepseek-ai/dsh-subagent-fork-in-process'
 import type { GenerateOptions, MessageId, StreamChunk } from '@deepseek-ai/dsh-llm'
@@ -82,6 +82,10 @@ class ContinuationOwnership extends OwnershipService {
 
   backgroundPrincipal(userId: AuthenticatedUserId): OwnerPrincipal {
     return { userId, source: 'background' }
+  }
+
+  resolveOwnerRoot(): Promise<OwnerRoot> {
+    throw new Error('not used by these tests')
   }
 
   resolveUserHome(principal: OwnerPrincipal): Promise<UserHome> {

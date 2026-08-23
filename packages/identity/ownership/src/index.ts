@@ -48,6 +48,21 @@ export class UserHome {
 }
 
 /**
+ * Canonical owner-scoped containment root. The root path is the single trusted
+ * boundary the workspace and session entry points compare a chosen path
+ * against; unlike {@link UserHome}, it exposes no constructor for building
+ * child paths because callers validate pre-existing path strings, not trusted
+ * segments.
+ */
+export class OwnerRoot {
+  /** @internal The file provider is the only constructor. */
+  constructor(
+    readonly owner: OwnerPrincipal,
+    readonly path: string,
+  ) {}
+}
+
+/**
  * Reject path syntax that could escape or reinterpret a rooted namespace.
  * This lexical validation does not claim symlink or TOCTOU protection.
  * @param segment - One candidate path component.
@@ -92,6 +107,14 @@ export abstract class OwnershipService extends Service {
    * @returns A validated owner-scoped home.
    */
   abstract resolveUserHome(principal: OwnerPrincipal): Promise<UserHome>
+
+  /**
+   * Resolve the canonical containment root for a trusted principal. Chosen
+   * workspace and session paths must stay beneath this root.
+   * @param principal - Server-trusted owner identity.
+   * @returns The canonical owner root.
+   */
+  abstract resolveOwnerRoot(principal: OwnerPrincipal): Promise<OwnerRoot>
 }
 
 declare module '@deepseek-ai/cordis' {

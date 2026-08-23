@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -7,7 +7,9 @@ import { AuthService, authenticatedUserId, type AuthenticatedUser } from '@deeps
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import {
   FileOwnershipService,
+  FileOwnerRootResolver,
   FileUserHomeResolver,
+  resolveOwnerRoots,
   resolveUsersRoot,
   userHomeDirectoryKey,
 } from '../src/index.ts'
@@ -147,6 +149,27 @@ describe('owner identity and user-home mapping', () => {
   })
 })
 
+describe('owner-root resolver', () => {
+  it('creates, hardens, and canonicalizes one private per-owner root', async () => {
+    const root = await temporaryRoot()
+    const resolver = new FileOwnerRootResolver(root)
+    const owner = principal('ldap:alice')
+    const [first, concurrent] = await Promise.all([resolver.resolve(owner), resolver.resolve(owner)])
+    const key = userHomeDirectoryKey(owner.userId)
+    expect(first.path).toBe(concurrent.path)
+    expect(first.path).toBe(await realpath(join(root, key)))
+    expect((await stat(first.path)).mode & 0o777).toBe(0o700)
+    // Distinct from the user home: no identity.json is published here.
+    await expect(readFile(join(first.path, 'identity.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('resolves only the configured owner-roots root and rejects blank overrides', () => {
+    expect(resolveOwnerRoots('/srv/dsh-owner-roots')).toBe('/srv/dsh-owner-roots')
+    expect(resolveOwnerRoots('')).toBe(join(resolveDshHome(), 'owner-roots'))
+    expect(resolveOwnerRoots(' ')).toBe(join(resolveDshHome(), 'owner-roots'))
+  })
+})
+
 class TestAuthService extends AuthService {
   authenticateRequest(): Promise<AuthenticatedUser | undefined> { return Promise.resolve(undefined) }
 }
@@ -169,6 +192,8 @@ describe.runIf(process.platform === 'linux')('ownership service trust source', (
     expect(ctx.ownership.backgroundPrincipal(first.userId)).toEqual({ userId: first.userId, source: 'background' })
     expect(Object.keys(ctx.ownership.backgroundPrincipal(first.userId)).sort()).toEqual(['source', 'userId'])
     await expect(ctx.auth.runAs(first, () => ctx.ownership.resolveUserHome(ctx.ownership.currentPrincipal())))
+      .resolves.toMatchObject({ owner: { userId: first.userId, source: 'request' } })
+    await expect(ctx.auth.runAs(first, () => ctx.ownership.resolveOwnerRoot(ctx.ownership.currentPrincipal())))
       .resolves.toMatchObject({ owner: { userId: first.userId, source: 'request' } })
     await ownershipFiber.dispose()
     await authFiber.dispose()

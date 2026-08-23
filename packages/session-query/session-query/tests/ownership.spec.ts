@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import { OwnershipService } from '@deepseek-ai/dsh-ownership'
-import type { OwnerPrincipal, UserHome } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal, OwnerRoot, UserHome } from '@deepseek-ai/dsh-ownership'
 import { TestSessionQueryEngine } from './test-service.ts'
 
 class TestOwnership extends OwnershipService {
@@ -30,6 +30,10 @@ class TestOwnership extends OwnershipService {
   }
 
   resolveUserHome(): Promise<UserHome> {
+    throw new Error('not used by these tests')
+  }
+
+  resolveOwnerRoot(): Promise<OwnerRoot> {
     throw new Error('not used by these tests')
   }
 }

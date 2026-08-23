@@ -21,7 +21,7 @@ import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import { OwnershipService } from '@deepseek-ai/dsh-ownership'
-import type { OwnerPrincipal, UserHome } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal, OwnerRoot, UserHome } from '@deepseek-ai/dsh-ownership'
 import MessageFeedbackService from '../src/index.ts'
 
 /** Test double for a request/background owner principal. */
@@ -40,6 +40,10 @@ class TestOwnership extends OwnershipService {
   }
 
   resolveUserHome(): Promise<UserHome> {
+    throw new Error('not used by these tests')
+  }
+
+  resolveOwnerRoot(): Promise<OwnerRoot> {
     throw new Error('not used by these tests')
   }
 }

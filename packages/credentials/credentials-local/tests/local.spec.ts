@@ -8,7 +8,7 @@ import { createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY } from '@de
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { LocalCredentialProvider, resolveSpec } from '../src/index.ts'
 import { OwnershipService, UserHome } from '@deepseek-ai/dsh-ownership'
-import type { OwnerPrincipal } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal, OwnerRoot } from '@deepseek-ai/dsh-ownership'
 
 /** Credential documents are seeded owner-only, exactly as the provider creates them. */
 function writeCredentials(file: string, text: string): Promise<void> {
@@ -53,6 +53,10 @@ class TestOwnership extends OwnershipService {
   backgroundPrincipal(userId: OwnerPrincipal['userId']): OwnerPrincipal {
     return { userId, source: 'background' }
   }
+  resolveOwnerRoot(): Promise<OwnerRoot> {
+    throw new Error('not used by these tests')
+  }
+
   async resolveUserHome(principal: OwnerPrincipal): Promise<UserHome> {
     const root = join(this.usersRoot, String(principal.userId).replaceAll(':', '-'))
     await mkdir(root, { recursive: true })

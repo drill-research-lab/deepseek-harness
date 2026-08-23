@@ -30,6 +30,9 @@
       "path": "../../identity/ownership"
     },
     {
+      "path": "../../util/path-containment"
+    },
+    {
       "path": "../../core/session"
     },
     {

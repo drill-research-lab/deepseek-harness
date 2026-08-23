@@ -25,8 +25,11 @@ import { isUserInvocable } from '@deepseek-ai/dsh-skill'
 import type { Workspace, WorkspaceRecord } from '@deepseek-ai/dsh-workspace'
 import {
   workspaceDomainState, workspaceRecord, WorkspaceId as brandWorkspaceId,
-  WorkspaceMoveInvalidError, WorkspaceOrderInvalidError, WorkspaceUnknownSessionError,
+  WorkspaceMoveInvalidError, WorkspaceOrderInvalidError, WorkspaceOutsideOwnerRootError,
+  WorkspaceUnknownSessionError,
 } from '@deepseek-ai/dsh-workspace'
+import { isPathUnder } from '@deepseek-ai/dsh-path-containment'
+import { canonicalizeWatchPath } from '@deepseek-ai/dsh-home-paths'
 // Type-only: brings the `ctx.tools` Context merge into this program (viewFor reads presenters).
 import {
   InvalidPresetIdError, PresetExistsError, PresetMountError,
@@ -2190,6 +2193,23 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           }
         }
         const cwd = workspace?.path ?? request.payload.cwd ?? defaults.cwd
+        // The `workspace?.path` source was already contained at workspace
+        // creation; `request.payload.cwd` is the one independent source, so only
+        // it needs a containment check here (canonicalize the deepest existing
+        // ancestor, since the cwd may not exist yet — `ensureSession` creates it).
+        if (workspace === undefined && request.payload.cwd !== undefined) {
+          const ownership = ctx.root.get('ownership')
+          if (ownership !== undefined) {
+            const ownerRoot = await ownership.resolveOwnerRoot(ownership.currentPrincipal())
+            if (!(await isPathUnder(await canonicalizeWatchPath(request.payload.cwd), ownerRoot.path))) {
+              return err(request, {
+                code: 'cwd-outside-owner-root',
+                message: `session cwd "${request.payload.cwd}" is outside the owner root`,
+                details: { cwd: request.payload.cwd },
+              })
+            }
+          }
+        }
         const requestedPreset = request.payload.agentPreset
         try {
           await ensureSession(sessionId, cwd, request.payload.sessionId !== undefined, requestedPreset)
@@ -2830,6 +2850,13 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           const { workspace, created } = await ensureWorkspace(path)
           return ok(request, { workspace: workspaceView(workspace), created })
         } catch (error: unknown) {
+          if (error instanceof WorkspaceOutsideOwnerRootError) {
+            return err(request, {
+              code: 'workspace-outside-owner-root',
+              message: error.message,
+              details: { path: error.path },
+            })
+          }
           // The registry rejects a path that does not resolve to an existing
           // directory (realpath ENOENT / not-a-directory) — the business
           // error of the typed-path flow, surfaced as a validation failure.

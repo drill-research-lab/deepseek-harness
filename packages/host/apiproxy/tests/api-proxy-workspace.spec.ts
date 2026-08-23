@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, mkdtempSync, realpathSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, parse } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
@@ -13,6 +13,8 @@ import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import { DirectoryPickerError } from '@deepseek-ai/dsh-host-directory-picker'
 import type { DirectoryPickerCapability } from '@deepseek-ai/dsh-host-directory-picker'
 import WorkspaceRegistry from '@deepseek-ai/dsh-workspace'
+import { OwnershipService, OwnerRoot } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal } from '@deepseek-ai/dsh-ownership'
 import type { HostFrame, WorkspaceId } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { RpcRequest, RpcResponse } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
@@ -57,6 +59,31 @@ function stubAgent(session: Session): Agent {
   }
 }
 
+class TestOwnership extends OwnershipService {
+  principal: OwnerPrincipal | undefined
+  ownerRoots = new Map<string, string>()
+
+  currentPrincipal(): OwnerPrincipal {
+    if (this.principal === undefined) throw new Error('no test owner')
+    return this.principal
+  }
+
+  currentPrincipalOrUndefined(): OwnerPrincipal | undefined { return this.principal }
+
+  backgroundPrincipal(userId: OwnerPrincipal['userId']): OwnerPrincipal {
+    return { userId, source: 'background' }
+  }
+
+  resolveUserHome(): Promise<never> {
+    throw new Error('not used by these tests')
+  }
+
+  resolveOwnerRoot(principal: OwnerPrincipal): Promise<OwnerRoot> {
+    const root = this.ownerRoots.get(principal.userId) ?? parse(process.cwd()).root
+    return Promise.resolve(new OwnerRoot(principal, root))
+  }
+}
+
 /** Compose the API over real Session, Agent, Storage, Domain, and Workspace services. */
 async function harness(
   root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-apiproxy-workspace-'))),
@@ -64,6 +91,7 @@ async function harness(
   extras: {
     openPath?: (path: string, signal: AbortSignal) => Promise<void>
     canOpenPath?: () => boolean
+    ownership?: boolean
   } = {},
 ) {
   const ctx = new Context()
@@ -76,6 +104,7 @@ async function harness(
   ctx.storage.mount('domain', storageDomain)
   ctx.provide('storageDomain', storageDomain)
   ctx.provide('sessionPersistence', { list: () => Promise.resolve([]) } as never)
+  if (extras.ownership === true) await ctx.plugin(TestOwnership)
   await ctx.plugin(WorkspaceRegistry)
 
   const factory: AgentFactory = {
@@ -108,7 +137,7 @@ async function harness(
     ...extras.openPath === undefined ? {} : { openPath: extras.openPath },
     ...extras.canOpenPath === undefined ? {} : { canOpenPath: extras.canOpenPath },
   })
-  return { api, ctx, storageDomain, root }
+  return { api, ctx, storageDomain, root, ownership: ctx.get('ownership') as TestOwnership | undefined }
 }
 
 /** Stage one directory under the harness root for path adoption. */
@@ -317,6 +346,20 @@ describe('workspace.create', () => {
     expect(expectOk(await api.workspace.list(request({}))).items.map(workspace => workspace.path))
       .toEqual([second, first])
   })
+
+  it('reports a path outside the owner root as workspace-outside-owner-root', async () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-ws-owner-root-')))
+    const outside = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-ws-outside-')))
+    const { api, ownership } = await harness(undefined, undefined, { ownership: true })
+    ownership!.principal = { userId: 'ldap:test-alice' as OwnerPrincipal['userId'], source: 'request' as const }
+    ownership!.ownerRoots.set(ownership!.principal.userId, root)
+
+    const denied = await api.workspace.create(request({ path: outside }))
+    expect(denied.result).toMatchObject({
+      ok: false,
+      error: { code: 'workspace-outside-owner-root', details: { path: outside } },
+    })
+  })
 })
 
 describe('workspace.insertBefore', () => {
@@ -408,6 +451,57 @@ describe('session creation and Workspace membership', () => {
 
     expectOk(await api.sessions.create(request({ workspaceId: created.workspaceId, sessionId })))
     expect(expectOk(await api.workspace.list(request({}))).items[0]?.sessionIds).toEqual([sessionId])
+  })
+})
+
+describe('session.create cwd containment', () => {
+  const alice = { userId: 'ldap:test-alice' as OwnerPrincipal['userId'], source: 'request' as const }
+
+  it('accepts a cwd beneath the owner root and rejects one outside it', async () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-cwd-contain-')))
+    const { api, ownership } = await harness(undefined, undefined, { ownership: true })
+    ownership!.principal = alice
+    ownership!.ownerRoots.set(alice.userId, root)
+
+    const inside = join(root, 'project')
+    const accepted = await api.sessions.create(request({ cwd: inside, sessionId: SessionId('cwd-inside') }))
+    expect(accepted.result.ok).toBe(true)
+
+    const outside = await api.sessions.create(request({ cwd: join(root, '..', 'elsewhere'), sessionId: SessionId('cwd-outside') }))
+    expect(outside.result).toMatchObject({ ok: false, error: { code: 'cwd-outside-owner-root' } })
+  })
+
+  it('rejects ../ traversal and a symlink escape from the owner root', async () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-cwd-escape-')))
+    const { api, ownership } = await harness(undefined, undefined, { ownership: true })
+    ownership!.principal = alice
+    ownership!.ownerRoots.set(alice.userId, root)
+
+    mkdirSync(join(root, 'sub'), { recursive: true })
+    const traversal = await api.sessions.create(request({
+      cwd: join(root, 'sub', '..', '..', 'escaped'),
+      sessionId: SessionId('cwd-traversal'),
+    }))
+    expect(traversal.result).toMatchObject({ ok: false, error: { code: 'cwd-outside-owner-root' } })
+
+    const target = mkdtempSync(join(tmpdir(), 'dsh-cwd-target-'))
+    symlinkSync(target, join(root, 'link'))
+    const escape = await api.sessions.create(request({ cwd: join(root, 'link'), sessionId: SessionId('cwd-symlink') }))
+    expect(escape.result).toMatchObject({ ok: false, error: { code: 'cwd-outside-owner-root' } })
+  })
+
+  it('rejects a cwd pointing into another owner\'s root', async () => {
+    const aliceRoot = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-cwd-alice-')))
+    const bobRoot = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-cwd-bob-')))
+    const { api, ownership } = await harness(undefined, undefined, { ownership: true })
+    ownership!.principal = alice
+    ownership!.ownerRoots.set(alice.userId, aliceRoot)
+
+    const foreign = await api.sessions.create(request({
+      cwd: join(bobRoot, 'project'),
+      sessionId: SessionId('cwd-foreign'),
+    }))
+    expect(foreign.result).toMatchObject({ ok: false, error: { code: 'cwd-outside-owner-root' } })
   })
 })
 

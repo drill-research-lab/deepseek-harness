@@ -15,7 +15,7 @@ import { basename, dirname, isAbsolute, join, normalize } from 'node:path'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import { OwnershipService, UserHome } from '@deepseek-ai/dsh-ownership'
-import type { OwnerPrincipal } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal, OwnerRoot } from '@deepseek-ai/dsh-ownership'
 import type { SaveTextSpill } from '@deepseek-ai/dsh-spill'
 import LocalSpillStore, { encodeSegment, privateRoot, saveTextFile, sessionDir } from '@deepseek-ai/dsh-spill-local'
 
@@ -159,6 +159,10 @@ class TestOwnership extends OwnershipService {
   backgroundPrincipal(userId: OwnerPrincipal['userId']): OwnerPrincipal {
     return { userId, source: 'background' }
   }
+  resolveOwnerRoot(): Promise<OwnerRoot> {
+    throw new Error('not used by these tests')
+  }
+
   async resolveUserHome(principal: OwnerPrincipal): Promise<UserHome> {
     const homeRoot = join(this.usersRoot, String(principal.userId).replaceAll(':', '-'))
     await mkdir(homeRoot, { recursive: true })
