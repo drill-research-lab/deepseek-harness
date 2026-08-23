@@ -36,6 +36,8 @@
 
 无论是否有版本防护，变更都在后端的每目标锁内运行，因此无条件写入/编辑仍是原子的；「无条件」只移除*版本*前置条件，不移除原子性。
 
+`readPolicyForTarget(fs, root)` 构建一个 `read-only` 按调用策略，其 `workspaceRoot` 是已解析目标在执行世界中的进程路径。当受信任的内部 loader 所读取的已配置文件或目录有意独立于模型会话工作区时，它会使用此策略。面向模型的消费方必须改为传递调用方已解析的会话策略。
+
 ## `fs/*` 政策事件
 
 本包声明三个事件（见 [filesystem.md](../../../docs/subsystems/filesystem.md#cordis-surface) 的生成区块），使发出方（`@deepseek-ai/dsh-tool-fs`）和政策监听器（`@deepseek-ai/dsh-fs-observation-policy`）共享词汇，而无需让发出方依赖政策插件。`fs/write-intent` 和 `fs/edit-intent` 是单槽决策 waterfall（瀑布式事件）（监听器完整决策，绝不调用 `next()`）；`fs/observed` 是发后即忘的记录事件，携带 `FsObservation` 可辨识联合：存在并带有版本，或确认缺失。它们只携带 `dsh-fs` 词汇和一个不透明 `object` 参与者，不含面向模型的概念或 agent（智能体）/会话所有者结构。

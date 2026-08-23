@@ -41,6 +41,19 @@ export type {
   FsWriteOutcome,
 } from './types.ts'
 
+/**
+ * Build a read-only policy scoped to one resolved target and its descendants.
+ * Trusted internal loaders use this for configured inputs that are intentionally
+ * independent of a model session's workspace. Model-facing consumers must pass
+ * the caller's resolved session policy instead.
+ * @param fs - filesystem provider that owns the target's execution world.
+ * @param root - resolved file or directory that bounds this read.
+ * @returns a confined per-call policy rooted at the target's process path.
+ */
+export function readPolicyForTarget(fs: FileSystem, root: FsTarget): SandboxExecutionPolicy {
+  return { mode: 'read-only', workspaceRoot: fs.processPath(root) }
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     fs: FileSystem

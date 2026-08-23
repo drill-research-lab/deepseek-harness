@@ -36,6 +36,8 @@ A backend subclasses `FileSystem` and implements twelve primitives.
 
 The mutation runs inside the backend's per-target lock either way, so an unconditional write/edit is still atomic — "unconditional" drops the *version* precondition, not the atomicity.
 
+`readPolicyForTarget(fs, root)` builds a `read-only` per-call policy whose `workspaceRoot` is the resolved target's execution-world process path. Trusted internal loaders use it when a configured file or directory is intentionally independent of a model session workspace. Model-facing consumers must instead pass the caller's resolved session policy.
+
 ## The `fs/*` policy events
 
 This package declares three events (see the generated region of [filesystem.md](../../../docs/subsystems/filesystem.md#cordis-surface)) so the emitter (`@deepseek-ai/dsh-tool-fs`) and the policy listener (`@deepseek-ai/dsh-fs-observation-policy`) share a vocabulary without the emitter depending on the policy plugin. `fs/write-intent` and `fs/edit-intent` are single-slot decision waterfalls (the listener fully decides, never calling `next()`); `fs/observed` is a fire-and-forget recording event carrying an `FsObservation` discriminated union: present with a version or confirmed absent. They carry only `dsh-fs` vocabulary plus an opaque `object` actor — no model-facing concepts and no agent/session owner structure.

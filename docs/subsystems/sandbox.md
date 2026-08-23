@@ -8,14 +8,16 @@ Source: [`packages/sandbox/sandbox/src/index.ts`](../../packages/sandbox/sandbox
 
 ## Modes and enforcement
 
-`SandboxMode` governs filesystem effects only. `read-only` asks the backend to deny writes — the POSIX runners additionally grant the `/dev/null` sink their shells require, while the Windows ACL runner grants no explicit writable root and reports partial enforcement for its ambient ACL gaps; `workspace-write` permits writes under the workspace root and the backend's promised temp area; `danger-full-access` bypasses confinement. Network and process visibility are outside this vocabulary.
+`SandboxMode` governs filesystem effects only. Filesystem consumers restrict reads to `workspaceRoot` under both confined modes. `read-only` denies mutations, while `workspace-write` permits them under the workspace root and the backend's promised temp area. Process runners retain the system reads needed to execute commands; POSIX runners also grant the `/dev/null` sink their shells require, while the Windows ACL runner grants no explicit writable root and reports partial enforcement for its ambient ACL gaps. `danger-full-access` bypasses confinement. Network and process visibility are outside this vocabulary.
 
 ```ts type-equiv
 /**
- * File-effect policy for confined processes. `read-only` permits only required
- * sinks such as `/dev/null`; `workspace-write` also permits the workspace and a
- * backend-defined temp area; `danger-full-access` bypasses confinement. Network
- * and process visibility are outside this vocabulary.
+ * File-effect policy for confined capability calls. Filesystem consumers limit
+ * reads to `workspaceRoot` under both confined modes. `read-only` denies
+ * mutations, while `workspace-write` permits the workspace and a backend-defined
+ * temp area; `danger-full-access` bypasses confinement. Process backends may
+ * retain the system reads needed to execute commands. Network and process
+ * visibility are outside this vocabulary.
  */
 type SandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access'
 ```
@@ -51,7 +53,7 @@ The complete execution policy is resolved and carried per capability call. It in
 interface SandboxExecutionPolicy {
   /** The file-effect mode this execution runs under. */
   mode: SandboxMode
-  /** Absolute root directory `workspace-write` may write under. */
+  /** Absolute root directory confined filesystem reads may access and `workspace-write` may mutate under. */
   workspaceRoot: string
   /**
    * Opaque identity of the calling session (the branded `dsh-session`
@@ -184,7 +186,7 @@ Abstract process-sandbox service. confine must return enforcing argv or fail clo
 abstract confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv
 ```
 
-Source: [`packages/sandbox/sandbox/src/index.ts:158`](../../packages/sandbox/sandbox/src/index.ts)
+Source: [`packages/sandbox/sandbox/src/index.ts:160`](../../packages/sandbox/sandbox/src/index.ts)
 
 <a id="ctxsandboxpolicy--sandboxpolicyservice"></a>
 

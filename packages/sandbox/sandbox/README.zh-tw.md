@@ -6,7 +6,7 @@
 
 用一句話概括約定：`ctx.sandbox.confine(argv, policy)` 返回用於 spawn、應當取代呼叫方原始 argv 的 argv。回傳值經過包裝，使行程及其派生的所有行程都在限制下執行；還會附帶所選後端達到的強制執行完整度、拒絕方言（`denialSignatures`）和結構化 runner 失敗證據（`runnerFailureRules`）。沒有可用後端時，它會拋出例外，絕不會原樣傳遞 argv 使其不受限制地執行。[核心類型目錄](../../../docs/subsystems/sandbox.md#wrapped-argv-and-classification-dialects)負責定義分類器的精確結構。
 
-策略隨呼叫傳遞，而不屬於提供方：兩個消費端可以同時按不同策略施加限制（bash 使用 `read-only`，而受限制的子 agent（代理）保持其狀態目錄可寫）；獲批的升權重試只是使用更寬策略發起的新呼叫。
+策略隨呼叫傳遞，而不屬於提供方：兩個消費端可以同時按不同策略施加限制（bash 使用 `read-only`，而受限制的子 agent（代理）保持其狀態目錄可寫）；獲批的升權重試只是使用更寬策略發起的新呼叫。檔案系統消費端在兩種受限模式下都會將讀取限制在 `workspaceRoot`；`read-only` 還會拒絕所有變更，而 `workspace-write` 允許變更工作區及後端定義的暫存根目錄。行程後端可以保留執行命令所需的系統讀取權限。
 
 **只支援與宿主共享檔案系統和核心的限制。** 後端與宿主共享檔案系統和核心（`bwrap`、Landlock、Seatbelt）；`workspaceRoot` 指向檔案系統規範化後的真實主機目錄。系統先解析工作區所指的目錄，再做詞法規範化，因此包含 `symlink/..` 的有效 cwd 會授權 `chdir` 實際到達的目錄，而非無關的詞法父目錄。容器、microVM 與遠端執行器都不是該 seam 的後端：它們會以環境一致的分組替換整個能力 seam 的 Service Provider（`ctx.shell`、`ctx.fs`）。邊界及其設計理由見[沙盒 Agent Note](../../../.agents/notes/implemented/feature/2026-07-06-sandbox.md)。
 

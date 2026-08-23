@@ -21,10 +21,12 @@ export type { EscalationApproval, EscalationApprover, EscalationOutcome, Escalat
 export { canonicalPath, readableRoots, writableRoots } from './roots.ts'
 
 /**
- * File-effect policy for confined processes. `read-only` permits only required
- * sinks such as `/dev/null`; `workspace-write` also permits the workspace and a
- * backend-defined temp area; `danger-full-access` bypasses confinement. Network
- * and process visibility are outside this vocabulary.
+ * File-effect policy for confined capability calls. Filesystem consumers limit
+ * reads to `workspaceRoot` under both confined modes. `read-only` denies
+ * mutations, while `workspace-write` permits the workspace and a backend-defined
+ * temp area; `danger-full-access` bypasses confinement. Process backends may
+ * retain the system reads needed to execute commands. Network and process
+ * visibility are outside this vocabulary.
  */
 export type SandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access'
 
@@ -39,7 +41,7 @@ export type ConfinedSandboxMode = Exclude<SandboxMode, 'danger-full-access'>
 export interface SandboxExecutionPolicy {
   /** The file-effect mode this execution runs under. */
   mode: SandboxMode
-  /** Absolute root directory `workspace-write` may write under. */
+  /** Absolute root directory confined filesystem reads may access and `workspace-write` may mutate under. */
   workspaceRoot: string
   /**
    * Opaque identity of the calling session (the branded `dsh-session`

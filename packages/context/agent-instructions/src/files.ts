@@ -7,7 +7,7 @@
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
-import type { FileSystem, FsInfo, FsTarget, FsVersion } from '@deepseek-ai/dsh-fs'
+import { readPolicyForTarget, type FileSystem, type FsInfo, type FsTarget, type FsVersion } from '@deepseek-ai/dsh-fs'
 import { assertNever } from '@deepseek-ai/dsh-llm'
 import { dshHomeDisplay } from '@deepseek-ai/dsh-home-paths'
 import { resolveConfig, resolveDiscoveryConfig, type ResolvedConfig } from './config.ts'
@@ -35,6 +35,7 @@ export interface LoadedInstructionFile extends InstructionFile {
 
 interface DiscoveredInstructionFile extends InstructionFile {
   target?: FsTarget
+  readRoot?: FsTarget
   size?: number
   version?: FsVersion
 }
@@ -42,6 +43,8 @@ interface DiscoveredInstructionFile extends InstructionFile {
 /** Provider metadata for a probed scope candidate before its content is read. */
 export interface ProbedInstructionFile extends InstructionFile {
   target: FsTarget
+  /** Resolved configured root that bounds this loader read. */
+  readRoot: FsTarget
   version: FsVersion
   size?: number
 }
@@ -78,6 +81,7 @@ export type ScopeInstructionProbe =
 
 interface StatFileInfo {
   target?: FsTarget
+  readRoot?: FsTarget
   size?: number
   version?: FsVersion
 }
@@ -112,21 +116,23 @@ async function nodeStatFile(path: string, signal?: AbortSignal): Promise<StatFil
 
 async function fsStatFile(
   path: string,
+  readRoot: string,
   fileSystem: FileSystem,
   signal?: AbortSignal,
 ): Promise<StatFileProbe> {
   // resolve() follows a final-component symlink to its target's stable identity;
-  // stat then classifies that target. A link to a regular file loads, while a
-  // missing path or non-file target (including a link to a directory) is absent.
+  // the read policy then requires that target to remain under the configured root.
+  // A missing path or non-file target (including a link to a directory) is absent.
   try {
     const target = await fileSystem.resolve(path, signalOptions(signal))
+    const root = await fileSystem.resolve(readRoot, signalOptions(signal))
     signal?.throwIfAborted()
-    const info = await fileSystem.stat(target, signal)
+    const info = await fileSystem.stat(target, signal, readPolicyForTarget(fileSystem, root))
     signal?.throwIfAborted()
     if (info?.type !== 'file') return { kind: 'absent' }
     return {
       kind: 'present',
-      info: { target, version: info.version, ...info.size === undefined ? {} : { size: info.size } },
+      info: { target, readRoot: root, version: info.version, ...info.size === undefined ? {} : { size: info.size } },
     }
   } catch {
     signal?.throwIfAborted()
@@ -136,17 +142,19 @@ async function fsStatFile(
 
 async function statFile(
   path: string,
+  readRoot: string,
   fileSystem?: FileSystem,
   signal?: AbortSignal,
 ): Promise<StatFileProbe> {
-  return fileSystem === undefined ? nodeStatFile(path, signal) : fsStatFile(path, fileSystem, signal)
+  return fileSystem === undefined ? nodeStatFile(path, signal) : fsStatFile(path, readRoot, fileSystem, signal)
 }
 
 async function existsAsMarker(path: string, fileSystem?: FileSystem, signal?: AbortSignal): Promise<boolean> {
   if (fileSystem !== undefined) {
     try {
       const target = await fileSystem.resolve(path, signalOptions(signal))
-      return await fileSystem.stat(target, signal) !== undefined
+      const parent = await fileSystem.resolve(dirname(path), signalOptions(signal))
+      return await fileSystem.stat(target, signal, readPolicyForTarget(fileSystem, parent)) !== undefined
     } catch {
       signal?.throwIfAborted()
       // TODO(root-marker-unavailable): preserve provider failure separately from
@@ -246,7 +254,7 @@ async function allExistingInstructionFiles(
   const found: DiscoveredInstructionFile[] = []
   for (const candidate of instructionFileCandidates) {
     const path = join(dir, candidate)
-    const probe = await statFile(path, fileSystem, signal)
+    const probe = await statFile(path, root, fileSystem, signal)
     switch (probe.kind) {
       case 'present':
         found.push({ absolutePath: path, displayPath: relativeDisplay(root, path), ...probe.info })
@@ -278,7 +286,7 @@ async function discoverInstructionFiles(
   }
 
   const userGlobal = join(config.dshHome, USER_GLOBAL_FILE)
-  const userGlobalProbe = await statFile(userGlobal, fileSystem, options.signal)
+  const userGlobalProbe = await statFile(userGlobal, config.dshHome, fileSystem, options.signal)
   switch (userGlobalProbe.kind) {
     case 'present':
       addFile({
@@ -325,7 +333,7 @@ async function* nodeTextChunks(path: string, signal?: AbortSignal): AsyncIterabl
 }
 
 async function readBounded(
-  file: { absolutePath: string; target?: FsTarget; size?: number },
+  file: { absolutePath: string; target?: FsTarget; readRoot?: FsTarget; size?: number },
   maxSourceBytes: number,
   fileSystem?: FileSystem,
   signal?: AbortSignal,
@@ -336,9 +344,13 @@ async function readBounded(
   signal?.throwIfAborted()
   if (file.size !== undefined && file.size > maxSourceBytes) return undefined
   try {
-    const chunks = fileSystem === undefined || file.target === undefined
-      ? nodeTextChunks(file.absolutePath, signal)
-      : await fileSystem.streamText(file.target, signal)
+    let chunks: AsyncIterable<string>
+    if (fileSystem === undefined || file.target === undefined) {
+      chunks = nodeTextChunks(file.absolutePath, signal)
+    } else {
+      if (file.readRoot === undefined) throw new Error('provider-backed instruction target has no read root')
+      chunks = await fileSystem.streamText(file.target, signal, readPolicyForTarget(fileSystem, file.readRoot))
+    }
     const parts: string[] = []
     let bytes = 0
     for await (const chunk of chunks) {
@@ -469,14 +481,16 @@ export async function probeScopeInstruction(
     ? resolved.dshHome
     : directory === '.' ? projectRoot : join(projectRoot, directory)
   const absolutePath = join(dir, candidateName)
-  // resolve() follows a final-component symlink; stat then classifies the target.
-  // A non-file target (missing, or a link to a directory) is a confirmed absence;
-  // only a provider exception is reported as unavailable.
+  // resolve() follows a final-component symlink; the read policy then requires
+  // that target to remain under the configured root before stat classifies it.
+  // A non-file target is absent; a provider or policy failure is unavailable.
   let target: FsTarget
+  let readRoot: FsTarget
   let info: FsInfo | undefined
   try {
     target = await fileSystem.resolve(absolutePath, signalOptions(signal))
-    info = await fileSystem.stat(target, signal)
+    readRoot = await fileSystem.resolve(directory === USER_GLOBAL_DIRECTORY ? resolved.dshHome : projectRoot, signalOptions(signal))
+    info = await fileSystem.stat(target, signal, readPolicyForTarget(fileSystem, readRoot))
   } catch {
     signal?.throwIfAborted()
     return { kind: 'unavailable' }
@@ -486,6 +500,7 @@ export async function probeScopeInstruction(
     absolutePath,
     displayPath: directory === USER_GLOBAL_DIRECTORY ? userGlobalDisplayPath(resolved.dshHome) : relativeDisplay(projectRoot, absolutePath),
     target,
+    readRoot,
     version: info.version,
     ...info.size === undefined ? {} : { size: info.size },
   }
