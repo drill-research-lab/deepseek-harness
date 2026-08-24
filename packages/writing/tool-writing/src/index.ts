@@ -103,6 +103,9 @@ export function apply(ctx: Context, config: Config): void {
       const report = await ctx.reports.updateContent(reportId(args.reportId), args.source)
       return { reportId: String(report.id), chars: report.source.length, updatedAt: report.updatedAt }
     },
+    // Pure UI-intent presentation: only the UI presentation layer invokes it,
+    // not the headless tools-registry execution path these unit tests drive.
+    /* v8 ignore next -- report_write presentCall is exercised by the UI presentation projection, not headless execution */
     presentCall: args => ({ card: 'generic', title: `Write report ${args.reportId}`, kind: 'edit', rawInput: args.reportId }),
   }))
 

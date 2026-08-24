@@ -205,6 +205,8 @@ export class WritingGateway extends TypertRemoteService {
       res.end(JSON.stringify({ error: 'unauthorized' }))
       return
     }
+    // A real HTTP request always carries a URL, so the fallback is unreachable.
+    /* v8 ignore next -- req.url is always present on an HTTP request */
     const pathname = new URL(req.url ?? '/', 'http://localhost').pathname
     const segments = pathname.split('/').filter(Boolean)
     if (segments.length !== 3 || segments[0] !== 'writing' || segments[2] !== 'pdf') {

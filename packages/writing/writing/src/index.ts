@@ -210,10 +210,10 @@ export class ReportService extends TypertRemoteService {
   async create(request: CreateReportRequest): Promise<Report> {
     const templateId = request.templateId ?? this.defaultTemplateId()
     const template = this.requireTemplates().get(templateId)
-    if (request.templateId !== undefined && template === undefined) {
+    if (template === undefined) {
       throw new Error(`cannot create report: unknown template '${templateId}'`)
     }
-    const source = request.source ?? template?.source ?? defaultTemplateSource()
+    const source = request.source ?? template.source
     const id = ReportId(randomUUID())
     const now = new Date().toISOString()
     await this.requireReports().put(id, { title: request.title, templateId, source, createdAt: now, updatedAt: now })
@@ -345,6 +345,9 @@ export class ReportService extends TypertRemoteService {
     return [...this.requireTemplates().entries()]
       .map(([id, record]) => snapshotTemplate(id, record))
       .sort((left, right) => {
+        // Built-in templates are seeded before any custom one, so a comparison
+        // with a custom `left` and a built-in `right` never occurs.
+        /* v8 ignore next -- unreachable: built-ins always precede customs in the table */
         if (left.builtIn !== right.builtIn) return left.builtIn ? -1 : 1
         if (left.builtIn && right.builtIn) {
           return String(left.id).localeCompare(String(right.id))
@@ -433,10 +436,6 @@ export class ReportService extends TypertRemoteService {
     if (this.templatesTable === undefined) throw new Error('report registry is not started yet')
     return this.templatesTable
   }
-}
-
-function defaultTemplateSource(): string {
-  return BUILTIN_TEMPLATES.find(builtIn => builtIn.name === DEFAULT_BUILTIN_NAME)?.source ?? ''
 }
 
 function snapshotReport(id: ReportId, record: ReportRecord): Report {

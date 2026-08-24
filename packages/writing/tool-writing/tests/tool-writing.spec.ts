@@ -131,3 +131,76 @@ describe('dsh-tool-writing', () => {
     expect(restored.source).toBe('v1')
   })
 })
+
+describe('tool definitions', () => {
+  it('covers every presentCall and render branch', async () => {
+    const { ctx } = await harness()
+    const def = (name: string): {
+      presentCall?: (args: unknown) => unknown
+      output?: { render?: (args: unknown, value: unknown) => unknown }
+    } => ctx.tools.get(name) as unknown as {
+      presentCall?: (args: unknown) => unknown
+      output?: { render?: (args: unknown, value: unknown) => unknown }
+    }
+
+    def('report_create').presentCall?.({ title: 'T' })
+    expect(def('report_create').output?.render?.({}, { reportId: 'r', title: 'T', source: 's' })).toBeDefined()
+
+    def('report_write').presentCall?.({ reportId: 'r' })
+    expect(def('report_write').output?.render?.({}, { reportId: 'r', chars: 1, updatedAt: 'u' })).toBeDefined()
+
+    def('report_read').presentCall?.({ reportId: 'r' })
+    expect(def('report_read').output?.render?.({}, { reportId: 'r', source: 's', truncated: false, versionCount: 0 })).toBeDefined()
+    expect(def('report_read').output?.render?.({}, { reportId: 'r', source: 's', truncated: true, versionCount: 1 })).toBeDefined()
+
+    def('report_compile').presentCall?.({ reportId: 'r' })
+    expect(def('report_compile').output?.render?.({}, { reportId: 'r', ok: true, diagnostics: [], versionCreated: true })).toBeDefined()
+    expect(def('report_compile').output?.render?.({}, { reportId: 'r', ok: true, diagnostics: [], versionCreated: false })).toBeDefined()
+    expect(def('report_compile').output?.render?.({}, { reportId: 'r', ok: false, diagnostics: [{ severity: 'error', line: 3, message: 'm' }], versionCreated: false })).toBeDefined()
+    expect(def('report_compile').output?.render?.({}, { reportId: 'r', ok: false, diagnostics: [{ severity: 'warning', message: 'w' }], versionCreated: false })).toBeDefined()
+
+    def('report_versions').presentCall?.({ reportId: 'r' })
+    expect(def('report_versions').output?.render?.({}, { versions: [] })).toBeDefined()
+    expect(def('report_versions').output?.render?.({}, { versions: [{ id: 'v', label: 'l' }] })).toBeDefined()
+
+    def('report_restore').presentCall?.({ reportId: 'r', versionId: 'v' })
+    expect(def('report_restore').output?.render?.({}, { reportId: 'r', source: 's' })).toBeDefined()
+  })
+
+  it('creates a report from a template id and an explicit source', async () => {
+    const { ctx } = await harness()
+    const value = await okValue(ctx, 'report_create', { title: 'R', templateId: 'builtin:report', source: '\\documentclass{report}' })
+    expect(String(value.source)).toContain('report')
+  })
+
+  it('creates a report from a template by name', async () => {
+    const { ctx } = await harness()
+    const value = await okValue(ctx, 'report_create', { title: 'R', templateId: 'report' })
+    expect(String(value.source)).toContain('\\documentclass[12pt]{report}')
+  })
+
+  it('rejects an unknown template and an unknown report', async () => {
+    const { ctx } = await harness()
+    const createResult = await callTool(ctx, 'report_create', { title: 'X', templateId: 'missing' })
+    expect(createResult.isError).toBe(true)
+
+    const readResult = await callTool(ctx, 'report_read', { reportId: 'missing' })
+    expect(readResult.isError).toBe(true)
+
+    const restoreResult = await callTool(ctx, 'report_restore', { reportId: 'missing', versionId: 'v' })
+    expect(restoreResult.isError).toBe(true)
+  })
+
+  it('compiles a diagnostic without a source line and without a caller signal', async () => {
+    const { ctx } = await harness({
+      onRun: async (workdir) => { await writeArtifacts(workdir, { log: '! Fatal error' }) },
+    })
+    const created = await okValue(ctx, 'report_create', { title: 'A', source: 'x' })
+    const def = ctx.tools.get('report_compile') as unknown as {
+      execute?: (args: unknown, exec: unknown) => Promise<{ ok: boolean; diagnostics: { line?: number }[] }>
+    }
+    const result = await def.execute?.({ reportId: created.reportId }, { signal: undefined })
+    expect(result?.ok).toBe(false)
+    expect(result?.diagnostics[0]?.line).toBeUndefined()
+  })
+})

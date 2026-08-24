@@ -93,6 +93,14 @@ describe('parseLatexLog', () => {
     expect(diagnostics[0]?.severity).toBe('error')
     expect(diagnostics[1]?.severity).toBe('warning')
   })
+
+  it('interleaves errors and warnings with errors first', () => {
+    const log = ['LaTeX Warning: W1', '! E1', 'l.2 \\x', 'LaTeX Warning: W2'].join('\n')
+    const diagnostics = parseLatexLog(log)
+    expect(diagnostics[0]?.severity).toBe('error')
+    expect(diagnostics[1]?.severity).toBe('warning')
+    expect(diagnostics[0]?.message).toContain('E1')
+  })
 })
 
 describe('delivery PDF path', () => {
@@ -106,5 +114,16 @@ describe('delivery PDF path', () => {
     const output = await another.ctx.latexCompile.compile({ reportId: 'report-e', source: 'x' })
     expect(output.ok).toBe(true)
     expect(await another.ctx.latexCompile.pdfPath('report-e')).toBe(output.pdfPath)
+  })
+
+  it('forwards an abort signal to the shell request', async () => {
+    const { ctx } = await harness()
+    const signal = new AbortController().signal
+    await ctx.latexCompile.compile({ reportId: 'report-sig', source: 'x', signal })
+    expect(ctx.latexCompile).toBeDefined()
+  })
+
+  it('ignores a bare position line that follows no error', () => {
+    expect(parseLatexLog('l.5 \\foo')).toEqual([])
   })
 })

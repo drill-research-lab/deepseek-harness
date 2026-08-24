@@ -1,11 +1,16 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
-import { setupHarness, writeArtifacts, type TestHarness } from './helpers.ts'
+import type { AuthenticatedUser } from '@deepseek-ai/dsh-auth'
+import { setupHarness, writeArtifacts, testUser, type TestHarness } from './helpers.ts'
 
 const harnesses: TestHarness[] = []
 
 async function harness(
-  options: { readonly onRun?: (workdir: string) => void | Promise<void>; readonly withWebServer?: boolean } = {},
+  options: {
+    readonly onRun?: (workdir: string) => void | Promise<void>
+    readonly withWebServer?: boolean
+    readonly authUser?: AuthenticatedUser | null
+  } = {},
 ): Promise<TestHarness> {
   const value = await setupHarness(options)
   harnesses.push(value)
@@ -96,6 +101,39 @@ describe('WritingGateway public contract', () => {
   })
 })
 
+describe('WritingGateway edge cases', () => {
+  it('returns undefined for an unknown report', async () => {
+    const { ctx } = await harness()
+    expect(ctx.writing.get({ reportId: 'missing' })).toBeUndefined()
+  })
+
+  it('creates a report from a named template', async () => {
+    const { ctx } = await harness()
+    const template = ctx.writing.templates().find(candidate => candidate.name === 'report')
+    expect(template).toBeDefined()
+    const created = template === undefined
+      ? await ctx.writing.create({ title: 'R' })
+      : await ctx.writing.create({ title: 'R', templateId: template.templateId })
+    expect(created.source).toContain('\\documentclass[12pt]{report}')
+  })
+
+  it('throws when compiling an unknown report', async () => {
+    const { ctx } = await harness()
+    await expect(ctx.writing.compile({ reportId: 'missing' })).rejects.toThrow(/unknown report/)
+  })
+
+  it('reports a diagnostic that carries no source line', async () => {
+    const { ctx } = await harness({
+      onRun: async (workdir) => { await writeArtifacts(workdir, { log: '! Fatal error' }) },
+    })
+    const created = await ctx.writing.create({ title: 'A', source: 'x' })
+    const result = await ctx.writing.compile({ reportId: created.reportId })
+    expect(result.ok).toBe(false)
+    expect(result.diagnostics[0]?.line).toBeUndefined()
+    expect(result.diagnostics[0]?.message).toContain('Fatal error')
+  })
+})
+
 describe('WritingGateway PDF route', () => {
   it('serves the compiled PDF when a webserver is composed', async () => {
     const { ctx } = await harness({
@@ -116,6 +154,40 @@ describe('WritingGateway PDF route', () => {
   it('returns 404 for a missing report pdf', async () => {
     const { ctx } = await harness({ withWebServer: true })
     const url = `http://127.0.0.1:${ctx.webServer.port}/writing/unknown-report/pdf`
+    const response = await fetch(url)
+    expect(response.status).toBe(404)
+  })
+
+  it('returns 401 when an auth service rejects the request', async () => {
+    const { ctx } = await harness({ withWebServer: true, authUser: null })
+    const url = `http://127.0.0.1:${ctx.webServer.port}/writing/any/pdf`
+    const response = await fetch(url)
+    expect(response.status).toBe(401)
+  })
+
+  it('serves the compiled PDF to an authenticated request', async () => {
+    const { ctx } = await harness({
+      withWebServer: true,
+      authUser: testUser(),
+      onRun: async (workdir) => { await writeArtifacts(workdir, { log: '', pdf: true }) },
+    })
+    const created = await ctx.writing.create({ title: 'A', source: 'v1' })
+    await ctx.writing.compile({ reportId: created.reportId })
+    const url = `http://127.0.0.1:${ctx.webServer.port}/writing/${created.reportId}/pdf`
+    const response = await fetch(url)
+    expect(response.status).toBe(200)
+  })
+
+  it('returns 404 for a path that is not a pdf segment', async () => {
+    const { ctx } = await harness({ withWebServer: true })
+    const url = `http://127.0.0.1:${ctx.webServer.port}/writing/report-a/tex`
+    const response = await fetch(url)
+    expect(response.status).toBe(404)
+  })
+
+  it('returns 404 when the report id is not a safe path segment', async () => {
+    const { ctx } = await harness({ withWebServer: true })
+    const url = `http://127.0.0.1:${ctx.webServer.port}/writing/a../pdf`
     const response = await fetch(url)
     expect(response.status).toBe(404)
   })

@@ -1,9 +1,18 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { SubagentRun } from '@deepseek-ai/dsh-subagent'
+import { startInProcessRun } from '@deepseek-ai/dsh-subagent-in-process-driver'
 import * as agentWriter from '../src/index.ts'
 
+vi.mock('@deepseek-ai/dsh-subagent-in-process-driver', () => ({
+  startInProcessRun: vi.fn(),
+}))
+
 const runtimes: Context[] = []
+const mockedStart = vi.mocked(startInProcessRun)
 
 async function setup(config: { providerName?: string; persona?: string } = {}): Promise<Context> {
   const ctx = new Context()
@@ -17,8 +26,28 @@ async function setup(config: { providerName?: string; persona?: string } = {}): 
 }
 
 afterEach(async () => {
+  mockedStart.mockReset()
   await Promise.all(runtimes.splice(0).map(ctx => ctx.fiber.dispose()))
 })
+
+function fakeRun(): SubagentRun {
+  return {
+    id: SessionId('run-1'),
+    localAgent: undefined,
+    result: Promise.resolve({ output: [], stopReason: 'completed' }),
+    dispose: () => Promise.resolve(),
+  }
+}
+
+function fakeRequest(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    prompt: [],
+    parent: {} as Agent,
+    signal: new AbortController().signal,
+    descriptor: {},
+    ...over,
+  }
+}
 
 describe('dsh-agent-writer', () => {
   it('registers a `writer` provider with the spawn-like capabilities', async () => {
@@ -50,5 +79,26 @@ describe('dsh-agent-writer', () => {
     expect(added).toContain('writer')
     await ctx.fiber.dispose()
     runtimes.push(ctx)
+  })
+
+  it('forces the writing persona and delegates to the in-process driver', async () => {
+    mockedStart.mockResolvedValue(fakeRun())
+    const ctx = await setup({ persona: 'WRITER_PERSONA' })
+    const provider = ctx.subagents.getProvider('writer')
+    expect(provider).toBeDefined()
+
+    const run = await provider!.start(fakeRequest() as never)
+    expect(mockedStart).toHaveBeenCalledTimes(1)
+    expect(mockedStart.mock.calls[0]?.[0]).toMatchObject({ persona: 'WRITER_PERSONA' })
+    expect(run).toBeDefined()
+  })
+
+  it('appends a caller persona after the writing persona', async () => {
+    mockedStart.mockResolvedValue(fakeRun())
+    const ctx = await setup({ persona: 'WRITER_PERSONA' })
+    const provider = ctx.subagents.getProvider('writer')
+    const run = await provider!.start(fakeRequest({ persona: 'CALLER' }) as never)
+    expect(mockedStart.mock.calls[0]?.[0]).toMatchObject({ persona: 'WRITER_PERSONA\n\nCALLER' })
+    expect(run).toBeDefined()
   })
 })

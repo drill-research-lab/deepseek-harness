@@ -2,6 +2,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import { AuthService, authenticatedUserId } from '@deepseek-ai/dsh-auth'
+import type { AuthenticatedUser } from '@deepseek-ai/dsh-auth'
 import ShellExecutor from '@deepseek-ai/dsh-shell'
 import type {
   CollectedOutput,
@@ -22,6 +24,21 @@ export interface TestHarness {
   readonly ctx: Context
   readonly root: string
   dispose(): Promise<void>
+}
+
+class FakeAuth extends AuthService {
+  private readonly user: AuthenticatedUser | undefined
+  constructor(ctx: Context, config: { readonly user?: AuthenticatedUser }) {
+    super(ctx)
+    this.user = config.user
+  }
+  authenticateRequest(): Promise<AuthenticatedUser | undefined> {
+    return Promise.resolve(this.user)
+  }
+}
+
+export function testUser(): AuthenticatedUser {
+  return { userId: authenticatedUserId('test:user'), username: 'test' }
 }
 
 export class FakeShellExecutor extends ShellExecutor {
@@ -84,6 +101,7 @@ export async function setupHarness(
   options: {
     readonly onRun?: (workdir: string) => void | Promise<void>
     readonly withWebServer?: boolean
+    readonly authUser?: AuthenticatedUser | null
   } = {},
 ): Promise<TestHarness> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-writing-api-test-'))
@@ -95,6 +113,9 @@ export async function setupHarness(
     await ctx.plugin(FakeShellExecutor)
     const shell = ctx.shell as unknown as FakeShellExecutor
     if (options.onRun !== undefined) shell.onRun = options.onRun
+    if (options.authUser !== undefined) {
+      await ctx.plugin(FakeAuth, options.authUser === null ? {} : { user: options.authUser })
+    }
     await ctx.plugin(ReportService)
     await ctx.plugin(LatexCompileService, {
       command: 'pdflatex -interaction=nonstopmode -halt-on-error',

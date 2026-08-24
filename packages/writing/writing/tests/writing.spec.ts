@@ -1,6 +1,13 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { Context } from '@deepseek-ai/cordis'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
-import { ReportId, TemplateId, VersionId } from '../src/index.ts'
+import Storage from '@deepseek-ai/dsh-storage'
+import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
+import * as StorageJson from '@deepseek-ai/dsh-storage-json'
+import ReportService, { ReportId, TemplateId, VersionId } from '../src/index.ts'
 import type { Report } from '../src/index.ts'
 import { setupHarness, type TestHarness } from './helpers.ts'
 
@@ -169,6 +176,18 @@ describe('ReportService public contract', () => {
     expect(await ctx.reports.delete(ReportId('missing'))).toBe(false)
   })
 
+  it('prunes only the deleted report while keeping another report’s versions', async () => {
+    const { ctx } = await harness()
+    const dropped = await ctx.reports.create({ title: 'A', source: 'x' })
+    const kept = await ctx.reports.create({ title: 'B', source: 'y' })
+    await ctx.reports.snapshot(dropped.id, 'a1')
+    await ctx.reports.snapshot(kept.id, 'b1')
+
+    await ctx.reports.delete(dropped.id)
+    expect(ctx.reports.listVersions(dropped.id)).toEqual([])
+    expect(ctx.reports.listVersions(kept.id).length).toBe(1)
+  })
+
   it('lists templates with built-ins first and custom templates sorted newest first', async () => {
     const { ctx } = await harness()
     const custom = await ctx.reports.addTemplate({ name: 'custom-report', source: '\\documentclass{article}' })
@@ -197,5 +216,65 @@ describe('ReportService public contract', () => {
     expect(await ctx.reports.deleteTemplate(custom.id)).toBe(true)
     expect(ctx.reports.template(custom.id)).toBeUndefined()
     expect(await ctx.reports.deleteTemplate(TemplateId('missing'))).toBe(false)
+  })
+})
+
+describe('ReportService guard rails', () => {
+  it('snapshot of an unknown report throws', async () => {
+    const { ctx } = await harness()
+    await expect(ctx.reports.snapshot(ReportId('missing'))).rejects.toThrow(/unknown report/)
+  })
+
+  it('throws from the not-started guards before initialization', () => {
+    const svc = new ReportService(new Context())
+    expect(() => svc.list()).toThrow(/not started/)
+    expect(() => svc.listVersions(ReportId('x'))).toThrow(/not started/)
+    expect(() => svc.listTemplates()).toThrow(/not started/)
+  })
+
+  it('orders custom templates by recency when one is newer', async () => {
+    const { ctx } = await harness()
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
+    const first = await ctx.reports.addTemplate({ name: 'first', source: 'a' })
+    vi.setSystemTime(new Date('2026-01-02T00:00:00.000Z'))
+    const second = await ctx.reports.addTemplate({ name: 'second', source: 'b' })
+    vi.useRealTimers()
+    const customs = ctx.reports.listTemplates().filter(template => !template.builtIn)
+    expect(customs[0]?.id).toBe(second.id)
+    expect(customs[1]?.id).toBe(first.id)
+  })
+
+  it('keeps reports and templates durable across a reload of the same storage', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-writing-reload-'))
+    const boot = async (): Promise<Context> => {
+      const ctx = new Context()
+      await ctx.plugin(Storage)
+      await ctx.plugin(StorageJson, { root })
+      await ctx.plugin(StorageDomain, { backend: 'json' })
+      await ctx.plugin(ReportService)
+      return ctx
+    }
+    const first = await boot()
+    await first.reports.create({ title: 'x' })
+    expect(first.reports.list().length).toBe(1)
+    expect(first.reports.listTemplates().length).toBe(3)
+    await first.fiber.dispose()
+
+    const second = await boot()
+    expect(second.reports.list().length).toBe(1)
+    expect(second.reports.listTemplates().length).toBe(3)
+    await second.fiber.dispose()
+    await rm(root, { recursive: true, force: true })
+  })
+
+  it('tie-breaks reports with an equal createdAt by id', async () => {
+    const { ctx } = await harness()
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
+    await ctx.reports.create({ title: 'A' })
+    await ctx.reports.create({ title: 'B' })
+    vi.useRealTimers()
+    expect(ctx.reports.list().length).toBe(2)
   })
 })
