@@ -24,7 +24,7 @@ describe('WritingGateway public contract', () => {
     expect(binding.namespace).toBe('writing')
     const methods = remoteMethods(ctx.writing).map(entry => entry.method)
     expect(methods).toEqual([
-      'list', 'get', 'create', 'updateContent', 'rename', 'remove',
+      'list', 'get', 'create', 'updateContent', 'rename', 'deleteReport',
       'compile', 'versions', 'restore', 'templates', 'addTemplate',
     ])
   })
@@ -91,7 +91,7 @@ describe('WritingGateway public contract', () => {
   it('removes a report', async () => {
     const { ctx } = await harness()
     const created = await ctx.writing.create({ title: 'A' })
-    expect(await ctx.writing.remove({ reportId: created.reportId })).toBe(true)
+    expect(await ctx.writing.deleteReport({ reportId: created.reportId })).toBe(true)
     expect(ctx.writing.list().length).toBe(0)
   })
 })

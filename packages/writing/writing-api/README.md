@@ -6,7 +6,7 @@ The browser-facing writing gateway (`ctx.writing`). It projects the report regis
 
 Methods (via the Host Remote contract, `ctx.remote.writing.*`):
 
-- `list` / `get` / `create` / `updateContent` / `rename` / `remove`
+- `list` / `get` / `create` / `updateContent` / `rename` / `deleteReport`
 - `compile` — returns diagnostics and, on success, a `pdfUrl`; auto-snapshots a version
 - `versions` / `restore`
 - `templates` / `addTemplate`

@@ -125,8 +125,8 @@ export class WritingGateway extends TypertRemoteService {
    * @param request - report id.
    * @returns whether the report existed.
    */
-  @Remote('remove')
-  remove(request: DeleteRequest): Promise<boolean> {
+  @Remote('deleteReport')
+  deleteReport(request: DeleteRequest): Promise<boolean> {
     return this.ctx.reports.delete(ReportId(request.reportId))
   }
 
