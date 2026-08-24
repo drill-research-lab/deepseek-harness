@@ -2,6 +2,6 @@
 # side as of the last confirmed-consistent state. All languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/bundle/drill-production/README.md
-README.md: db0270afd69f7a4b27bfa298a9d0eaa154c1929a
-README.zh.md: 48b7492361495c321023df3730dd01e6ae4f206b
-README.zh-tw.md: c99e4756d1d6262ef974864fae417dff634a4b5d
+README.md: 39253b8f49dc5483012a7ded0aabf30545e90733
+README.zh.md: cf133726ceb0051f21c798cc02b52cf379ebae54
+README.zh-tw.md: 6ad02949963ff037864763d14b20f00e67c0aa68

@@ -822,11 +822,17 @@ describe('sandbox policy API', () => {
     }
   }
 
-  async function setupConfining(opts: { approval?: boolean } = {}) {
+  async function setupConfining(opts: {
+    approval?: boolean
+    maximumMode?: 'read-only' | 'workspace-write' | 'danger-full-access'
+  } = {}) {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
-    await ctx.plugin(SandboxPolicyService, { mode: 'workspace-write' })
+    await ctx.plugin(SandboxPolicyService, {
+      mode: 'workspace-write',
+      maximumMode: opts.maximumMode ?? 'danger-full-access',
+    })
     await ctx.plugin(SandboxingFakeFs)
     await ctx.plugin(FsPolicy)
     if (opts.approval === true) await ctx.plugin(ApprovalService)
@@ -877,6 +883,26 @@ describe('sandbox policy API', () => {
       expect(props['sandbox_permissions']?.enum).toEqual(['workspace-write', 'danger-full-access'])
       expect(props['justification']).toBeDefined()
     }
+  })
+
+  it('omits danger-full-access under a workspace-write ceiling and rejects a forged request', async () => {
+    const { ctx, fs } = await setupConfining({ approval: true, maximumMode: 'workspace-write' })
+    for (const name of ['write', 'edit'] as const) {
+      const props = fsSchema(ctx, name).parameters.properties
+      expect(props['sandbox_permissions']?.enum).toEqual(['workspace-write'])
+    }
+    const prompted = vi.fn()
+    ctx.on('approval/request', () => { prompted(); return Promise.resolve('allowed-once' as const) })
+
+    const result = await call(ctx, 'write', {
+      file_path: 'a.txt',
+      content: 'x',
+      sandbox_permissions: 'danger-full-access',
+      justification: 'the forged request needs host access',
+    }, escalationAgent())
+    expect(result.isError).toBe(true)
+    expect(prompted).not.toHaveBeenCalled()
+    expect(fs.stamped).toEqual([])
   })
 
   it('a plain write stamps the default mode with the calling session root', async () => {

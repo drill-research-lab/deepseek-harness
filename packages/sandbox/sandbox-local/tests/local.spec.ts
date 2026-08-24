@@ -102,6 +102,15 @@ describe('profile dialects', () => {
     ])
   })
 
+  it('landlock grants an absolute packaged executable without granting its parent tree', () => {
+    expect(landlockProfileArgs(WW, '/opt/dsh-tools/rg')).toEqual([
+      ...LANDLOCK_SYSTEM_READ_ROOTS.flatMap(root => ['--ro', root]),
+      '--ro', '/ws', '--ro', '/opt/dsh-tools/rg',
+      '--rw', '/dev/null', '--rw', '/tmp', '--rw', '/ws',
+    ])
+    expect(landlockProfileArgs(WW, 'bash')).toEqual(landlockProfileArgs(WW))
+  })
+
   it('seatbelt read-only: allow-default with every file write denied except the /dev/null literal', () => {
     expect(seatbeltProfileArgs(RO)).toEqual(['-p', SEATBELT_RO_PROFILE])
   })
@@ -208,9 +217,12 @@ describe('the platform chains', () => {
       landlockLauncher: launcher,
       pidIsolateLauncher: pidLauncher,
     })
-    const confined = sandbox.confine(['bash', '-c', 'echo hi'], WW)
+    const confined = sandbox.confine(['/opt/dsh-tools/rg', '--json', 'needle'], WW)
     expect(confined).toEqual({
-      argv: [pidLauncher, '--', launcher, ...landlockProfileArgs(WW), '--', 'bash', '-c', 'echo hi'],
+      argv: [
+        pidLauncher, '--', launcher, ...landlockProfileArgs(WW, '/opt/dsh-tools/rg'),
+        '--', '/opt/dsh-tools/rg', '--json', 'needle',
+      ],
       enforcement: 'full',
       denialSignatures: ['permission denied'],
       runnerFailureRules: [

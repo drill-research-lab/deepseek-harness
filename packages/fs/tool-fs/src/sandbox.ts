@@ -13,8 +13,8 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { ToolExecution } from '@deepseek-ai/dsh-tools'
-import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
-import { ESCALATION_TARGETS, approveEscalation, escalationHintMarker, sandboxDenialMarker, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
+import type { SandboxEscalationTarget, SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
+import { approveEscalation, escalationHintMarker, sandboxDenialMarker, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import { FsError } from '@deepseek-ai/dsh-fs'
 
@@ -37,17 +37,17 @@ export interface EscalationSchemaFields {
  */
 export class FsSandboxController {
   /** The escalation targets this composition advertises (`[]` when no confining backend is mounted). */
-  readonly escalationModes: readonly SandboxMode[]
+  readonly escalationModes: readonly SandboxEscalationTarget[]
   /** Shared per-session policy resolver, required by a confining backend. */
   private readonly policy: SandboxPolicyService | undefined
 
   constructor(private readonly ctx: Context) {
     const defaultMode = ctx.fs.sandboxMode
-    this.escalationModes = defaultMode === undefined ? [] : ESCALATION_TARGETS
     this.policy = defaultMode === undefined ? undefined : ctx.get('sandboxPolicy')
     if (defaultMode !== undefined && this.policy === undefined) {
       throw new Error('tool-fs: the mounted filesystem confines but ctx.sandboxPolicy is missing')
     }
+    this.escalationModes = this.policy?.escalationTargets ?? []
   }
 
   /**
@@ -96,7 +96,13 @@ export class FsSandboxController {
     }
     const policy = standingPolicy as SandboxExecutionPolicy
     const approvedMode = await approveEscalation(
-      { requestedMode: args.sandbox_permissions, justification: args.justification, effectiveMode: policy.mode, subject: 'operation' },
+      {
+        requestedMode: args.sandbox_permissions,
+        allowedModes: this.escalationModes,
+        justification: args.justification,
+        effectiveMode: policy.mode,
+        subject: 'operation',
+      },
       {
         approver: this.ctx.get('approval'),
         agent: exec.agent,
@@ -111,13 +117,14 @@ export class FsSandboxController {
   /**
    * Map a thrown provider error for the model: a `FS_SANDBOX_DENIED` becomes a
    * `FsError` whose text is the shared `[sandbox: …]` denial marker plus the
-   * same-turn escalation hint, so a policy denial reads identically to bash's
+   * same-turn escalation hint when this composition permits an escalation, so
+   * a policy denial reads identically to bash's
    * WHILE keeping the structured `FS_SANDBOX_DENIED` code — `ToolRuntime`
    * populates `result.error` only for `HarnessError` instances, so a plain
    * `Error` would strip the code retry/observers key off. Any other error
    * passes through unchanged. A `FS_SANDBOX_DENIED` only arises under a
-   * confining backend, which always advertises the escalation fields, so the
-   * hint always applies here.
+   * confining backend. A composition whose maximum mode is `read-only` still
+   * reports the denial marker but has no escalation to advertise.
    * @param error - the error thrown by the mutation.
    * @param policy - the policy stamped onto the call (names the mode in the marker).
    * @returns the error to throw — the marker `FsError` for a sandbox denial, else the original.
@@ -127,6 +134,7 @@ export class FsSandboxController {
     // A FS_SANDBOX_DENIED only arises under a confining backend, whose tool
     // path always resolves a policy before mutation.
     const mode = (policy as SandboxExecutionPolicy).mode
-    return new FsError(`${sandboxDenialMarker(mode)}\n${escalationHintMarker('operation')}`, 'FS_SANDBOX_DENIED', { cause: error })
+    const hint = this.escalationModes.length === 0 ? '' : `\n${escalationHintMarker('operation')}`
+    return new FsError(`${sandboxDenialMarker(mode)}${hint}`, 'FS_SANDBOX_DENIED', { cause: error })
   }
 }

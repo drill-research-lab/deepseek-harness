@@ -339,7 +339,7 @@ export class LocalSandboxProvider extends SandboxProvider {
       }
     }
     const selected = this.selectRunner(policy.mode)
-    const runnerArgv = this.runnerArgv(selected.runner, policy)
+    const runnerArgv = this.runnerArgv(selected.runner, policy, argv)
     return {
       argv: [...runnerArgv, '--', ...argv],
       enforcement: selected.enforcement,
@@ -349,12 +349,12 @@ export class LocalSandboxProvider extends SandboxProvider {
   }
 
   /** The selected rung's runner invocation (program + profile arguments) for one policy. */
-  private runnerArgv(runner: SelectedRunner['runner'], policy: SandboxPolicy): string[] {
+  private runnerArgv(runner: SelectedRunner['runner'], policy: SandboxPolicy, argv: readonly string[]): string[] {
     switch (runner) {
       case 'bwrap': return ['bwrap', ...bwrapProfileArgs(policy)]
       case 'landlock-pid': return [
         this.pidIsolateLauncher(), '--',
-        this.landlockLauncher(), ...landlockProfileArgs(policy),
+        this.landlockLauncher(), ...landlockProfileArgs(policy, argv[0]),
       ]
       case 'seatbelt': return [this.seatbeltExec(), ...seatbeltProfileArgs(policy)]
       case 'windows-acl': return this.windowsAclRunnerArgv(policy)

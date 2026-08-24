@@ -8,6 +8,7 @@ import { Context } from '@deepseek-ai/cordis'
 import AgentPresets, { type Config as AgentPresetsConfig } from '@deepseek-ai/dsh-agent-presets'
 import PermissionPresetService from '@deepseek-ai/dsh-permission-presets'
 import SessionStore from '@deepseek-ai/dsh-session'
+import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
 import { describe, expect, it } from 'vitest'
 import * as drillProductionStartup from '../src/index.ts'
 import { validateDrillProductionPolicy, type DrillProductionPolicy } from '../src/index.ts'
@@ -28,6 +29,7 @@ async function harness(
     start() { throw new Error('policy tests do not execute bash') },
   } as never)
   ctx.provide('approval', { config: { policy: 'ask' } } as never)
+  await ctx.plugin(SandboxPolicyService, { mode: 'workspace-write', maximumMode: 'workspace-write' })
   await ctx.plugin(AgentPresets, {
     default: 'drill-production',
     roots: [],
@@ -61,6 +63,8 @@ describe('drill-production startup policy check', () => {
     includeUserRoot: false,
     permissionNames: ['read-only', 'workspace-write'],
     resolvePermission: name => ({ sandbox: name, approval: 'ask' }),
+    sandboxMaximumMode: 'workspace-write',
+    sandboxEscalationTargets: ['workspace-write'],
     dynamicCordisRunnerMounted: false,
     sessionQuerySqliteOpenAt: 'never',
   }
@@ -92,6 +96,14 @@ describe('drill-production startup policy check', () => {
         ? { sandbox: 'danger-full-access', approval: 'ask' }
         : { sandbox: 'workspace-write', approval: 'ask' },
     }) }).toThrow(/permission preset "read-only" must use sandbox "read-only"/)
+  })
+
+  it.each([
+    [{ sandboxMaximumMode: 'danger-full-access' }, /maximumMode must be "workspace-write"/],
+    [{ sandboxEscalationTargets: ['workspace-write', 'danger-full-access'] }, /targets must be exactly/],
+    [{ sandboxEscalationTargets: [] }, /targets must be exactly/],
+  ] as const)('rejects sandbox-policy drift %#', (override, expected) => {
+    expect(() => { validateDrillProductionPolicy({ ...validPolicy, ...override }) }).toThrow(expected)
   })
 
   it('rejects a mounted cordis-host-runner even when the preset and permission policy are otherwise exact', () => {

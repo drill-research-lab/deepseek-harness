@@ -181,14 +181,17 @@ class CountingStartExecutor extends ShellExecutor {
   }
 }
 
-async function setupSandboxed(withApproval = false) {
+async function setupSandboxed(
+  withApproval = false,
+  maximumMode: 'read-only' | 'workspace-write' | 'danger-full-access' = 'danger-full-access',
+) {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(LocalJobRegistry)
   await ctx.plugin(ToolTasks)
-  await ctx.plugin(SandboxPolicyService, {})
+  await ctx.plugin(SandboxPolicyService, { maximumMode })
   await ctx.plugin(RecordingSandboxExecutor)
   if (withApproval) await ctx.plugin(ApprovalService)
   await ctx.plugin(BashEnvPlugin)
@@ -601,6 +604,23 @@ describe('sandbox escalation through the generic task producer', () => {
     }
   })
 
+  it('omits danger-full-access under a workspace-write ceiling and rejects a forged request', async () => {
+    const { ctx, bash } = await setupSandboxed(true, 'workspace-write')
+    const schema = ctx.tools.schemas().find(item => item.name === 'bash')!
+    const properties = schema.parameters.properties as Record<string, { enum?: string[] }>
+    expect(properties['sandbox_permissions']?.enum).toEqual(['workspace-write'])
+    const prompted = vi.fn()
+    ctx.on('approval/request', () => { prompted(); return Promise.resolve<ApprovalOutcome>('allowed-once') })
+
+    const result = await call(ctx, 'bash', {
+      ...escalate,
+      sandbox_permissions: 'danger-full-access',
+    }, sandboxAgent())
+    expect(result.isError).toBe(true)
+    expect(prompted).not.toHaveBeenCalled()
+    expect(bash.modes).toEqual([])
+  })
+
   it('rejects injected escalation without a sandbox and non-widening escalation without prompting', async () => {
     const plain = await setup()
     expect(text(await call(plain, 'bash', escalate))).toContain('not available in this composition')
@@ -617,7 +637,7 @@ describe('sandbox escalation through the generic task producer', () => {
       type: 'sandbox/mode',
       data: { mode: 'unknown-mode' },
     })
-    expect(text(await call(ctx, 'bash', escalate, malformed))).toContain('not strictly wider')
+    expect(text(await call(ctx, 'bash', escalate, malformed))).toContain('exceeds deployment maximumMode')
   })
 
   it('fails closed when approval cannot be routed', async () => {

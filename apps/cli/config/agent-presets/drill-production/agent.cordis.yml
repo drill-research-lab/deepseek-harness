@@ -1,28 +1,13 @@
 # The `drill-production` agent preset: the Drill multi-user production
 # approved capability subset, mounted once per process.
 #
-# A3 (Production Composition Closure) derives this from `standard` by
-# REMOVING every row whose capability is model/user reachable AND reaches raw
-# Host execution or unconfined Host filesystem read, because DSH's current
-# same-world sandbox (`packages/sandbox/sandbox-local`) only fences file
-# WRITES outside the workspace — it does not confine command execution,
-# network egress, process spawning, or filesystem READS (`fs-sandbox`
-# documents "every mode permits reading"). Until Issue #5 hardens that
-# boundary, Drill multi-user production accepts missing Bash/PowerShell/
-# generic-filesystem capability rather than exposing an unqualified path into
-# the host. See the A3 Agent Note for the full rationale and the Issue #5
-# handoff matrix.
-#
-# Removed relative to `standard` (PENDING ISSUE #5 — reachable through
-# `bash-sandbox`/`pwsh-sandbox`/`fs-sandbox`, none of which confine execution,
-# network, or reads):
-#   - tool-bash / tool-pwsh   (raw Host command execution)
-#   - tool-fs / tool-fs-search (unconfined Host filesystem read; `grep`/`glob`
-#     additionally bypass `ctx.fs` entirely and spawn `rg` as a subprocess)
-#
-# Everything else below is unchanged from `standard`: this file inherits its
-# structural comments about isolate realms, host-plane vs agent-plane
-# ownership, and per-row rationale verbatim where the row survives.
+# Bash, PowerShell, filesystem, and filesystem-search tools run under the
+# shared per-session sandbox policy. Filesystem reads are fenced to the
+# session workspace; Linux subprocesses receive Landlock file confinement and
+# a private PID namespace through `pid-isolate-run`; filesystem search wraps
+# ripgrep through the same process sandbox. Network access remains outside the
+# file/process policy. The sandbox Agent Note owns the mechanisms and limits:
+# `.agents/notes/implemented/feature/2026-07-06-sandbox.md`.
 
 # ── identity ────────────────────────────────────────────────────────────────
 
@@ -55,6 +40,26 @@
 
 - id: tool-goal
   name: '@deepseek-ai/dsh-tool-goal'
+
+# ── shell ───────────────────────────────────────────────────────────────────
+
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# ── filesystem ──────────────────────────────────────────────────────────────
+
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
 
 # ── plan mode ───────────────────────────────────────────────────────────────
 

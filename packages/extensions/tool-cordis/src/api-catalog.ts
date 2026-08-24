@@ -1085,11 +1085,21 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'sandboxPolicy',
     summary: 'The sandbox-policy service (`ctx.sandboxPolicy`).',
-    description: 'The sandbox-policy service (`ctx.sandboxPolicy`). Owns the deployment default mode, fallback workspace root, and current request-time policy section. Tool layers call resolve for each execution so a session\'s mode log and immutable cwd travel together to every enforcing capability.',
+    description: 'The sandbox-policy service (`ctx.sandboxPolicy`). Owns the deployment default and maximum modes, fallback workspace root, permitted escalation targets, and current request-time policy section. Tool layers call resolve for each execution so a session\'s mode log and immutable cwd travel together to every enforcing capability.',
     methods: [
       {
         signature: 'readonly defaultMode: SandboxMode',
         description: 'The deployment default mode — the fallback beneath a session override.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly maximumMode: SandboxMode',
+        description: 'The widest mode this deployment permits from standing state or escalation.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly escalationTargets: readonly SandboxEscalationTarget[]',
+        description: 'Escalation targets this deployment permits tools to advertise and execute.',
         parameters: [],
       },
       {
@@ -1099,7 +1109,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'resolve(request: SandboxPolicyRequest = {}): SandboxExecutionPolicy',
-        description: 'Resolve the complete policy for one capability call. An approved explicit mode outranks the session\'s last `sandbox/mode` event, which outranks the deployment default. A session cwd is its workspace-write boundary; the configured root is the fallback for agentless calls and sessions without a cwd.',
+        description: 'Resolve the complete policy for one capability call. An approved explicit mode outranks the session\'s last `sandbox/mode` event, which outranks the deployment default. Every source must stay at or below the deployment maximum. A session cwd is its workspace-write boundary; the configured root is the fallback for agentless calls and sessions without a cwd.',
         parameters: [{ name: 'request', description: 'optional session and approved mode override.' }],
         returns: 'the fully resolved per-call mode and absolute workspace root.',
       },
@@ -3831,6 +3841,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SandboxEnforcement',
     declaration: 'export type SandboxEnforcement = \'full\' | \'partial\';',
+  },
+  {
+    name: 'SandboxEscalationTarget',
+    declaration: 'export type SandboxEscalationTarget = typeof ESCALATION_TARGETS[number];',
   },
   {
     name: 'SandboxExecutionPolicy',

@@ -33,12 +33,7 @@
 # `permission` settings namespace (built from the table's own keys), or the
 # `permissions` session-projection UI catalog — there is no other write path
 # to `sandbox/mode` (`packages/sandbox/sandbox-policy`'s `setSandboxMode` has
-# exactly one caller in the whole repository: this service). A session whose
-# PERSISTED events already carry a `danger-full-access` selection from before
-# this policy applied is not separately re-guarded here: `danger-full-access`
-# only has an effect through `bash-sandbox`/`fs-sandbox`'s escalation path,
-# and neither tool is in the `drill-production` preset's approved roster, so
-# the persisted mode value is inert for any session running on it.
+# exactly one caller in the whole repository: this service).
 - id: permission
   config:
     presets:
@@ -48,6 +43,15 @@
       workspace-write:
         sandbox: workspace-write
         approval: ask
+
+# `maximumMode` closes both standing policy and one-call escalation above
+# workspace-write. The policy owner derives the schema target list from this
+# ceiling and rejects explicit or persisted wider modes during resolution.
+- id: sandbox-policy
+  config:
+    mode: !!js process.env.DSH_PERMISSION_MODE ?? 'workspace-write'
+    maximumMode: workspace-write
+    workspaceRoot: !!js process.cwd()
 
 # ── directory picker: closed, not root-confined (5.5) ────────────────────────
 #
@@ -105,4 +109,4 @@
 
     - id: drill-production-startup-check
       name: '@deepseek-ai/dsh-drill-production'
-      inject: [agentPresets, permissionPresets]
+      inject: [agentPresets, permissionPresets, sandboxPolicy]

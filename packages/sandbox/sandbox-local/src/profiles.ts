@@ -4,6 +4,7 @@
  * @module @deepseek-ai/dsh-sandbox-local/profiles
  */
 
+import { isAbsolute } from 'node:path'
 import { grantArgs as landlockGrantArgs } from '@deepseek-ai/node-addon-landlock-run'
 import { writableRoots } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
@@ -33,10 +34,17 @@ export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
 /**
  * Build the Landlock launcher grants for one file-effect policy.
  * @param policy - file-effect policy to express as Landlock allow-list grants.
+ * @param executable - exact outer consumer executable; an absolute packaged
+ *   binary outside `/usr` and the workspace needs a file-only read grant to
+ *   reach `execve`.
  * @returns launcher grant arguments before the trailing separator and command argv.
  */
-export function landlockProfileArgs(policy: SandboxPolicy): string[] {
-  const readOnly = [...LANDLOCK_SYSTEM_READ_ROOTS, policy.workspaceRoot]
+export function landlockProfileArgs(policy: SandboxPolicy, executable?: string): string[] {
+  const readOnly = [
+    ...LANDLOCK_SYSTEM_READ_ROOTS,
+    policy.workspaceRoot,
+    ...executable !== undefined && isAbsolute(executable) ? [executable] : [],
+  ]
   const readWrite = ['/dev/null']
   if (policy.mode === 'workspace-write') {
     readWrite.push('/tmp', policy.workspaceRoot)

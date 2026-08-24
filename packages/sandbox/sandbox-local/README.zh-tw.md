@@ -16,7 +16,7 @@ Windows 檔為每個工作區保留一個確定性寫入 SID 和常駐 ACE，但
 
 [`@deepseek-ai/node-addon-landlock-run`](https://www.npmjs.com/package/@deepseek-ai/node-addon-landlock-run) 提供平臺 launcher、功能探測和 CLI 參數詞彙。該提供方只負責模式到授權的對映與 runner 選擇。把路徑解析和探測解析保留在帶版本的 binary 中，可防止約定漂移。
 
-Linux Landlock profile 允許讀取工作階段 workspace 以及 `/usr`、`/etc/ld.so.cache`、`/etc/alternatives`；寫入權限仍由模式決定。這支援系統執行檔與 merged-usr loader symlink（符號連結），但不會授權 workspace 之外由使用者管理的 runtime 目錄。外層 [`@deepseek-ai/node-addon-pid-isolate-run`](../../../native/pid-isolate-run/) launcher 先建立獨立 PID namespace 與 procfs，內層 Landlock launcher 再施加檔案系統規則。部署必須對已安裝的 binary 執行 `setcap cap_sys_admin,cap_setpcap+ep` 並驗證 `--probe`；否則組合 runner 不可用，且沒有更前面的 runner 時會失敗閉合。Bubblewrap 不使用此特權 helper。
+Linux Landlock profile 允許讀取工作階段 workspace 以及 `/usr`、`/etc/ld.so.cache`、`/etc/alternatives`；寫入權限仍由模式決定。受信任消費方傳入的絕對外層執行檔會獲得只針對該檔案的讀取授權，使 ripgrep 一類隨附靜態工具可到達 `execve`，但不會授權其上級 runtime 目錄。系統根目錄支援普通執行檔與 merged-usr loader symlink（符號連結）。外層 [`@deepseek-ai/node-addon-pid-isolate-run`](../../../native/pid-isolate-run/) launcher 先建立獨立 PID namespace 與 procfs，內層 Landlock launcher 再施加檔案系統規則。部署必須對已安裝的 binary 執行 `setcap cap_sys_admin,cap_setpcap+ep` 並驗證 `--probe`；否則組合 runner 不可用，且沒有更前面的 runner 時會失敗閉合。Bubblewrap 不使用此特權 helper。
 
 ```yaml
 - id: sandbox

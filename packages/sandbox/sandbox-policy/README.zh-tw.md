@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh.md) | 繁體中文
 
-沙盒策略解析的唯一歸屬位置：部署預設 [`SandboxMode`](../sandbox/README.md) 與回退根目錄，加上每個工作階段的持久模式覆蓋和不可變工作區根目錄。每項負責強制執行的能力在每次呼叫時都會收到一項解析完成的模式與根目錄策略；模型在每次請求前會收到當前策略，而不會另收一份能力清單。
+沙盒策略解析的唯一歸屬位置：部署預設及最大 [`SandboxMode`](../sandbox/README.md)、允許的單次升權目標與回退根目錄，加上每個工作階段的持久模式覆蓋和不可變工作區根目錄。每項負責強制執行的能力在每次呼叫時都會收到一項解析完成的模式與根目錄策略；模型在每次請求前會收到當前策略，而不會另收一份能力清單。
 
 ## 為何需要共享歸屬位置
 
@@ -11,12 +11,14 @@
 ## 設定
 
 - `mode`：部署預設 `SandboxMode`（`read-only`／`workspace-write`／`danger-full-access`），載入時驗證。預設為 `read-only`（故障安全）。
+- `maximumMode`：部署允許其預設值、持久工作階段覆蓋或單次升權達到的最寬模式。預設為 `danger-full-access`。預設模式寬於此上限時，外掛程式會在載入時拒絕。
 - `workspaceRoot`：無 agent（代理）的呼叫或沒有 cwd 的工作階段在 `workspace-write` 下可寫入的回退目錄。預設為 `process.cwd()`；無論顯式設定還是採用預設值，都會解析為其絕對檔案系統標識。普通 agent 呼叫改用其工作階段頭中不可變的 `cwd`。
 
 ## 介面
 
-- `ctx.sandboxPolicy.resolve({ session?, mode? })`：解析一項完整的逐呼叫策略。顯式批准的模式優先於工作階段最後一條 `sandbox/mode` 事件，後者又優先於 `defaultMode`；工作階段不可變的 `cwd` 會先按檔案系統語義規範化，再成為 `workspaceRoot`，否則使用設定的回退值。規範化先於詞法歸一化，因此 `symlink/..` 與行程工作目錄解析保持一致。
-- `ctx.sandboxPolicy.defaultMode`／`ctx.sandboxPolicy.workspaceRoot`：`resolve()` 使用的部署預設值與回退根目錄。
+- `ctx.sandboxPolicy.resolve({ session?, mode? })`：解析一項完整的逐呼叫策略。顯式批准的模式優先於工作階段最後一條 `sandbox/mode` 事件，後者又優先於 `defaultMode`；所有來源都必須不寬於 `maximumMode`。工作階段不可變的 `cwd` 會先按檔案系統語義規範化，再成為 `workspaceRoot`，否則使用設定的回退值。規範化先於詞法歸一化，因此 `symlink/..` 與行程工作目錄解析保持一致。
+- `ctx.sandboxPolicy.defaultMode`／`maximumMode`／`workspaceRoot`：`resolve()` 使用的部署預設值、部署上限與回退根目錄。
+- `ctx.sandboxPolicy.escalationTargets`：按 `maximumMode` 篩選後的封閉升權詞彙。負責強制執行的工具會用同一個值進行 schema 展示與執行時授權。
 - `sandbox:policy`：直接派生自 `resolve({ session })` 的請求時快取安全上下文貢獻。它說明該模式中與具體能力無關的文件操作約定，以及 `workspace-write` 下規範化的工作階段工作區；工具歸屬方仍負責特定於操作的拒絕與升權引導。
 - `effectiveSandboxMode(events)`：工作階段 `sandbox/mode` 事件的純 fold（最後一次切換勝出，沒有則為 `undefined`），在 `resolve()` 內使用。
 - `setSandboxMode(session, mode)`：逐工作階段覆蓋的唯一寫入路徑：恰好追加一條 `sandbox/mode` 事件。切換本身就是事件；不會在帶外修改模式。

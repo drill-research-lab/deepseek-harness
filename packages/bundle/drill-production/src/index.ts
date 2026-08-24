@@ -23,6 +23,7 @@ import type {} from '@deepseek-ai/dsh-agent-presets'
 // or reopened by a later patch layer) the fully-patched composition resolves to.
 import type {} from '@deepseek-ai/dsh-cordis-host-runner'
 import type {} from '@deepseek-ai/dsh-permission-presets'
+import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-session-query'
 // Value import: the check narrows `ctx.sessionQuery` to this concrete engine
 // before reading its sqlite-specific `openAt` field, which the abstract
@@ -32,7 +33,7 @@ import { SqliteSessionQueryEngine } from '@deepseek-ai/dsh-session-query-sqlite'
 /** Cordis plugin name. */
 export const name = 'drill-production-startup-check'
 /** Services this check reads before asserting the closed policy. */
-export const inject = ['agentPresets', 'permissionPresets']
+export const inject = ['agentPresets', 'permissionPresets', 'sandboxPolicy']
 
 const PRODUCTION_PRESET_ID = 'drill-production'
 const PRODUCTION_PERMISSION_SPECS = new Map([
@@ -47,6 +48,10 @@ export interface DrillProductionPolicy {
   includeUserRoot: boolean
   permissionNames: readonly string[]
   resolvePermission(name: string): { sandbox: string; approval: string }
+  /** Widest sandbox mode the resolved production policy permits. */
+  sandboxMaximumMode: string
+  /** One-call escalation targets exposed by the resolved production policy. */
+  sandboxEscalationTargets: readonly string[]
   /** Whether `ctx.dynamicCordisRunner` is mounted in the fully-patched composition. */
   dynamicCordisRunnerMounted: boolean
   /**
@@ -97,6 +102,22 @@ export function validateDrillProductionPolicy(policy: DrillProductionPolicy): vo
     }
   }
 
+  if (policy.sandboxMaximumMode !== 'workspace-write') {
+    throw new Error(
+      'dsh-drill-production: sandbox-policy.maximumMode must be "workspace-write"; received '
+      + JSON.stringify(policy.sandboxMaximumMode),
+    )
+  }
+  const escalationTargets = new Set(policy.sandboxEscalationTargets)
+  if (escalationTargets.size !== 1
+    || !escalationTargets.has('workspace-write')
+    || policy.sandboxEscalationTargets.length !== escalationTargets.size) {
+    throw new Error(
+      'dsh-drill-production: sandbox escalation targets must be exactly {workspace-write}; received {'
+      + `${policy.sandboxEscalationTargets.join(', ')}}`,
+    )
+  }
+
   if (policy.dynamicCordisRunnerMounted) {
     throw new Error(
       'dsh-drill-production: cordis-host-runner must not be mounted; '
@@ -129,6 +150,8 @@ export function apply(ctx: Context): void {
     includeUserRoot: ctx.agentPresets.config.includeUserRoot,
     permissionNames: ctx.permissionPresets.names,
     resolvePermission: presetName => ctx.permissionPresets.resolve(presetName),
+    sandboxMaximumMode: ctx.sandboxPolicy.maximumMode,
+    sandboxEscalationTargets: ctx.sandboxPolicy.escalationTargets,
     dynamicCordisRunnerMounted: ctx.get('dynamicCordisRunner') !== undefined,
     sessionQuerySqliteOpenAt: sessionQuery instanceof SqliteSessionQueryEngine
       ? sessionQuery.config.openAt
