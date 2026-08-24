@@ -1,0 +1,33 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../writing/writing"
+    },
+    {
+      "path": "../../writing/writing-compile"
+    },
+    {
+      "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../host/webserver"
+    },
+    {
+      "path": "../../identity/auth"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
+    }
+  ]
+}
