@@ -6,7 +6,10 @@ Status: implemented
 
 This note documents the authoring-side vertical slice of the Drill **Writing** feature on the `feat/writing-plugin` branch: durable report projects, LaTeX compilation with diagnostics, the model-facing write→compile→fix loop, and a writer subagent entry point. The web UI (report list + LaTeX/PDF split editor) and the knowledge-base delivery wiring are separate, later increments.
 
-## Package layout
+- `writing-api/` (`ctx.writing`) — the browser-facing writing gateway: projects `ctx.reports` + `ctx.latexCompile` into a plain JSON wire contract (`list/get/create/updateContent/rename/remove/compile/versions/restore/templates/addTemplate`), returns a served `pdfUrl` on a successful compile (auto-snapshotting a version), and streams the compiled PDF on `GET /writing/<reportId>/pdf`. Mounted as `writingRemote` in `api/remotes` so the browser gets `ctx.remote.writing.*`.
+- `client/ui-writing/` — the Writing browser surface: a `conversation.view` entry ("Writing") with a report list, a LaTeX source editor + PDF preview, and compile feedback with version restore. It drives everything through `ctx.remote.writing.*`.
+
+## Package layout (server)
 
 The `packages/writing/` group holds four packages:
 
@@ -28,6 +31,8 @@ Compilation is model-driven and version-backed: the writer child (or any agent) 
 
 ## Deferred
 
-- Web UI (report list panel, LaTeX/PDF split editor, chat pane), Host Remote assembly (`api/remotes`) mounting, and bundle composition.
-- texlab LSP diagnostics and section-level (non-whole-source) edits.
-- Keyless snapshot transcript coverage and full gate verification (coverage/doc-sync/module-graph regeneration) for the new group.
+- LaTeX syntax highlighting (the editor is a plain textarea); CodeMirror 6 and section-level (non-whole-source) edits.
+- Live two-way sync (an agent editing while the Writing view is open); the view reloads on selection.
+- Full agent-chat binding in the Writing view (the bottom pane shows compile feedback + version restore).
+- texlab LSP diagnostics.
+- Keyless snapshot transcript coverage and full gate verification (coverage/doc-sync/module-graph regeneration) for the new packages.
