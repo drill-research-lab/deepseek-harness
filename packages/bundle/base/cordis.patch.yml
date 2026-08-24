@@ -369,6 +369,22 @@
       config:
         allowParallelInProgress: true
 
+    # Writing capability: durable report projects, LaTeX compilation with
+    # diagnostics, the report_* model-facing tools, and the writer subagent.
+    # The browser Remote/PDF surface (dsh-writing-api) is web-only and mounts in
+    # the web-app layer.
+    - id: writing
+      name: '@deepseek-ai/dsh-writing'
+
+    - id: writing-compile
+      name: '@deepseek-ai/dsh-writing-compile'
+
+    - id: tool-writing
+      name: '@deepseek-ai/dsh-tool-writing'
+
+    - id: agent-writer
+      name: '@deepseek-ai/dsh-agent-writer'
+
     # Persisted same-session goals reach the model and the slash menu here; the
     # domain, driver, and `/goal` command are above.
     - id: tool-goal

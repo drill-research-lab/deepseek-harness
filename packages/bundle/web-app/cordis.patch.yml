@@ -173,6 +173,9 @@
     - id: api-remotes
       name: '@deepseek-ai/dsh-api-remotes'
 
+    - id: writing-api
+      name: '@deepseek-ai/dsh-writing-api'
+
     - id: client-runtime
       name: '@deepseek-ai/dsh-client-runtime'
 
@@ -248,6 +251,11 @@
     # Goal surface: GoalBar in the input dock over the goal session projection.
     - id: ui-goal
       name: '@deepseek-ai/dsh-client-ui-goal'
+
+    # Writing surface: report list + LaTeX/PDF split editor + compile feedback,
+    # driven through the writing Remote contract.
+    - id: ui-writing
+      name: '@deepseek-ai/dsh-client-ui-writing'
 
     # Per-message feedback: Like/Dislike plus an optional note in the
     # assistant-message action strip, over the messageFeedback Remote.
