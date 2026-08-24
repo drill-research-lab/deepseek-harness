@@ -89,11 +89,13 @@ jobs:
       - name: Build native binaries (this architecture is the builder of record)
         run: |
           pnpm build:native
+          pnpm build:test-capbset-read-fail
           pnpm build:test-drop-noop
 
       - name: Install launcher capabilities
         run: |
           sudo setcap cap_sys_admin,cap_setpcap+ep packages/${{ matrix.platform }}/bin/pid-isolate-run
+          sudo setcap cap_sys_admin,cap_setpcap+ep test/.bin/pid-isolate-run-capbset-read-fail
           sudo setcap cap_sys_admin,cap_setpcap+ep test/.bin/pid-isolate-run-drop-noop
 
       - name: Entry tests (keyless)

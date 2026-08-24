@@ -23,4 +23,4 @@ The outer process remains only to reap PID-namespace init and propagate its exit
 
 ## Failure model
 
-Every setup, verification, usage, or exec failure prints a `pid-isolate-run:` diagnostic, exits `125`, and does not execute the caller command. The `DROP_NOOP` compiler option skips capability removal solely so tests can prove that verification aborts before exec; release builds never define it.
+Every setup, verification, usage, or exec failure prints a `pid-isolate-run:` diagnostic, exits `125`, and does not execute the caller command. The `DROP_NOOP` compiler option skips capability removal, and `CAPBSET_READ_FAIL` makes bounding-set inspection fail; tests use these options to prove that verification aborts before exec, and release builds never define either option.

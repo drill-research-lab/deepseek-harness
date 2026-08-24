@@ -1,6 +1,6 @@
 # Release procedure
 
-Use the dedicated `PID Isolate Run Release` workflow. Each native architecture builds its own static binary, applies the two file capabilities to an ephemeral CI build, and runs the real positive and `DROP_NOOP` negative tests. The pack job assembles the artifacts, verifies package versions and manifests, and rehearses installation from the produced tarballs.
+Use the dedicated `PID Isolate Run Release` workflow. Each native architecture builds its own static binary, applies the two file capabilities to ephemeral CI builds, and runs the real positive, capability-retention, and bounding-set-read-failure tests. The pack job assembles the artifacts, verifies package versions and manifests, and rehearses installation from the produced tarballs.
 
 Publication uses one version across the entry and both platform packages. Deployment tooling must apply this command to the installed platform binary:
 

@@ -69,11 +69,13 @@ jobs:
         run: |
           pnpm build:ts
           pnpm build:native
+          pnpm build:test-capbset-read-fail
           pnpm build:test-drop-noop
 
       - name: Install launcher capabilities
         run: |
           sudo setcap cap_sys_admin,cap_setpcap+ep ${{ matrix.dir }}/bin/pid-isolate-run
+          sudo setcap cap_sys_admin,cap_setpcap+ep test/.bin/pid-isolate-run-capbset-read-fail
           sudo setcap cap_sys_admin,cap_setpcap+ep test/.bin/pid-isolate-run-drop-noop
 
       - name: Launcher tests (real kernel enforcement)

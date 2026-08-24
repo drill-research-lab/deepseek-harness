@@ -1,6 +1,6 @@
 /**
  * Real-kernel tests for the namespace launcher. Privileged assertions require
- * both the release and DROP_NOOP binaries to carry
+ * the release and fault-injection binaries to carry
  * cap_sys_admin,cap_setpcap+ep; CI and local orchestration install those file
  * capabilities before running this file.
  */
@@ -29,6 +29,7 @@ if (process.platform !== 'linux') {
 }
 
 const launcher = launcherPath();
+const capbsetReadFail = path.join(import.meta.dirname, '.bin', 'pid-isolate-run-capbset-read-fail');
 const dropNoop = path.join(import.meta.dirname, '.bin', 'pid-isolate-run-drop-noop');
 assert.ok(fs.existsSync(launcher), `launcher.test: missing ${launcher}; run pnpm build:native`);
 
@@ -158,6 +159,22 @@ assert.ok(fs.existsSync(dropNoop), `launcher.test: missing ${dropNoop}; run pnpm
   assert.match(result.stderr, /CAP_SYS_ADMIN/);
   assert.match(result.stderr, /CAP_SETPCAP/);
   assert.equal(fs.existsSync(marker), false, 'DROP_NOOP verification failure must abort before exec');
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+assert.ok(
+  fs.existsSync(capbsetReadFail),
+  `launcher.test: missing ${capbsetReadFail}; run pnpm build:test-capbset-read-fail`,
+);
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'npir-capbset-read-fail-'));
+  const marker = path.join(dir, 'must-not-exist');
+  const result = run(capbsetReadFail, ['--', '/bin/sh', '-c', `printf escaped > ${marker}`]);
+  assert.equal(result.status, LAUNCHER_FAILURE_EXIT);
+  assert.match(result.stderr, /PR_CAPBSET_READ failed for CAP_SYS_ADMIN/);
+  assert.match(result.stderr, /PR_CAPBSET_READ failed for CAP_SETPCAP/);
+  assert.doesNotMatch(result.stderr, /remaining/u);
+  assert.equal(fs.existsSync(marker), false, 'bounding-set read failure must abort before exec');
   fs.rmSync(dir, { recursive: true, force: true });
 }
 

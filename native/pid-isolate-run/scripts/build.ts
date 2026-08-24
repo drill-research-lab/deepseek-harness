@@ -31,8 +31,11 @@ const TOOLS: Record<string, { source: string }> = {
 
 const repoRoot = resolve(import.meta.dirname, '..')
 const testDropNoop = process.argv.slice(2).includes('--test-drop-noop')
-if (process.argv.slice(2).some(argument => argument !== '--test-drop-noop')) {
-  console.error('build: unknown argument; expected only --test-drop-noop')
+const testCapbsetReadFail = process.argv.slice(2).includes('--test-capbset-read-fail')
+const testBuildCount = Number(testDropNoop) + Number(testCapbsetReadFail)
+if (process.argv.slice(2).some(argument =>
+  argument !== '--test-drop-noop' && argument !== '--test-capbset-read-fail') || testBuildCount > 1) {
+  console.error('build: expected at most one test build argument')
   process.exit(1)
 }
 
@@ -42,11 +45,13 @@ if (process.platform !== 'linux') {
 }
 const hostPlatform = `linux-${process.arch}`
 
-if (testDropNoop) {
-  const binary = join(repoRoot, 'test', '.bin', 'pid-isolate-run-drop-noop')
+if (testDropNoop || testCapbsetReadFail) {
+  const variant = testDropNoop ? 'drop-noop' : 'capbset-read-fail'
+  const define = testDropNoop ? '-DDROP_NOOP' : '-DCAPBSET_READ_FAIL'
+  const binary = join(repoRoot, 'test', '.bin', `pid-isolate-run-${variant}`)
   mkdirSync(dirname(binary), { recursive: true })
   const result = spawnSync('musl-gcc', [
-    '-std=c11', '-Os', '-Wall', '-Wextra', '-Werror', '-static', '-s', '-DDROP_NOOP',
+    '-std=c11', '-Os', '-Wall', '-Wextra', '-Werror', '-static', '-s', define,
     '-o', binary, join(repoRoot, TOOLS['pid-isolate-run'].source),
   ], { stdio: ['ignore', 'inherit', 'inherit'] })
   if (result.error !== undefined || result.status !== 0) {
@@ -54,7 +59,7 @@ if (testDropNoop) {
       (result.error ? ` (${result.error.message} — is musl-tools installed?)` : ''))
     process.exit(1)
   }
-  console.log('build: built test/.bin/pid-isolate-run-drop-noop (DROP_NOOP test variant)')
+  console.log(`build: built test/.bin/pid-isolate-run-${variant} (${define.slice(2)} test variant)`)
   process.exit(0)
 }
 

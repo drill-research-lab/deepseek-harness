@@ -124,15 +124,45 @@ static int capability_is_set(const struct user_cap_data data[2], int capability)
   return ((data[word].effective | data[word].permitted | data[word].inheritable) & bit) != 0;
 }
 
-static int verify_capability_absent(const struct user_cap_data data[2], int capability) {
-  if (capability_is_set(data, capability)) return 0;
-  errno = 0;
-  long bounding = prctl(PR_CAPBSET_READ, capability, 0, 0, 0);
-  if (bounding < 0) {
-    fail("capability drop verification failed", strerror(errno));
-    return 0;
+enum capability_absence_result {
+  CAPABILITY_ABSENT,
+  CAPABILITY_PRESENT,
+  CAPABILITY_ABSENCE_UNVERIFIABLE,
+};
+
+struct capability_absence_check {
+  enum capability_absence_result result;
+  int error;
+};
+
+static long read_bounding_capability(int capability) {
+#ifdef CAPBSET_READ_FAIL
+  /* Test-only build: verification must attribute an unreadable bounding set. */
+  (void)capability;
+  errno = EIO;
+  return -1;
+#else
+  return prctl(PR_CAPBSET_READ, capability, 0, 0, 0);
+#endif
+}
+
+static struct capability_absence_check check_capability_absence(
+    const struct user_cap_data data[2], int capability) {
+  if (capability_is_set(data, capability)) {
+    return (struct capability_absence_check) { CAPABILITY_PRESENT, 0 };
   }
-  return bounding == 0;
+  errno = 0;
+  long bounding = read_bounding_capability(capability);
+  if (bounding < 0) {
+    return (struct capability_absence_check) {
+      CAPABILITY_ABSENCE_UNVERIFIABLE,
+      errno,
+    };
+  }
+  return (struct capability_absence_check) {
+    bounding == 0 ? CAPABILITY_ABSENT : CAPABILITY_PRESENT,
+    0,
+  };
 }
 
 static int verify_capabilities_dropped(void) {
@@ -144,12 +174,26 @@ static int verify_capabilities_dropped(void) {
   if (syscall(SYS_capget, &header, &data) != 0) {
     return fail("capability drop verification failed", strerror(errno));
   }
-  const int sys_admin_absent = verify_capability_absent(data, CAP_SYS_ADMIN);
-  const int setpcap_absent = verify_capability_absent(data, CAP_SETPCAP);
-  if (!sys_admin_absent || !setpcap_absent) {
+  const struct capability_absence_check sys_admin =
+    check_capability_absence(data, CAP_SYS_ADMIN);
+  const struct capability_absence_check setpcap =
+    check_capability_absence(data, CAP_SETPCAP);
+  if (sys_admin.result == CAPABILITY_ABSENCE_UNVERIFIABLE) {
+    fprintf(stderr, "pid-isolate-run: capability drop verification failed: "
+            "PR_CAPBSET_READ failed for CAP_SYS_ADMIN: %s\n",
+            strerror(sys_admin.error));
+  }
+  if (setpcap.result == CAPABILITY_ABSENCE_UNVERIFIABLE) {
+    fprintf(stderr, "pid-isolate-run: capability drop verification failed: "
+            "PR_CAPBSET_READ failed for CAP_SETPCAP: %s\n",
+            strerror(setpcap.error));
+  }
+  if (sys_admin.result == CAPABILITY_PRESENT || setpcap.result == CAPABILITY_PRESENT) {
     fprintf(stderr, "pid-isolate-run: capability drop verification failed: remaining%s%s\n",
-            sys_admin_absent ? "" : " CAP_SYS_ADMIN",
-            setpcap_absent ? "" : " CAP_SETPCAP");
+            sys_admin.result == CAPABILITY_PRESENT ? " CAP_SYS_ADMIN" : "",
+            setpcap.result == CAPABILITY_PRESENT ? " CAP_SETPCAP" : "");
+  }
+  if (sys_admin.result != CAPABILITY_ABSENT || setpcap.result != CAPABILITY_ABSENT) {
     return EXIT_LAUNCHER_FAILURE;
   }
   return 0;
