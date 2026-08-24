@@ -1,14 +1,14 @@
 /**
  * Model-facing writing tools: create, edit, read, compile, and version LaTeX
  * reports. Successfully compiled reports are version-snapshotted automatically,
- * closing the write → compile → fix loop for the writer agent.
+ * closing the write ??compile ??fix loop for the writer agent.
  * @module @deepseek-ai/dsh-tool-writing
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { ReportId, TemplateId, VersionId } from '@deepseek-ai/dsh-writing'
+import { ReportId as reportId, TemplateId as templateId, VersionId as versionId } from '@deepseek-ai/dsh-writing'
 
 export type {} from '@deepseek-ai/dsh-writing'
 export type {} from '@deepseek-ai/dsh-writing-compile'
@@ -65,11 +65,11 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [text(`Created report ${value.reportId} ("${value.title}").\n\nSource:\n${value.source}`)],
     },
     execute: async (args) => {
-      const templateId = args.templateId === undefined ? undefined : resolveTemplateId(ctx, args.templateId)
+      const resolvedTemplate = args.templateId === undefined ? undefined : resolveTemplateId(ctx, args.templateId)
       const source = args.source === undefined ? undefined : args.source
       const report = await ctx.reports.create({
         title: args.title,
-        ...(templateId === undefined ? {} : { templateId }),
+        ...(resolvedTemplate === undefined ? {} : { templateId: resolvedTemplate }),
         ...(source === undefined ? {} : { source }),
       })
       return { reportId: String(report.id), title: report.title, source: report.source }
@@ -100,7 +100,7 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [text(`Wrote ${value.chars} characters to report ${value.reportId}.`)],
     },
     execute: async (args) => {
-      const report = await ctx.reports.updateContent(ReportId(args.reportId), args.source)
+      const report = await ctx.reports.updateContent(reportId(args.reportId), args.source)
       return { reportId: String(report.id), chars: report.source.length, updatedAt: report.updatedAt }
     },
     presentCall: args => ({ card: 'generic', title: `Write report ${args.reportId}`, kind: 'edit', rawInput: args.reportId }),
@@ -128,7 +128,7 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [text(readText(value))],
     },
     execute: async (args) => {
-      const report = requireReport(ctx, ReportId(args.reportId))
+      const report = requireReport(ctx, reportId(args.reportId))
       const source = report.source
       const truncated = source.length > config.maxReadChars
       const clipped = truncated ? source.slice(0, config.maxReadChars) : source
@@ -178,7 +178,7 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [text(compileText(value))],
     },
     execute: async (args, exec) => {
-      const report = requireReport(ctx, ReportId(args.reportId))
+      const report = requireReport(ctx, reportId(args.reportId))
       const output = await ctx.latexCompile.compile({
         reportId: args.reportId,
         source: report.source,
@@ -231,7 +231,7 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [text(versionsText(value.versions))],
     },
     execute: async (args) => {
-      const versions = ctx.reports.listVersions(ReportId(args.reportId))
+      const versions = ctx.reports.listVersions(reportId(args.reportId))
       return {
         versions: versions.map(version => ({ id: String(version.id), label: version.label, createdAt: version.createdAt })),
       }
@@ -260,7 +260,7 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [text(`Restored report ${value.reportId}.\n\nSource:\n${value.source}`)],
     },
     execute: async (args) => {
-      const report = await ctx.reports.restoreVersion(ReportId(args.reportId), VersionId(args.versionId))
+      const report = await ctx.reports.restoreVersion(reportId(args.reportId), versionId(args.versionId))
       return { reportId: String(report.id), source: report.source }
     },
     presentCall: args => ({ card: 'generic', title: `Restore report ${args.reportId}`, kind: 'edit', rawInput: args.versionId }),
@@ -268,8 +268,8 @@ export function apply(ctx: Context, config: Config): void {
 }
 
 /** Resolve a template id from either an id or a built-in template name. */
-function resolveTemplateId(ctx: Context, candidate: string): TemplateId {
-  const canonical = TemplateId(candidate)
+function resolveTemplateId(ctx: Context, candidate: string): ReturnType<typeof templateId> {
+  const canonical = templateId(candidate)
   if (ctx.reports.template(canonical) !== undefined) return canonical
   const named = ctx.reports.listTemplates().find(template => template.name === candidate)
   if (named === undefined) throw new Error(`unknown template '${candidate}'`)
@@ -277,7 +277,7 @@ function resolveTemplateId(ctx: Context, candidate: string): TemplateId {
 }
 
 /** Require a live report or throw on an unknown id. */
-function requireReport(ctx: Context, id: ReportId) {
+function requireReport(ctx: Context, id: ReturnType<typeof reportId>) {
   const report = ctx.reports.get(id)
   if (report === undefined) throw new Error(`unknown report '${String(id)}'`)
   return report

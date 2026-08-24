@@ -5024,6 +5024,18 @@ importers:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
 
+  packages/identity/auth-dev:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-auth':
+        specifier: workspace:^
+        version: link:../auth
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+
   packages/identity/auth-gateway-ldap:
     dependencies:
       '@deepseek-ai/schemastery':

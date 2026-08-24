@@ -14,25 +14,16 @@ import type {
   AddTemplateRequest,
   CreateReportRequest,
   Report,
-  ReportId as ReportIdBrand,
+  ReportId,
   ReportTemplate,
   ReportVersion,
-  TemplateId as TemplateIdBrand,
-  VersionId as VersionIdBrand,
+  TemplateId,
+  VersionId,
 } from './types.ts'
 
 export { writingDomainSpec } from './spec.ts'
 export type { ReportRecord, ReportTemplateRecord, ReportVersionRecord } from './spec.ts'
-export type { AddTemplateRequest, CreateReportRequest, Report, ReportTemplate, ReportVersion } from './types.ts'
-
-/** Identifies one report project (see `src/types.ts` for the brand rationale). */
-export type ReportId = ReportIdBrand
-
-/** Identifies one report template (see `src/types.ts` for the brand rationale). */
-export type TemplateId = TemplateIdBrand
-
-/** Identifies one version snapshot (see `src/types.ts` for the brand rationale). */
-export type VersionId = VersionIdBrand
+export type * from './types.ts'
 
 /**
  * Brand a string as a {@link ReportId}.
