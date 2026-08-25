@@ -378,6 +378,10 @@
 
     - id: writing-compile
       name: '@deepseek-ai/dsh-writing-compile'
+      config:
+        # A stable, absolute artifact root so the compile service and the
+        # /writing/<id>/pdf serving route read the same directory.
+        artifactRoot: !!js dshHomePath('writing-artifacts')
 
     - id: tool-writing
       name: '@deepseek-ai/dsh-tool-writing'
