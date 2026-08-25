@@ -45,9 +45,15 @@ import type { ConfinedArgv, ConfinedSandboxMode, RunnerFailureRule, SandboxEnfor
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { AclWriteGrant, assertTempRootOutsideWorkspace, tempWriteSid, workspaceWriteSid } from '@deepseek-ai/dsh-sandbox-windows-acl'
 import { bwrapProfileArgs, landlockProfileArgs, seatbeltProfileArgs } from './profiles.ts'
+import {
+  probeResourceLimits as defaultProbeResourceLimits,
+  resolveResourceLimits,
+  resourceLimitedArgv,
+} from './resource-limits.ts'
+import type { ResourceLimitConfig, ResourceLimits } from './resource-limits.ts'
 
 /** Plugin config. All optional — `static Config` supplies the defaults. */
-export interface Config {
+export interface Config extends ResourceLimitConfig {
   /**
    * Override the runner argv; bwrap-compatible profile arguments are appended. A
    * non-empty override asserts full enforcement and skips built-in selection and
@@ -145,6 +151,8 @@ export interface SandboxInternals {
   probeWindowsAcl?: () => boolean
   /** Replaces the private-temp-directory removal at provider dispose (a throwing fake exercises the cleanup-failure path). */
   rmTempDir?: (path: string) => void
+  /** Replaces the systemd user-scope functional probe. */
+  probeResourceLimits?: () => boolean
 }
 
 /** The chain's verdict: which runner confines, and how completely it enforces. */
@@ -225,6 +233,11 @@ const DENIAL_SIGNATURES = {
 /** The windows-acl runner's documented failure exit (its own RUNNER_FAILURE_EXIT contract, distinct from Landlock's 125). */
 const WINDOWS_ACL_RUNNER_FAILURE_EXIT = 127
 
+/** Fatal diagnostics emitted before systemd starts the inner sandbox chain. */
+const SYSTEMD_RUNNER_FAILURE_RULE: RunnerFailureRule = {
+  fatalSignatures: ['Failed to connect to bus', 'Failed to start transient scope unit'],
+}
+
 /**
  * Runner-owned fatal diagnostics. Landlock has a versioned exit-125 plus
  * fatal-line launcher-failure contract. Bubblewrap's current fatal paths exit
@@ -269,6 +282,12 @@ export class LocalSandboxProvider extends SandboxProvider {
     runnerCommand: z.array(z.string()).default([]),
     runnerFailureSignatures: z.array(z.string()).default([]),
     probeTimeoutMs: z.natural().default(5_000),
+    cpuQuotaPercent: z.number().min(Number.MIN_VALUE),
+    memoryMaxBytes: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER),
+    memorySwapMaxBytes: z.number().step(1).min(0).max(Number.MAX_SAFE_INTEGER),
+    maxTasks: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER),
+    walltimeSeconds: z.number().min(Number.MIN_VALUE),
+    timeoutStopSeconds: z.number().min(Number.MIN_VALUE),
   })
 
   /** Test hook (mirrors the bash executors' `internals`). */
@@ -277,6 +296,9 @@ export class LocalSandboxProvider extends SandboxProvider {
   private readonly runnerCommand: string[] | undefined
   private readonly configuredRunnerFailureSignatures: string[]
   private readonly probeTimeoutMs: number
+  private readonly resourceLimits: ResourceLimits | undefined
+  /** Cached functional verdict for a configured resource-limit rung. */
+  private resourceLimitsAvailable: boolean | undefined
   /** Cached chain verdict; undefined until the first confined wrap needs it. */
   private selectedRunner: SelectedRunner | 'unavailable' | undefined
   /**
@@ -309,6 +331,7 @@ export class LocalSandboxProvider extends SandboxProvider {
     this.configuredRunnerFailureSignatures = runnerFailureSignatures
     this.probeTimeoutMs = config.probeTimeoutMs as number
     assertPositiveFinite('probeTimeoutMs', this.probeTimeoutMs)
+    this.resourceLimits = resolveResourceLimits(config)
     // The temp grants are revoked with the provider: a clean server
     // shutdown leaves no temp ACEs behind (workspace ACEs stand by design —
     // the reuse cache; an unclean shutdown leaves them for the next
@@ -331,20 +354,32 @@ export class LocalSandboxProvider extends SandboxProvider {
    */
   confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv {
     if (this.runnerCommand !== undefined) {
-      return {
+      return this.withResourceLimits({
         argv: [...this.runnerCommand, ...bwrapProfileArgs(policy), '--', ...argv],
         enforcement: 'full',
         denialSignatures: DENIAL_SIGNATURES.runnerCommand,
         runnerFailureRules: [{ fatalSignatures: this.configuredRunnerFailureSignatures }],
-      }
+      }, policy.mode)
     }
     const selected = this.selectRunner(policy.mode)
     const runnerArgv = this.runnerArgv(selected.runner, policy, argv)
-    return {
+    return this.withResourceLimits({
       argv: [...runnerArgv, '--', ...argv],
       enforcement: selected.enforcement,
       denialSignatures: DENIAL_SIGNATURES[selected.runner],
       runnerFailureRules: RUNNER_FAILURE_RULES[selected.runner],
+    }, policy.mode)
+  }
+
+  /** Apply the configured outer scope after its one-time functional probe succeeds. */
+  private withResourceLimits(confined: ConfinedArgv, mode: ConfinedSandboxMode): ConfinedArgv {
+    if (this.resourceLimits === undefined) return confined
+    this.resourceLimitsAvailable ??= (this.internals.probeResourceLimits ?? (() => defaultProbeResourceLimits(this.probeTimeoutMs)))()
+    if (!this.resourceLimitsAvailable) throw new SandboxUnavailableError(mode)
+    return {
+      ...confined,
+      argv: resourceLimitedArgv(this.resourceLimits, confined.argv),
+      runnerFailureRules: [SYSTEMD_RUNNER_FAILURE_RULE, ...confined.runnerFailureRules],
     }
   }
 

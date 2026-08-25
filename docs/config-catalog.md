@@ -1610,7 +1610,7 @@ Source: [`packages/guard/repeat-tool-reminder/src/index.ts:28`](../packages/guar
 
 ```ts config-catalog
 /** Plugin config. All optional — `static Config` supplies the defaults. */
-export interface Config {
+export interface Config extends ResourceLimitConfig {
   /**
    * Override the runner argv; bwrap-compatible profile arguments are appended. A
    * non-empty override asserts full enforcement and skips built-in selection and
@@ -1632,9 +1632,25 @@ export interface Config {
   /** Positive timeout for each functional probe; zero would mean unbounded to Node. */
   probeTimeoutMs?: number
 }
+
+/** User-configurable limits for one local sandbox process tree. */
+export interface ResourceLimitConfig {
+  /** CPU capacity as a percentage of one logical CPU; values above 100 permit multiple CPUs. */
+  cpuQuotaPercent?: number
+  /** Maximum resident memory in bytes. Setting this also sets swap to zero unless explicitly bounded. */
+  memoryMaxBytes?: number
+  /** Maximum swap in bytes; valid only with {@link memoryMaxBytes}. */
+  memorySwapMaxBytes?: number
+  /** Maximum number of tasks in the scope. */
+  maxTasks?: number
+  /** Seconds before systemd stops the entire scope. */
+  walltimeSeconds?: number
+  /** Seconds between systemd's stop request and its SIGKILL escalation. */
+  timeoutStopSeconds?: number
+}
 ```
 
-Source: [`packages/sandbox/sandbox-local/src/index.ts:50`](../packages/sandbox/sandbox-local/src/index.ts)
+Source: [`packages/sandbox/sandbox-local/src/index.ts:56`](../packages/sandbox/sandbox-local/src/index.ts)
 
 <a id="deepseek-aidsh-sandbox-policy"></a>
 

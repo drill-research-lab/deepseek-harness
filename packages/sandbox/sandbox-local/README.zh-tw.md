@@ -18,9 +18,18 @@ Windows 檔為每個工作區保留一個確定性寫入 SID 和常駐 ACE，但
 
 Linux Landlock profile 允許讀取工作階段 workspace 以及 `/usr`、`/etc/ld.so.cache`、`/etc/alternatives`；寫入權限仍由模式決定。受信任消費方傳入的絕對外層執行檔會獲得只針對該檔案的讀取授權，使 ripgrep 一類隨附靜態工具可到達 `execve`，但不會授權其上級 runtime 目錄。系統根目錄支援普通執行檔與 merged-usr loader symlink（符號連結）。外層 [`@deepseek-ai/node-addon-pid-isolate-run`](../../../native/pid-isolate-run/) launcher 先建立獨立 PID namespace 與 procfs，內層 Landlock launcher 再施加檔案系統規則。部署必須對已安裝的 binary 執行 `setcap cap_sys_admin,cap_setpcap+ep` 並驗證 `--probe`；否則組合 runner 不可用，且沒有更前面的 runner 時會失敗閉合。Bubblewrap 不使用此特權 helper。
 
+可選的 Linux 資源限制會在所選 runner chain 最外層加入 `systemd-run --user --scope`。`cpuQuotaPercent` 對映到 `CPUQuota`；`maxTasks` 對映到 `TasksMax`；`walltimeSeconds` 對映到 `RuntimeMaxSec`，`timeoutStopSeconds` 控制從 SIGTERM 到 SIGKILL 的寬限期，預設 2 秒。`memoryMaxBytes` 始終攜帶 `MemorySwapMax`：省略 `memorySwapMaxBytes` 時會安全地解析為零，而只設定 swap、不設定 memory 會被拒絕。第一次受限呼叫會進行功能探測，證明使用者 manager 能建立 scope，且 cgroup v2 記錄了預期的 CPU、memory、零 swap 與工作限制。缺少使用者 systemd 或 D-Bus 支援時會以 `SANDBOX_UNAVAILABLE` 失敗閉合；所有限制均未設定時則明確省略該層。
+
+`walltimeSeconds` 是部署層級上限，不會取代 Bash 與 PowerShell 執行器逐請求的前景 timeout。執行器 deadline 保留逐呼叫 override 與模型可見的 `timedOut` 分類，同時已經會終止 detached process tree；背景 shell 執行不使用該 deadline。systemd 上限還會涵蓋背景執行與 launcher chain。先到期的一方會終止整棵樹；systemd 先到期時會報告為 signal 結果，而不是執行器 timeout。
+
 ```yaml
 - id: sandbox
   name: '@deepseek-ai/dsh-sandbox-local'
+  config:
+    cpuQuotaPercent: 50
+    memoryMaxBytes: 1073741824
+    maxTasks: 256
+    walltimeSeconds: 300
 ```
 
 消費端：[`@deepseek-ai/dsh-bash-sandbox`](../../shell/bash-sandbox/)；可執行的預設組合見 [acp-agent 示例](../../../examples/acp-agent/)。
@@ -40,3 +49,4 @@ Linux Landlock profile 允許讀取工作階段 workspace 以及 `/usr`、`/etc/
 - **Seatbelt 相依性已棄用的 `sandbox-exec`**：macOS 仍會提供它，但若 Apple 移除該私有策略引擎，該提供方無法替換或探測。
 - **runner 選擇在提供方生命週期內快取**：安裝、移除或修復 runner 後，必須重載外掛程式才能改變選擇。
 - **`runnerCommand` 是操作方斷言**：設定的自訂 runner 會跳過功能探測，並假定它誠實實作與 bwrap 相容的 profile；如果它本身是 Bash 指令碼，其解釋器啟動發生在該指令碼施加約束之前。
+- **資源限制需要使用者 systemd manager 和已委派的 cgroup v2 controller**：功能探測無法連線使用者 D-Bus，或無法觀察所需的 `cpu`、`memory` 與 `pids` controller 值時，已設定的限制會失敗閉合。

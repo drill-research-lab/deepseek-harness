@@ -18,9 +18,18 @@ Windows 档为每个工作区保留一个确定性写入 SID 和常驻 ACE，但
 
 Linux Landlock profile 允许读取会话工作区以及 `/usr`、`/etc/ld.so.cache`、`/etc/alternatives`；写入权限仍由模式决定。受信任消费方传入的绝对外层可执行文件会获得只针对该文件的读取授权，使 ripgrep 一类随包静态工具可到达 `execve`，但不会授权其上级 runtime 目录。系统根目录支持普通可执行文件与 merged-usr loader symlink（符号链接）。外层 [`@deepseek-ai/node-addon-pid-isolate-run`](../../../native/pid-isolate-run/) launcher 先建立独立 PID namespace 与 procfs，内层 Landlock launcher 再施加文件系统规则。部署必须对已安装的 binary 执行 `setcap cap_sys_admin,cap_setpcap+ep` 并验证 `--probe`；否则组合 runner 不可用，且没有更前面的 runner 时会失败闭合。Bubblewrap 不使用此特权 helper。
 
+可选的 Linux 资源限制会在所选 runner chain 最外层加入 `systemd-run --user --scope`。`cpuQuotaPercent` 映射到 `CPUQuota`；`maxTasks` 映射到 `TasksMax`；`walltimeSeconds` 映射到 `RuntimeMaxSec`，`timeoutStopSeconds` 控制从 SIGTERM 到 SIGKILL 的宽限期，默认 2 秒。`memoryMaxBytes` 始终携带 `MemorySwapMax`：省略 `memorySwapMaxBytes` 时会安全地解析为零，而只配置 swap、不配置 memory 会被拒绝。第一次受限调用会进行功能探测，证明用户 manager 能创建 scope，且 cgroup v2 记录了预期的 CPU、memory、零 swap 与任务限制。缺少用户 systemd 或 D-Bus 支持时会以 `SANDBOX_UNAVAILABLE` 失败闭合；所有限制均未设置时则明确省略该层。
+
+`walltimeSeconds` 是部署级上限，不会取代 Bash 与 PowerShell 执行器逐请求的前台 timeout。执行器 deadline 保留逐调用 override 与模型可见的 `timedOut` 分类，同时已经会终止 detached process tree；后台 shell 执行不使用该 deadline。systemd 上限还会涵盖后台执行与 launcher chain。先到期的一方会终止整棵树；systemd 先到期时会报告为 signal 结果，而不是执行器 timeout。
+
 ```yaml
 - id: sandbox
   name: '@deepseek-ai/dsh-sandbox-local'
+  config:
+    cpuQuotaPercent: 50
+    memoryMaxBytes: 1073741824
+    maxTasks: 256
+    walltimeSeconds: 300
 ```
 
 消费方：[`@deepseek-ai/dsh-bash-sandbox`](../../shell/bash-sandbox/)；可运行的默认组合见 [acp-agent 示例](../../../examples/acp-agent/)。
@@ -40,3 +49,4 @@ Linux Landlock profile 允许读取会话工作区以及 `/usr`、`/etc/ld.so.ca
 - **Seatbelt 依赖已弃用的 `sandbox-exec`**：macOS 仍会提供它，但若 Apple 移除该私有策略引擎，该提供方无法替换或探测。
 - **runner 选择在提供方生命周期内缓存**：安装、移除或修复 runner 后，必须重载插件才能改变选择。
 - **`runnerCommand` 是操作方断言**：配置的自定义 runner 会跳过功能探测，并假定它诚实实现与 bwrap 兼容的 profile；如果它本身是 Bash 脚本，其解释器启动发生在该脚本施加约束之前。
+- **资源限制需要用户 systemd manager 和已委派的 cgroup v2 controller**：功能探测无法连接用户 D-Bus，或无法观察所需的 `cpu`、`memory` 与 `pids` controller 值时，已配置的限制会失败闭合。
