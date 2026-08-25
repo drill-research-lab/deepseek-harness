@@ -20,6 +20,8 @@ import HttpServer from '@deepseek-ai/dsh-host-webserver'
 import type { DirectoryPicker } from '@deepseek-ai/dsh-host-directory-picker'
 import BrowseDirectoryPicker from '@deepseek-ai/dsh-host-directory-picker-browse'
 import NativeDirectoryPicker from '@deepseek-ai/dsh-host-directory-picker-native'
+import { OwnershipService } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal, OwnerRoot, UserHome } from '@deepseek-ai/dsh-ownership'
 import * as DirectoryPickerAuto from '../src/index.ts'
 
 const renameControl = vi.hoisted(() => ({
@@ -50,6 +52,26 @@ const NATIVE = '@deepseek-ai/dsh-host-directory-picker-native'
 const BROWSE = '@deepseek-ai/dsh-host-directory-picker-browse'
 const NATIVE_SURFACE = '@deepseek-ai/dsh-client-ui-directory-picker-native'
 const BROWSE_SURFACE = '@deepseek-ai/dsh-client-ui-directory-picker-browse'
+const TEST_OWNERSHIP = '@test/dsh-ownership'
+
+/** Loader fixture service: only availability is exercised by this composition suite. */
+class TestOwnership extends OwnershipService {
+  currentPrincipal(): OwnerPrincipal { throw new Error('ownership resolution is outside this fixture') }
+
+  currentPrincipalOrUndefined(): OwnerPrincipal | undefined { return undefined }
+
+  backgroundPrincipal(_userId: OwnerPrincipal['userId']): OwnerPrincipal {
+    throw new Error('ownership resolution is outside this fixture')
+  }
+
+  resolveUserHome(_principal: OwnerPrincipal): Promise<UserHome> {
+    throw new Error('ownership resolution is outside this fixture')
+  }
+
+  resolveOwnerRoot(_principal: OwnerPrincipal): Promise<OwnerRoot> {
+    throw new Error('ownership resolution is outside this fixture')
+  }
+}
 
 /**
  * Loader-visible stand-in for a client surface package: the surfaces belong to
@@ -87,7 +109,7 @@ afterEach(async () => {
   renameControl.remainingFailures = 0
 })
 
-/** Write a two-row cordis.yml (webserver + chooser), then boot it through the real Loader. */
+/** Write the test composition, then boot it through the real Loader. */
 async function loadComposition(
   bindHost: '127.0.0.1' | '0.0.0.0',
   options: { failSurface?: boolean } = {},
@@ -99,6 +121,7 @@ async function loadComposition(
     '  config:',
     `    host: '${bindHost}'`,
     '    port: 0',
+    `- name: '${TEST_OWNERSHIP}'`,
     `- name: '${AUTO}'`,
     '',
   ].join('\n'))
@@ -109,6 +132,7 @@ async function loadComposition(
   context.loader.builtins.include = Include
   const modules = new Map<string, unknown>([
     ['@deepseek-ai/dsh-host-webserver', HttpServer],
+    [TEST_OWNERSHIP, TestOwnership],
     [AUTO, DirectoryPickerAuto],
     [NATIVE, NativeDirectoryPicker],
     [BROWSE, BrowseDirectoryPicker],
