@@ -38,10 +38,10 @@ export interface DirectoryEntry {
 export interface DirectoryListing {
   /** Absolute path of the listed directory. */
   path: string
-  /** The host account's home directory (breadcrumb "Home" rooting). */
+  /** The current request owner's canonical root (breadcrumb "Home" rooting). */
   home: string
   /**
-   * Ancestor chain from the filesystem root to the listed directory
+   * Ancestor chain from the current request owner's root to the listed directory
    * inclusive; every crumb is a jump target (crumb `hidden` is always false).
    */
   crumbs: DirectoryEntry[]
@@ -64,15 +64,16 @@ export interface DirectoryPickerBrowseCapability {
   kind: 'browse'
   /**
    * List one directory level.
-   * @param path - absolute directory to list; absent lists the home directory.
+   * @param path - absolute directory to list; absent lists the current owner's root.
    * @param signal - caller lifetime; abort stops the scan (a stalled network
    * directory must not outlive a disconnected caller) and rejects with the
    * abort reason.
    * @returns the level's listing with ancestry; backends bound the complete
    * result, and a cut level reports `truncated`.
-   * @throws {DirectoryPickerError} `directory-unreadable` when the target is not fully
-   * qualified (a wire value must never resolve against the host cwd or, on
-   * Windows, its current drive) or cannot be listed.
+   * @throws {DirectoryPickerError} `directory-outside-owner-root` when the
+   * canonical target escapes the current owner's root, or `directory-unreadable`
+   * when the target is not fully qualified (a wire value must never resolve
+   * against the host cwd or, on Windows, its current drive) or cannot be listed.
    */
   list(path?: string, signal?: AbortSignal): Promise<DirectoryListing>
   /**
@@ -80,8 +81,10 @@ export interface DirectoryPickerBrowseCapability {
    * @param path - absolute existing parent directory.
    * @param name - single non-blank path segment (no separators, not `.`/`..`).
    * @returns the created directory's absolute path.
-   * @throws {DirectoryPickerError} `directory-exists` for an existing child,
-   * `directory-create-failed` for a parent that is not fully qualified or any other failure.
+   * @throws {DirectoryPickerError} `directory-outside-owner-root` when the
+   * canonical parent escapes the current owner's root, `directory-exists` for
+   * an existing child, or `directory-create-failed` for a parent that is not
+   * fully qualified or any other failure.
    */
   createDirectory(path: string, name: string): Promise<string>
 }
@@ -100,7 +103,11 @@ export interface DirectoryPickerCapabilities {
 export type DirectoryPickerCapability = DirectoryPickerCapabilities[keyof DirectoryPickerCapabilities]
 
 /** Closed failure vocabulary of the browse primitives (mirrored onto the wire by consumers). */
-export type DirectoryPickerErrorCode = 'directory-unreadable' | 'directory-exists' | 'directory-create-failed'
+export type DirectoryPickerErrorCode =
+  | 'directory-unreadable'
+  | 'directory-outside-owner-root'
+  | 'directory-exists'
+  | 'directory-create-failed'
 
 /** Typed failure thrown by browse primitives so consumers can map business codes without string matching. */
 export class DirectoryPickerError extends Error {

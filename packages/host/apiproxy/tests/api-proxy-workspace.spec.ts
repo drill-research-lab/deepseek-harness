@@ -192,6 +192,9 @@ const BROWSE_STUB: DirectoryPickerCapability = {
   kind: 'browse',
   list: async (path) => {
     if (path === '/denied') throw new DirectoryPickerError('directory-unreadable', '/denied', 'cannot list /denied')
+    if (path === '/outside') {
+      throw new DirectoryPickerError('directory-outside-owner-root', '/outside', 'path is outside the owner root')
+    }
     const target = path ?? '/home/user'
     return {
       path: target,
@@ -202,6 +205,9 @@ const BROWSE_STUB: DirectoryPickerCapability = {
     }
   },
   createDirectory: async (path, name) => {
+    if (path === '/outside') {
+      throw new DirectoryPickerError('directory-outside-owner-root', '/outside', 'path is outside the owner root')
+    }
     if (name === 'taken') throw new DirectoryPickerError('directory-exists', `${path}/${name}`, 'already exists')
     if (name === 'unwritable') throw new Error('disk detached')
     return `${path}/${name}`
@@ -223,6 +229,12 @@ describe('host.listDirectory / host.createDirectory', () => {
     const { api } = await harness(undefined, BROWSE_STUB)
     expect((await api.host.listDirectory(request({ path: '/denied' }), new AbortController().signal)).result).toMatchObject({
       ok: false, error: { code: 'directory-unreadable', details: { path: '/denied' } },
+    })
+    expect((await api.host.listDirectory(request({ path: '/outside' }), new AbortController().signal)).result).toMatchObject({
+      ok: false, error: { code: 'directory-outside-owner-root', details: { path: '/outside' } },
+    })
+    expect((await api.host.createDirectory(request({ path: '/outside', name: 'blocked' }))).result).toMatchObject({
+      ok: false, error: { code: 'directory-outside-owner-root', details: { path: '/outside' } },
     })
     expect((await api.host.createDirectory(request({ path: '/home/user', name: 'taken' }))).result).toMatchObject({
       ok: false, error: { code: 'directory-exists' },

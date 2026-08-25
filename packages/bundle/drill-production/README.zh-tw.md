@@ -25,7 +25,7 @@ Drill 多使用者生產組合閉包。此 bundle 必須在 profile 中依序疊
 - preset 集合嚴格為 `drill-production`，預設值也必須是它，並關閉使用者 preset 根目錄。
 - 生產 preset 提供受共享逐工作階段沙盒策略約束的 Bash 或 PowerShell、通用檔案系統與檔案系統搜尋工具。檔案系統讀取限制在工作區內；Linux 子行程另受 Landlock 文件限制及 `pid-isolate-run` 私有 PID 命名空間保護。workflow、Ralph 與外部行程 subagent 仍不提供。
 - permission preset 嚴格為 `read-only` 與 `workspace-write`，`sandbox-policy.maximumMode` 固定為 `workspace-write`；工具 schema 與執行時期授權都不會接受 `danger-full-access`。
-- directory picker 使用 disabled provider；所有真實 picker RPC 返回 `directory-picker-unavailable`。
+- directory picker 直接掛載 browse 後端與 Client 介面；後端在每次請求時解析驗證 principal 的規範所有者根目錄，並以 `directory-outside-owner-root` 拒絕絕對路徑逃逸、`..` traversal、跨所有者根目錄及逃逸符號連結。
 - `cordis-host-runner` 被停用，動態 Cordis 執行不可用；啟動檢查同時斷言 `dynamicCordisRunner` 未掛載。
 - `session-query-sqlite` 保持 `openAt: never`；啟動檢查會重新核實這一點。
 

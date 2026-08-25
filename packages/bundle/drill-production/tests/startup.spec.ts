@@ -1,7 +1,6 @@
 /**
- * The A3 production-policy startup assertion (FAIL LOUD, §11) and the
- * disabled directory-picker capability, exercised over a real (but minimal)
- * Cordis composition rather than mocks.
+ * The A3 production-policy startup assertion (FAIL LOUD, §11), exercised over
+ * a real (but minimal) Cordis composition rather than mocks.
  */
 
 import { Context } from '@deepseek-ai/cordis'
@@ -12,7 +11,6 @@ import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
 import { describe, expect, it } from 'vitest'
 import * as drillProductionStartup from '../src/index.ts'
 import { validateDrillProductionPolicy, type DrillProductionPolicy } from '../src/index.ts'
-import { DisabledDirectoryPicker } from '../src/startup.ts'
 
 type PresetTable = Record<string, { sandbox: string; approval: string }>
 
@@ -126,14 +124,5 @@ describe('drill-production startup policy check', () => {
 
   it('accepts the exact production policy', () => {
     expect(() => { validateDrillProductionPolicy(validPolicy) }).not.toThrow()
-  })
-})
-
-describe('DisabledDirectoryPicker', () => {
-  it('reports an unrecognized capability kind, which the client already hides by documented default', () => {
-    const ctx = new Context()
-    const picker = new DisabledDirectoryPicker(ctx)
-
-    expect(picker.capability()).toEqual({ kind: 'disabled' })
   })
 })

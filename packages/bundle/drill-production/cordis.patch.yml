@@ -53,25 +53,13 @@
     maximumMode: workspace-write
     workspaceRoot: !!js process.cwd()
 
-# ── directory picker: closed, not root-confined (5.5) ────────────────────────
+# ── directory picker: owner-root-confined browse interaction ────────────────
 #
-# No architecture in this repo currently derives a safe, non-UserHome,
-# user-facing browse root (`workspace.create`/`directory-picker-browse` accept
-# arbitrary absolute paths with no containment — see the A3 Phase 0 audit).
-# Confining the picker to `UserHome` itself is explicitly wrong: that
-# directory holds sessions, credentials, auth state, and other DSH-private
-# data, not a user-facing workspace root. Per 5.5, the correct A3 answer when
-# no such root exists is DISABLED, not inventing a new Product Workspace
-# filesystem architecture to manufacture one.
-#
-# `packages/host/apiproxy` hard-requires `ctx.directoryPicker`
-# (`inject: ['directoryPicker', ...]`), so the row cannot simply be
-# `disabled: true` with nothing replacing it. A patch's `name` field is a
-# same-package safety check, not an override (a mismatch skips the whole
-# patch with a warning — `vendor/include`'s `applyEntryPatches`), so the
-# original row is disabled here and a replacement is INSERTED under a new
-# id below, reporting an unrecognized capability kind, which the client
-# already treats as "hide the picking affordance" by documented default.
+# The adaptive picker may select a native host dialog, whose chosen path is
+# not owner-confined. Production disables that row and pins both halves of the
+# browse interaction below. The backend resolves the authenticated principal's
+# canonical owner root on every call, so one shared service instance serves
+# distinct browse trees without a deployment-global root value.
 - id: directory-picker
   disabled: true
 
@@ -104,8 +92,12 @@
     openAt: never
 
 - insert:
-    - id: directory-picker-disabled
-      name: '@deepseek-ai/dsh-drill-production/startup'
+    - id: directory-picker-owner-scoped
+      name: '@deepseek-ai/dsh-host-directory-picker-browse'
+      inject: [ownership]
+
+    - id: directory-picker-owner-scoped-ui
+      name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'
 
     - id: drill-production-startup-check
       name: '@deepseek-ai/dsh-drill-production'

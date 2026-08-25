@@ -298,9 +298,12 @@ describe.runIf(process.platform === 'linux')('A3: Drill production capability cl
       const bobSecret = join(bobWorkspace, 'secret.txt')
       const outsideFile = join(aliceOwnerRoot, 'outside.txt')
       const escapeLink = join(aliceWorkspace, 'escape-link')
+      const pickerOutside = join(root, 'picker-outside')
+      const pickerEscapeLink = join(aliceOwnerRoot, 'picker-escape-link')
       await Promise.all([
         mkdir(aliceWorkspace, { recursive: true }),
         mkdir(bobWorkspace, { recursive: true }),
+        mkdir(pickerOutside, { recursive: true }),
       ])
       await Promise.all([
         writeFile(aliceInside, 'ALICE_INSIDE\n', 'utf8'),
@@ -308,6 +311,7 @@ describe.runIf(process.platform === 'linux')('A3: Drill production capability cl
         writeFile(outsideFile, 'OUTSIDE_SECRET\n', 'utf8'),
       ])
       await symlink(outsideFile, escapeLink)
+      await symlink(pickerOutside, pickerEscapeLink)
 
       const hostVictim = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1_000)'], {
         stdio: 'ignore',
@@ -387,7 +391,7 @@ describe.runIf(process.platform === 'linux')('A3: Drill production capability cl
       expect(typeof boot.port).toBe('number')
       expect(boot.presetIds).toEqual(['drill-production'])
       expect(boot.permissionIds).toEqual(['read-only', 'workspace-write'])
-      expect(boot.directoryPickerKind).toBe('disabled')
+      expect(boot.directoryPickerKind).toBe('browse')
       expect(boot.dynamicCordisRunnerPresent).toBe(false)
       expect(boot.sandboxMaximumMode).toBe('workspace-write')
       expect(boot.sandboxEscalationTargets).toEqual(['workspace-write'])
@@ -500,17 +504,47 @@ describe.runIf(process.platform === 'linux')('A3: Drill production capability cl
       expect(standardAttempt.result.ok).toBe(false)
       if (!standardAttempt.result.ok) expect(standardAttempt.result.error.code).toBe('agent-preset-not-found')
 
-      for (const [method, payload] of [
-        ['host.pickDirectory', {}],
-        ['host.listDirectory', {}],
-        ['host.createDirectory', { path: '/', name: 'blocked' }],
-      ] as const) {
-        const directoryAttempt = await rpcEnvelope(baseUrl, method, payload, aliceCookie)
+      const nativePickerAttempt = await rpcEnvelope(baseUrl, 'host.pickDirectory', {}, aliceCookie)
+      expect(nativePickerAttempt.result.ok).toBe(false)
+      if (!nativePickerAttempt.result.ok) {
+        expect(nativePickerAttempt.result.error.code).toBe('directory-picker-unavailable')
+      }
+
+      const aliceDirectoryRoot = await rpc<{ path: string; home: string; entries: Array<{ name: string }> }>(
+        baseUrl, 'host.listDirectory', {}, aliceCookie,
+      )
+      const bobDirectoryRoot = await rpc<{ path: string; home: string; entries: Array<{ name: string }> }>(
+        baseUrl, 'host.listDirectory', {}, bobCookie,
+      )
+      expect(aliceDirectoryRoot).toMatchObject({ path: aliceOwnerRoot, home: aliceOwnerRoot })
+      expect(aliceDirectoryRoot.entries.map(entry => entry.name)).toContain('workspace')
+      expect(bobDirectoryRoot).toMatchObject({ path: bobOwnerRoot, home: bobOwnerRoot })
+      expect(bobDirectoryRoot.entries.map(entry => entry.name)).toContain('workspace')
+
+      for (const path of [bobOwnerRoot, '/', `${aliceOwnerRoot}/../${ownerKey('e2e-test:bob')}`, pickerEscapeLink]) {
+        const directoryAttempt = await rpcEnvelope(baseUrl, 'host.listDirectory', { path }, aliceCookie)
         expect(directoryAttempt.result.ok).toBe(false)
         if (!directoryAttempt.result.ok) {
-          expect(directoryAttempt.result.error.code).toBe('directory-picker-unavailable')
+          expect(directoryAttempt.result.error.code).toBe('directory-outside-owner-root')
         }
       }
+
+      const createOutside = await rpcEnvelope(
+        baseUrl,
+        'host.createDirectory',
+        { path: bobOwnerRoot, name: 'alice-must-not-create' },
+        aliceCookie,
+      )
+      expect(createOutside.result.ok).toBe(false)
+      if (!createOutside.result.ok) expect(createOutside.result.error.code).toBe('directory-outside-owner-root')
+
+      const createdInside = await rpc<{ path: string }>(
+        baseUrl,
+        'host.createDirectory',
+        { path: aliceOwnerRoot, name: 'picker-created' },
+        aliceCookie,
+      )
+      expect(createdInside.path).toBe(join(aliceOwnerRoot, 'picker-created'))
 
       const fullAccessAttempt = await rpcEnvelope(baseUrl, 'settings.mutate', {
         ns: 'permission',

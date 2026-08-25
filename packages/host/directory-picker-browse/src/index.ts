@@ -1,17 +1,16 @@
 /**
  * Browse backend of the directory-picker seam: registers `ctx.directoryPicker`
  * with the `browse` capability — one-level directory listing and child-directory
- * creation over the host filesystem via Node's stdlib (which already carries
- * the per-OS adaptation). Nothing renders on the host display, so this backend
- * serves remote clients the dialog backend cannot. Policy decisions (hidden
- * entries flagged but returned, symlinks followed, whole-filesystem scope) are
- * recorded in the directory-picker seam Agent Note.
+ * creation beneath the current request owner's canonical root via Node's
+ * stdlib (which already carries the per-OS adaptation). Nothing renders on
+ * the host display, so this backend serves remote clients the dialog backend
+ * cannot. Policy decisions are recorded in the directory-picker seam Agent
+ * Note.
  * @module @deepseek-ai/dsh-host-directory-picker-browse
  */
 
-import { mkdir, opendir, stat } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { basename, dirname, join, posix, resolve, win32 } from 'node:path'
+import { mkdir, opendir, realpath, stat } from 'node:fs/promises'
+import { basename, join, posix, relative, resolve, sep, win32 } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import {
@@ -20,21 +19,23 @@ import {
 import type {
   DirectoryEntry, DirectoryListing, DirectoryPickerCapability,
 } from '@deepseek-ai/dsh-host-directory-picker'
+import type {} from '@deepseek-ai/dsh-ownership'
+import { isPathUnder } from '@deepseek-ai/dsh-path-containment'
 
 /**
- * Ancestor chain from the filesystem root to `target` inclusive — the
- * breadcrumb rows of a listing, every one a jump target.
+ * Ancestor chain from `root` to `target` inclusive — the breadcrumb rows of
+ * a listing, every one a permitted jump target.
  */
-function ancestryCrumbs(target: string): DirectoryEntry[] {
-  const crumbs: DirectoryEntry[] = []
-  let current = target
-  for (;;) {
-    const parent = dirname(current)
-    // basename of a root is '' — label the root crumb by its full path ('/', 'C:\').
-    crumbs.unshift({ name: parent === current ? current : basename(current), path: current, hidden: false })
-    if (parent === current) return crumbs
-    current = parent
+function ancestryCrumbs(target: string, root: string): DirectoryEntry[] {
+  const crumbs: DirectoryEntry[] = [{ name: basename(root) || root, path: root, hidden: false }]
+  const suffix = relative(root, target)
+  if (suffix === '') return crumbs
+  let current = root
+  for (const segment of suffix.split(sep)) {
+    current = join(current, segment)
+    crumbs.push({ name: segment, path: current, hidden: false })
   }
+  return crumbs
 }
 
 /**
@@ -155,7 +156,12 @@ function messageOf(error: unknown): string {
  * shows what can be entered, and a broken link cannot).
  */
 async function directoryRow(
-  parent: string, name: string, isDirectory: boolean, isSymbolicLink: boolean, signal: AbortSignal | undefined,
+  parent: string,
+  ownerRoot: string,
+  name: string,
+  isDirectory: boolean,
+  isSymbolicLink: boolean,
+  signal: AbortSignal | undefined,
 ): Promise<DirectoryEntry | null> {
   const path = join(parent, name)
   let enterable = isDirectory
@@ -164,6 +170,10 @@ async function directoryRow(
       // The probe races the caller too: a symlink target on a stalled
       // network filesystem must not keep a departed caller's request alive.
       enterable = (await raceAbort(stat(path), signal)).isDirectory()
+      if (enterable) {
+        const canonicalPath = await raceAbort(realpath(path), signal)
+        enterable = await isPathUnder(canonicalPath, ownerRoot)
+      }
     } catch {
       /* v8 ignore next 2 -- an abort landing mid-probe needs a stalled stat; the per-candidate check in list covers the settled path. */
       if (signal?.aborted) throw asError(signal.reason)
@@ -185,6 +195,9 @@ export interface Config {
 
 /** The `ctx.directoryPicker` browse implementation (stable capability object per service life). */
 export default class BrowseDirectoryPicker extends DirectoryPicker {
+  static inject = ['ownership']
+  private readonly rootContext: Context
+
   /**
    * `maxEntries` bounds the complete listing level a single `list` call may
    * materialize and put on the wire: at most this many child-directory rows
@@ -204,6 +217,7 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
 
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx)
+    this.rootContext = ctx.root
   }
 
   /**
@@ -215,14 +229,33 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
   }
 
   private async list(path?: string, signal?: AbortSignal): Promise<DirectoryListing> {
-    const home = homedir()
+    const ownership = this.rootContext.ownership
+    const ownerRoot = await ownership.resolveOwnerRoot(ownership.currentPrincipal())
     // The seam contract takes fully qualified paths only; resolve() would
     // silently rebase a relative or empty wire value under the host process
     // cwd (or, for rooted drive-less Windows forms, its current drive).
     if (path !== undefined && !fullyQualified(path)) {
       throw new DirectoryPickerError('directory-unreadable', path, `cannot list "${path}": not a fully qualified path`)
     }
-    const target = resolve(path ?? home)
+    const requestedTarget = resolve(path ?? ownerRoot.path)
+    let target: string
+    try {
+      target = await raceAbort(realpath(requestedTarget), signal)
+    } catch (error: unknown) {
+      signal?.throwIfAborted()
+      throw new DirectoryPickerError(
+        'directory-unreadable',
+        requestedTarget,
+        `cannot list ${requestedTarget}: ${messageOf(error)}`,
+      )
+    }
+    if (!(await isPathUnder(target, ownerRoot.path))) {
+      throw new DirectoryPickerError(
+        'directory-outside-owner-root',
+        requestedTarget,
+        `cannot list ${requestedTarget}: path is outside the owner root`,
+      )
+    }
     // Stream the level (opendir, one dirent at a time) into a name-sorted
     // window of maxEntries + 1 candidates: memory stays bounded no matter how
     // many children the directory holds, the window keeps the name-sorted
@@ -285,7 +318,14 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
       // A caller that departed between reads and probes stops before the
       // next probe (each probe's own await is raced inside directoryRow).
       signal?.throwIfAborted()
-      const row = await directoryRow(target, candidate.name, candidate.isDirectory, candidate.isSymbolicLink, signal)
+      const row = await directoryRow(
+        target,
+        ownerRoot.path,
+        candidate.name,
+        candidate.isDirectory,
+        candidate.isSymbolicLink,
+        signal,
+      )
       if (row === null) continue
       if (entries.length === this.config.maxEntries) {
         truncated = true
@@ -293,20 +333,39 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
       }
       entries.push(row)
     }
-    return { path: target, home, crumbs: ancestryCrumbs(target), entries, truncated }
+    return { path: target, home: ownerRoot.path, crumbs: ancestryCrumbs(target, ownerRoot.path), entries, truncated }
   }
 
   private async createDirectory(path: string, name: string): Promise<string> {
+    const ownership = this.rootContext.ownership
+    const ownerRoot = await ownership.resolveOwnerRoot(ownership.currentPrincipal())
     // Same fully-qualified fence as list: never rebase a parent under the
     // cwd or the current drive.
     if (!fullyQualified(path)) {
       throw new DirectoryPickerError('directory-create-failed', path, `cannot create under "${path}": not a fully qualified parent path`)
     }
-    const parent = resolve(path)
+    const requestedParent = resolve(path)
     // The backend owns segment validation (the wire schema also refuses these,
     // but direct service consumers must hit the same fence).
     if (name.trim() === '' || name === '.' || name === '..' || /[/\\]/.test(name)) {
-      throw new DirectoryPickerError('directory-create-failed', join(parent, name), `"${name}" is not a single path segment`)
+      throw new DirectoryPickerError('directory-create-failed', join(requestedParent, name), `"${name}" is not a single path segment`)
+    }
+    let parent: string
+    try {
+      parent = await realpath(requestedParent)
+    } catch (error: unknown) {
+      throw new DirectoryPickerError(
+        'directory-create-failed',
+        requestedParent,
+        `cannot create under ${requestedParent}: ${messageOf(error)}`,
+      )
+    }
+    if (!(await isPathUnder(parent, ownerRoot.path))) {
+      throw new DirectoryPickerError(
+        'directory-outside-owner-root',
+        requestedParent,
+        `cannot create under ${requestedParent}: path is outside the owner root`,
+      )
     }
     const target = join(parent, name)
     try {

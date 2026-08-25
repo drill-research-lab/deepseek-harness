@@ -875,6 +875,8 @@ Source: [`packages/host/authentication/src/index.ts:10`](../packages/host/authen
 
 ## `@deepseek-ai/dsh-host-directory-picker-browse`
 
+Requires: `ownership`
+
 ```ts config-catalog
 /** Validated plugin configuration. */
 export interface Config {
@@ -883,7 +885,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/host/directory-picker-browse/src/index.ts:181`](../packages/host/directory-picker-browse/src/index.ts)
+Source: [`packages/host/directory-picker-browse/src/index.ts:191`](../packages/host/directory-picker-browse/src/index.ts)
 
 <a id="deepseek-aidsh-host-frontend-static"></a>
 

@@ -877,6 +877,8 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-host-directory-picker-browse`
 
+需要：`ownership`
+
 ```ts config-catalog
 /** Validated plugin configuration. */
 export interface Config {
@@ -885,7 +887,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/host/directory-picker-browse/src/index.ts:181`](../packages/host/directory-picker-browse/src/index.ts)
+来源：[`packages/host/directory-picker-browse/src/index.ts:191`](../packages/host/directory-picker-browse/src/index.ts)
 
 <a id="deepseek-aidsh-host-frontend-static"></a>
 

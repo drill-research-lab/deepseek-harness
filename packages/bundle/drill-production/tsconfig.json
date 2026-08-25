@@ -21,9 +21,6 @@
       "path": "../../interaction/permission-presets"
     },
     {
-      "path": "../../host/directory-picker"
-    },
-    {
       "path": "../../extensions/cordis-host-runner"
     },
     {

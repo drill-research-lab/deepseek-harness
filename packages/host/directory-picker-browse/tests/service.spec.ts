@@ -1,26 +1,66 @@
 /** Behavior of the browse backend over a real temporary directory tree. */
 
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
-import { homedir, tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { basename, join, sep } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { DirectoryPickerError } from '@deepseek-ai/dsh-host-directory-picker'
 import type { DirectoryPickerBrowseCapability } from '@deepseek-ai/dsh-host-directory-picker'
+import { OwnerRoot, OwnershipService } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal, UserHome } from '@deepseek-ai/dsh-ownership'
 import BrowseDirectoryPicker, { boundedInsert, fullyQualified, raceAbort } from '../src/index.ts'
 import type { ListingCandidate } from '../src/index.ts'
 
+class TestOwnership extends OwnershipService {
+  principal: OwnerPrincipal | undefined
+  readonly roots = new Map<OwnerPrincipal['userId'], string>()
+
+  currentPrincipal(): OwnerPrincipal {
+    if (this.principal === undefined) throw new Error('no test owner')
+    return this.principal
+  }
+
+  currentPrincipalOrUndefined(): OwnerPrincipal | undefined { return this.principal }
+
+  backgroundPrincipal(userId: OwnerPrincipal['userId']): OwnerPrincipal {
+    return { userId, source: 'background' }
+  }
+
+  resolveUserHome(): Promise<UserHome> { throw new Error('not used by these tests') }
+
+  resolveOwnerRoot(principal: OwnerPrincipal): Promise<OwnerRoot> {
+    const path = this.roots.get(principal.userId)
+    if (path === undefined) throw new Error(`no root for ${principal.userId}`)
+    return Promise.resolve(new OwnerRoot(principal, path))
+  }
+}
+
+const alice = { userId: 'test:alice' as OwnerPrincipal['userId'], source: 'request' as const }
+const bob = { userId: 'test:bob' as OwnerPrincipal['userId'], source: 'request' as const }
+
+let fixtureRoot: string
 let root: string
+let bobRoot: string
+let outsideRoot: string
+let ownership: TestOwnership
 let capability: DirectoryPickerBrowseCapability
 let dispose: () => Promise<void>
 
 beforeAll(async () => {
-  root = await mkdtemp(join(tmpdir(), 'dsh-browse-'))
+  fixtureRoot = await mkdtemp(join(tmpdir(), 'dsh-browse-'))
+  root = join(fixtureRoot, 'alice')
+  bobRoot = join(fixtureRoot, 'bob')
+  outsideRoot = join(fixtureRoot, 'outside')
+  await Promise.all([mkdir(root), mkdir(bobRoot), mkdir(outsideRoot)])
   await mkdir(join(root, 'projects'))
   await mkdir(join(root, 'projects', 'harness'))
+  await mkdir(join(bobRoot, 'bob-project'))
+  await mkdir(join(outsideRoot, 'outside-project'))
   await mkdir(join(root, '.hidden-dir'))
   await writeFile(join(root, 'notes.txt'), 'not a directory')
   await symlink(join(root, 'projects'), join(root, 'linked'), 'junction')
+  await symlink(outsideRoot, join(root, 'escape-outside'), 'junction')
   await symlink(join(root, 'gone'), join(root, 'broken'), 'junction')
   try {
     await symlink(join(root, 'notes.txt'), join(root, 'file-link'))
@@ -31,6 +71,11 @@ beforeAll(async () => {
   }
 
   const ctx = new Context()
+  await ctx.plugin(TestOwnership)
+  ownership = ctx.ownership as TestOwnership
+  ownership.roots.set(alice.userId, root)
+  ownership.roots.set(bob.userId, bobRoot)
+  ownership.principal = alice
   const fiber = ctx.plugin(BrowseDirectoryPicker)
   await fiber.await()
   const picked = ctx.get('directoryPicker')!.capability()
@@ -41,14 +86,14 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await dispose()
-  await rm(root, { recursive: true, force: true })
+  await rm(fixtureRoot, { recursive: true, force: true })
 })
 
 describe('BrowseDirectoryPicker', () => {
   it('lists directories only, flags hidden rows, follows symlinks, skips broken links, sorts by name', async () => {
     const listing = await capability.list(root)
     expect(listing.path).toBe(root)
-    expect(listing.home).toBe(homedir())
+    expect(listing.home).toBe(root)
     expect(listing.entries.map(entry => entry.name)).toEqual(['.hidden-dir', 'linked', 'projects'])
     expect(listing.entries.map(entry => entry.hidden)).toEqual([true, false, false])
     // Every entry path is absolute and host-joined — clients never join segments.
@@ -59,6 +104,10 @@ describe('BrowseDirectoryPicker', () => {
 
   it('cuts a level at maxEntries keeping the name-sorted head, and flags the cut', async () => {
     const ctx = new Context()
+    await ctx.plugin(TestOwnership)
+    const boundedOwnership = ctx.ownership as TestOwnership
+    boundedOwnership.roots.set(alice.userId, root)
+    boundedOwnership.principal = alice
     const fiber = ctx.plugin(BrowseDirectoryPicker, { maxEntries: 1 })
     await fiber.await()
     const bounded = ctx.get('directoryPicker')!.capability()
@@ -157,13 +206,56 @@ describe('BrowseDirectoryPicker', () => {
     expect(tail).toMatchObject({ name: 'projects', path: join(root, 'projects'), hidden: false })
     expect(listing.crumbs.at(-2)!.path).toBe(root)
     expect(listing.crumbs.at(-2)!.name).toBe(basename(root))
-    // The chain starts at the filesystem root, whose crumb is labeled by its full path.
-    expect(listing.crumbs[0]!.name).toBe(listing.crumbs[0]!.path)
+    // The chain starts at the owner root; no ancestor outside it becomes a jump target.
+    expect(listing.crumbs[0]).toMatchObject({ name: basename(root), path: root })
   })
 
-  it('lists the home directory when no path is given', async () => {
+  it('lists the current owner root when no path is given', async () => {
     const listing = await capability.list()
-    expect(listing.path).toBe(homedir())
+    expect(listing.path).toBe(root)
+    expect(listing.home).toBe(root)
+  })
+
+  it('resolves a different root for each owner on the same picker instance', async () => {
+    const aliceListing = await capability.list()
+    ownership.principal = bob
+    try {
+      const bobListing = await capability.list()
+      expect(aliceListing.path).toBe(root)
+      expect(aliceListing.entries.map(entry => entry.name)).toContain('projects')
+      expect(bobListing.path).toBe(bobRoot)
+      expect(bobListing.home).toBe(bobRoot)
+      expect(bobListing.entries.map(entry => entry.name)).toEqual(['bob-project'])
+    } finally {
+      ownership.principal = alice
+    }
+  })
+
+  it('rejects absolute, traversal, and cross-owner paths outside the current owner root', async () => {
+    const traversal = `${root}${sep}..${sep}${basename(outsideRoot)}`
+    for (const target of [outsideRoot, traversal, bobRoot]) {
+      const listFailure = await capability.list(target).catch((error: unknown) => error)
+      expect(listFailure).toBeInstanceOf(DirectoryPickerError)
+      expect((listFailure as DirectoryPickerError).code).toBe('directory-outside-owner-root')
+
+      const createFailure = await capability.createDirectory(target, 'blocked').catch((error: unknown) => error)
+      expect(createFailure).toBeInstanceOf(DirectoryPickerError)
+      expect((createFailure as DirectoryPickerError).code).toBe('directory-outside-owner-root')
+    }
+  })
+
+  it('rejects a directory symlink that resolves outside the current owner root', async () => {
+    const escape = join(root, 'escape-outside')
+    const rootListing = await capability.list(root)
+    expect(rootListing.entries.map(entry => entry.name)).not.toContain('escape-outside')
+
+    const listFailure = await capability.list(escape).catch((error: unknown) => error)
+    expect(listFailure).toBeInstanceOf(DirectoryPickerError)
+    expect((listFailure as DirectoryPickerError).code).toBe('directory-outside-owner-root')
+
+    const createFailure = await capability.createDirectory(escape, 'blocked').catch((error: unknown) => error)
+    expect(createFailure).toBeInstanceOf(DirectoryPickerError)
+    expect((createFailure as DirectoryPickerError).code).toBe('directory-outside-owner-root')
   })
 
   it('throws directory-unreadable for a missing target', async () => {
