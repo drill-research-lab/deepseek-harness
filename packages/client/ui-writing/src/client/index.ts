@@ -72,8 +72,11 @@ export function apply(ctx: ClientContext): void {
         const result = await ctx.remote.writing.updateContent({ reportId, source })
         if (!result.ok) throw new Error(result.error.message)
       },
-      compile: async (reportId) => {
-        const result = await ctx.remote.writing.compile({ reportId })
+      compile: async (reportId, options) => {
+        const result = await ctx.remote.writing.compile({
+          reportId,
+          ...(options?.snapshot === undefined ? {} : { snapshot: options.snapshot }),
+        })
         if (!result.ok) throw new Error(result.error.message)
         const value = result.value
         return {

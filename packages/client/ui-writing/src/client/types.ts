@@ -27,8 +27,8 @@ export interface WritingViewInjected {
   getSource(reportId: string): Promise<string>
   /** Replace a report's current source (autosave). */
   updateSource(reportId: string, source: string): Promise<void>
-  /** Compile a report and return diagnostics; snapshots a version on success. */
-  compile(reportId: string): Promise<CompileResultView>
+  /** Compile a report and return diagnostics; snapshots a version on success unless `snapshot` is false. */
+  compile(reportId: string, options?: { readonly snapshot?: boolean }): Promise<CompileResultView>
   /** A report's version snapshots, newest first. */
   versions(reportId: string): Promise<ReportVersionView[]>
   /** Restore a report to an earlier version; returns its source. */

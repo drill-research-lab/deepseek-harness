@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { CompileResultView } from '@deepseek-ai/dsh-writing-api/types'
 import { WritingView, type WritingViewProps } from '../src/client/WritingView.tsx'
@@ -264,5 +264,50 @@ describe('WritingView', () => {
     expect(clickedLink?.getAttribute('download')).toBe('Paper.tex')
     expect(clickedLink?.href).toContain('data:text/plain;charset=utf-8,')
     spy.mockRestore()
+  })
+
+  it('compiles from the full-screen preview toolbar', async () => {
+    const actions = view()
+    const { container } = render(<WritingView {...props(actions)} />)
+    fireEvent.click(await screen.findByText('Paper'))
+    await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
+    fireEvent.click(screen.getByText('openPreview'))
+    const header = container.querySelector('[class*="modalHeader"]') as HTMLElement
+    const before = vi.mocked(actions.compile).mock.calls.length
+    fireEvent.click(within(header).getByText('compile'))
+    expect(vi.mocked(actions.compile).mock.calls.length).toBe(before + 1)
+  })
+
+  it('downloads the report from the full-screen preview toolbar', async () => {
+    const actions = view()
+    const { container } = render(<WritingView {...props(actions)} />)
+    fireEvent.click(await screen.findByText('Paper'))
+    await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
+    fireEvent.click(screen.getByText('openPreview'))
+    const header = container.querySelector('[class*="modalHeader"]') as HTMLElement
+
+    let clickedLink: HTMLAnchorElement | undefined
+    const spy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clickedLink = this
+    })
+    fireEvent.click(within(header).getByText('download'))
+    expect(clickedLink?.getAttribute('download')).toBe('Paper.tex')
+    spy.mockRestore()
+  })
+
+  it('restores a version by refreshing the PDF without snapshotting a new version', async () => {
+    const actions = view({
+      versions: vi.fn().mockResolvedValue([
+        { versionId: 'v2', reportId: 'r1', label: 'successful compile #2', source: 's', createdAt: 't2' },
+        { versionId: 'v1', reportId: 'r1', label: 'successful compile #1', source: 's', createdAt: 't1' },
+      ]),
+    })
+    render(<WritingView {...props(actions)} />)
+    fireEvent.click(await screen.findByText('Paper'))
+    await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
+    fireEvent.click(screen.getByText(/successful compile #2/))
+    fireEvent.click(screen.getByText(/successful compile #1/))
+    await waitFor(() => expect(actions.restore).toHaveBeenCalledWith('r1', 'v1'))
+    await waitFor(() => expect(actions.compile).toHaveBeenCalledWith('r1', { snapshot: false }))
   })
 })

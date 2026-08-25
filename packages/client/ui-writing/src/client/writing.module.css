@@ -237,11 +237,29 @@
   color: inherit;
   font-size: 14px;
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .modalTitleInput:focus {
   border-bottom-color: var(--dsw-border-subtle, rgba(128, 128, 128, 0.5));
   outline: none;
+}
+
+.modalAction {
+  background: none;
+  border: 1px solid var(--dsw-border-subtle, rgba(128, 128, 128, 0.3));
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 2px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: inherit;
+}
+
+.modalAction:hover {
+  background: var(--dsw-bg-subtle, rgba(128, 128, 128, 0.08));
 }
 
 .modalStatus {

@@ -62,12 +62,12 @@ export function WritingView(props: WritingViewProps): JSX.Element {
 
   const outline = useMemo(() => buildOutline(source), [source])
 
-  const compileSelected = useCallback(async (): Promise<void> => {
+  const compileSelected = useCallback(async (noSnapshot = false): Promise<void> => {
     const id = selectedRef.current
     if (id === undefined) return
     setCompiling(true)
     try {
-      setCompileResult(await compile(id))
+      setCompileResult(noSnapshot ? await compile(id, { snapshot: false }) : await compile(id))
       setVersionList(await versions(id))
     } finally {
       setCompiling(false)
@@ -154,7 +154,8 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     sourceRef.current = restored
     setSource(restored)
     setMessage(t('restored'))
-    await compileSelected()
+    // Refresh the preview for the restored content without snapshotting a version.
+    await compileSelected(true)
   }, [restore, compileSelected, t])
 
   const onTitleCommit = useCallback(async (): Promise<void> => {
@@ -344,6 +345,8 @@ export function WritingView(props: WritingViewProps): JSX.Element {
                 }
               }}
             />
+            <button className={css.modalAction} onClick={() => { void onCompile() }}>{t('compile')}</button>
+            <button className={css.modalAction} onClick={onDownload}>{t('download')}</button>
             <span className={css.modalStatus}>{headerStatus}</span>
             <button className={css.modalClose} title={t('close')} onClick={() => setPreviewModalOpen(false)}>×</button>
           </div>

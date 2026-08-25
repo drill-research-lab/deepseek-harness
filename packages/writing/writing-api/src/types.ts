@@ -80,6 +80,8 @@ export interface DeleteRequest {
 /** Request payload for a compile. */
 export interface CompileRequest {
   readonly reportId: string
+  /** When `false`, run the engine and refresh the PDF without snapshotting a version. */
+  readonly snapshot?: boolean
 }
 
 /** Request payload for a version listing. */

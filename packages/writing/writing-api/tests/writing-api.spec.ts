@@ -86,6 +86,18 @@ describe('WritingGateway public contract', () => {
     expect(restored.source).toBe('v1')
   })
 
+  it('refreshes the PDF without snapshotting a version when snapshot is false', async () => {
+    const { ctx } = await harness({
+      onRun: async (workdir) => { await writeArtifacts(workdir, { log: '', pdf: true }) },
+    })
+    const created = await ctx.writing.create({ title: 'A', source: 'v1' })
+    const result = await ctx.writing.compile({ reportId: created.reportId, snapshot: false })
+    expect(result.ok).toBe(true)
+    expect(result.versionCreated).toBe(false)
+    expect(result.pdfUrl).toBe(`/writing/${created.reportId}/pdf`)
+    expect(ctx.writing.versions({ reportId: created.reportId }).length).toBe(0)
+  })
+
   it('lists templates and adds a custom template', async () => {
     const { ctx } = await harness()
     expect(ctx.writing.templates()[0]?.builtIn).toBe(true)

@@ -132,7 +132,7 @@ export class WritingGateway extends TypertRemoteService {
 
   /**
    * Compile a report, return diagnostics, and snapshot a version on success.
-   * @param request - report id.
+   * @param request - report id; pass `snapshot: false` to refresh the PDF only.
    * @returns the compile outcome with a served `pdfUrl` on success.
    */
   @Remote('compile')
@@ -141,7 +141,7 @@ export class WritingGateway extends TypertRemoteService {
     if (report === undefined) throw new Error(`unknown report '${request.reportId}'`)
     const output = await this.ctx.latexCompile.compile({ reportId: request.reportId, source: report.source })
     let versionCreated = false
-    if (output.ok) {
+    if (output.ok && request.snapshot !== false) {
       const count = this.ctx.reports.listVersions(report.id).length + 1
       await this.ctx.reports.snapshot(report.id, `successful compile #${count}`)
       versionCreated = true
