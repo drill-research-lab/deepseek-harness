@@ -27,6 +27,7 @@ export function WritingView(props: WritingViewProps): JSX.Element {
   const [split, setSplit] = useState(50)
   const [showAllVersions, setShowAllVersions] = useState(false)
   const [listCollapsed, setListCollapsed] = useState(false)
+  const [previewModalOpen, setPreviewModalOpen] = useState(false)
 
   const editorRef = useRef<HTMLDivElement>(null)
   const sourceRef = useRef('')
@@ -191,7 +192,10 @@ export function WritingView(props: WritingViewProps): JSX.Element {
         </div>
       </main>
       <footer className={css.footer}>
-        <button className={css.button} onClick={() => { void onCompile() }}>{t('compile')}</button>
+        <div className={css.actions}>
+          <button className={css.button} onClick={() => { void onCompile() }}>{t('compile')}</button>
+          <button className={css.button} onClick={() => setPreviewModalOpen(true)}>{t('openPreview')}</button>
+        </div>
         {message.length > 0 && <span className={css.status}>{message}</span>}
         {compileResult !== undefined && !compileResult.ok && compileResult.diagnostics.some(d => d.severity === 'error') && (
           <div className={css.diagnostics}>
@@ -229,6 +233,23 @@ export function WritingView(props: WritingViewProps): JSX.Element {
           </div>
         )}
       </footer>
+      {previewModalOpen && (
+        <div className={css.modalBackdrop} onClick={() => setPreviewModalOpen(false)}>
+          <div className={css.modal} onClick={event => event.stopPropagation()}>
+            <div className={css.modalHeader}>
+              <h3 className={css.modalTitle}>{t('previewWindowTitle')}</h3>
+              <button className={css.modalClose} title={t('close')} onClick={() => setPreviewModalOpen(false)}>×</button>
+            </div>
+            <div className={css.modalBody}>
+              {compiling
+                ? <div className={css.none}>{t('compiling')}</div>
+                : pdfUrl === undefined
+                  ? <div className={css.none}>{t('noPreview')}</div>
+                  : <iframe className={css.frame} src={pdfUrl} title={t('preview')} />}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

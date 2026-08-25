@@ -21,6 +21,9 @@ export const zh = {
   more: '更多',
   listCollapse: '收合報告區',
   listExpand: '展開報告區',
+  openPreview: '預覽視窗',
+  previewWindowTitle: 'Latex 編譯與PDF預覽',
+  close: '關閉',
 } as const
 
 export const zhTw = {
@@ -41,6 +44,9 @@ export const zhTw = {
   more: '更多',
   listCollapse: '收合報告區',
   listExpand: '展開報告區',
+  openPreview: '預覽視窗',
+  previewWindowTitle: 'Latex 編譯與PDF預覽',
+  close: '關閉',
 } as const
 
 export const en = {
@@ -61,6 +67,9 @@ export const en = {
   more: 'more',
   listCollapse: 'Collapse reports',
   listExpand: 'Expand reports',
+  openPreview: 'Preview',
+  previewWindowTitle: 'LaTeX Compile & PDF Preview',
+  close: 'Close',
 } as const
 
 export type WritingKey = keyof typeof zh

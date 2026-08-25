@@ -156,4 +156,16 @@ describe('WritingView', () => {
     fireEvent.click(screen.getByTitle('listExpand'))
     expect(await screen.findByText('Paper')).toBeTruthy()
   })
+
+  it('opens and closes the LaTeX preview window', async () => {
+    render(<WritingView {...props(view())} />)
+    fireEvent.click(await screen.findByText('Paper'))
+    await waitFor(() => expect(screen.getByText('openPreview')).toBeTruthy())
+
+    fireEvent.click(screen.getByText('openPreview'))
+    expect(screen.getByText('previewWindowTitle')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('×'))
+    expect(screen.queryByText('previewWindowTitle')).toBeNull()
+  })
 })
