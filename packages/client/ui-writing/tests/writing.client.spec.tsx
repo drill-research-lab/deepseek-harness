@@ -240,4 +240,20 @@ describe('WritingView', () => {
     fireEvent.pointerUp(window)
     expect(modalEditor!.getAttribute('style')).toContain('60%')
   })
+
+  it('downloads the current source as a .tex file named after the report', async () => {
+    const actions = view()
+    render(<WritingView {...props(actions)} />)
+    fireEvent.click(await screen.findByText('Paper'))
+    await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
+
+    let clickedLink: HTMLAnchorElement | undefined
+    const spy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clickedLink = this
+    })
+    fireEvent.click(screen.getByText('download'))
+    expect(clickedLink?.getAttribute('download')).toBe('Paper.tex')
+    expect(clickedLink?.href).toContain('data:text/plain;charset=utf-8,')
+    spy.mockRestore()
+  })
 })

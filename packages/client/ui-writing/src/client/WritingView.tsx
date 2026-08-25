@@ -126,6 +126,17 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     void compileSelected()
   }, [compileSelected])
 
+  const onDownload = useCallback((): void => {
+    const name = (selectedTitle.trim() || 'report').replace(/[\\/:*?"<>|]/g, '_')
+    const href = `data:text/plain;charset=utf-8,${encodeURIComponent(sourceRef.current)}`
+    const link = document.createElement('a')
+    link.href = href
+    link.download = `${name}.tex`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }, [selectedTitle])
+
   const onRestore = useCallback(async (versionId: string): Promise<void> => {
     if (autosaveTimer.current !== undefined) clearTimeout(autosaveTimer.current)
     const id = selectedRef.current
@@ -270,6 +281,7 @@ export function WritingView(props: WritingViewProps): JSX.Element {
         <div className={css.actions}>
           <button className={css.button} onClick={() => { void onCompile() }}>{t('compile')}</button>
           <button className={css.button} onClick={openPreview}>{t('openPreview')}</button>
+          <button className={css.button} onClick={onDownload}>{t('download')}</button>
         </div>
         {message.length > 0 && <span className={css.status}>{message}</span>}
         {compileResult !== undefined && !compileResult.ok && errorCount > 0 && (
