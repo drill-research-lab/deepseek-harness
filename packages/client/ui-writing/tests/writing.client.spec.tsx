@@ -168,4 +168,37 @@ describe('WritingView', () => {
     fireEvent.click(screen.getByText('×'))
     expect(screen.queryByText('previewWindowTitle')).toBeNull()
   })
+
+  it('auto-saves and recompiles from the full-screen editor', async () => {
+    const actions = view()
+    const { container } = render(<WritingView {...props(actions)} />)
+    fireEvent.click(await screen.findByText('Paper'))
+    await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
+    fireEvent.click(screen.getByText('openPreview'))
+
+    vi.useFakeTimers()
+    const modalEditor = container.querySelector('[class*="modalEditor"]')
+    const textarea = modalEditor?.querySelector('textarea')
+    fireEvent.change(textarea as Element, { target: { value: '\\documentclass{article}% modal' } })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(actions.updateSource).toHaveBeenCalledWith('r1', '\\documentclass{article}% modal')
+    expect(actions.compile).toHaveBeenCalledWith('r1')
+    vi.useRealTimers()
+  })
+
+  it('resizes the full-screen editor preview split', async () => {
+    const { container } = render(<WritingView {...props(view())} />)
+    fireEvent.click(await screen.findByText('Paper'))
+    fireEvent.click(screen.getByText('openPreview'))
+    const modalEditor = container.querySelector('[class*="modalEditor"]')
+    modalEditor!.getBoundingClientRect = () => ({
+      width: 1000, height: 500, top: 0, left: 0, right: 1000, bottom: 500, x: 0, y: 0,
+      toJSON: () => ({}),
+    })
+    const divider = container.querySelectorAll('[class*="divider"]')[1] as Element
+    fireEvent.pointerDown(divider, { clientX: 500 })
+    fireEvent.pointerMove(window, { clientX: 600 })
+    fireEvent.pointerUp(window)
+    expect(modalEditor!.getAttribute('style')).toContain('60%')
+  })
 })

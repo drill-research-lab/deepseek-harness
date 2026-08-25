@@ -28,8 +28,10 @@ export function WritingView(props: WritingViewProps): JSX.Element {
   const [showAllVersions, setShowAllVersions] = useState(false)
   const [listCollapsed, setListCollapsed] = useState(false)
   const [previewModalOpen, setPreviewModalOpen] = useState(false)
+  const [modalSplit, setModalSplit] = useState(50)
 
   const editorRef = useRef<HTMLDivElement>(null)
+  const modalRef = useRef<HTMLDivElement>(null)
   const sourceRef = useRef('')
   const selectedRef = useRef<string | undefined>(undefined)
   const autosaveRef = useRef<() => Promise<void>>(() => Promise.resolve())
@@ -121,15 +123,19 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     await compileSelected()
   }, [restore, compileSelected, t])
 
-  const onDividerPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>): void => {
-    const container = editorRef.current
+  const beginSplitDrag = useCallback((
+    event: React.PointerEvent<HTMLDivElement>,
+    ref: React.RefObject<HTMLDivElement>,
+    setter: (value: number) => void,
+    current: number,
+  ): void => {
+    const container = ref.current
     if (container === null) return
     const rect = container.getBoundingClientRect()
     const startX = event.clientX
-    const startSplit = split
     const onMove = (move: PointerEvent): void => {
       const delta = ((move.clientX - startX) / rect.width) * 100
-      setSplit(Math.min(80, Math.max(20, Math.round(startSplit + delta))))
+      setter(Math.min(80, Math.max(20, Math.round(current + delta))))
     }
     const onUp = (): void => {
       window.removeEventListener('pointermove', onMove)
@@ -137,7 +143,15 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
-  }, [split])
+  }, [])
+
+  const onDividerPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>): void => {
+    beginSplitDrag(event, editorRef, setSplit, split)
+  }, [beginSplitDrag, split])
+
+  const onModalDividerPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>): void => {
+    beginSplitDrag(event, modalRef, setModalSplit, modalSplit)
+  }, [beginSplitDrag, modalSplit])
 
   const pdfUrl = compileResult?.pdfUrl
 
@@ -234,13 +248,24 @@ export function WritingView(props: WritingViewProps): JSX.Element {
         )}
       </footer>
       {previewModalOpen && (
-        <div className={css.modalBackdrop} onClick={() => setPreviewModalOpen(false)}>
-          <div className={css.modal} onClick={event => event.stopPropagation()}>
-            <div className={css.modalHeader}>
-              <h3 className={css.modalTitle}>{t('previewWindowTitle')}</h3>
-              <button className={css.modalClose} title={t('close')} onClick={() => setPreviewModalOpen(false)}>×</button>
-            </div>
-            <div className={css.modalBody}>
+        <div className={css.modal}>
+          <div className={css.modalHeader}>
+            <h3 className={css.modalTitle}>{t('previewWindowTitle')}</h3>
+            <button className={css.modalClose} title={t('close')} onClick={() => setPreviewModalOpen(false)}>×</button>
+          </div>
+          <div
+            ref={modalRef}
+            className={css.modalEditor}
+            style={{ gridTemplateColumns: `${modalSplit}% 6px 1fr` }}
+          >
+            <textarea
+              className={css.source}
+              value={source}
+              onChange={event => onSourceEdit(event.target.value)}
+              spellCheck={false}
+            />
+            <div className={css.divider} onPointerDown={onModalDividerPointerDown} />
+            <div className={css.preview}>
               {compiling
                 ? <div className={css.none}>{t('compiling')}</div>
                 : pdfUrl === undefined
