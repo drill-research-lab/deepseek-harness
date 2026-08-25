@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { CompileResultView } from '@deepseek-ai/dsh-writing-api/types'
 import { WritingView, type WritingViewProps } from '../src/client/WritingView.tsx'
 import type { WritingViewInjected } from '../src/client/types.ts'
 
@@ -67,5 +68,64 @@ describe('WritingView', () => {
     await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
     fireEvent.click(screen.getByText('compile'))
     expect(await screen.findByText(/Undefined control sequence/)).toBeTruthy()
+  })
+
+  it('auto-saves and recompiles after a one-second edit pause', async () => {
+    const actions = view()
+    const { container } = render(<WritingView {...props(actions)} />)
+    fireEvent.click(await screen.findByText('Paper'))
+    await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
+
+    vi.useFakeTimers()
+    const textarea = container.querySelector('textarea')
+    fireEvent.change(textarea as Element, { target: { value: '\\documentclass{article}% edited' } })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(actions.updateSource).toHaveBeenCalledWith('r1', '\\documentclass{article}% edited')
+    expect(actions.compile).toHaveBeenCalledWith('r1')
+    vi.useRealTimers()
+  })
+
+  it('does not auto-save while the edit pause has not elapsed', async () => {
+    const actions = view()
+    const { container } = render(<WritingView {...props(actions)} />)
+    fireEvent.click(await screen.findByText('Paper'))
+    await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
+
+    vi.useFakeTimers()
+    const textarea = container.querySelector('textarea')
+    fireEvent.change(textarea as Element, { target: { value: '\\documentclass{article}% edit' } })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(actions.updateSource).not.toHaveBeenCalled()
+    vi.useRealTimers()
+  })
+
+  it('shows a compiling indicator while a compile is in flight', async () => {
+    let release!: (value: CompileResultView) => void
+    const actions = view({
+      compile: vi.fn(() => new Promise<CompileResultView>((resolve) => { release = resolve })),
+    })
+    render(<WritingView {...props(actions)} />)
+    fireEvent.click(await screen.findByText('Paper'))
+    await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
+
+    fireEvent.click(screen.getByText('compile'))
+    expect(screen.getByText('compiling')).toBeTruthy()
+    release({ ok: true, diagnostics: [], versionCreated: true, pdfUrl: '/writing/r1/pdf' })
+    await waitFor(() => expect(screen.queryByText('compiling')).toBeNull())
+    expect(screen.getByText('compiledOk')).toBeTruthy()
+  })
+
+  it('resizes the editor split when the divider is dragged', () => {
+    const { container } = render(<WritingView {...props(view())} />)
+    const editor = container.querySelector('main')
+    editor!.getBoundingClientRect = () => ({
+      width: 1000, height: 500, top: 0, left: 0, right: 1000, bottom: 500, x: 0, y: 0,
+      toJSON: () => ({}),
+    })
+    const divider = container.querySelector('[class*="divider"]')!
+    fireEvent.pointerDown(divider, { clientX: 500 })
+    fireEvent.pointerMove(window, { clientX: 600 })
+    fireEvent.pointerUp(window)
+    expect(editor!.style.gridTemplateColumns).toContain('60%')
   })
 })

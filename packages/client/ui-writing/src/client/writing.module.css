@@ -70,6 +70,12 @@
   font-size: 13px;
 }
 
+.divider {
+  cursor: col-resize;
+  background: var(--dsw-border-subtle, rgba(128, 128, 128, 0.3));
+  height: 100%;
+}
+
 .preview {
   border: 1px solid var(--dsw-border-subtle, rgba(128, 128, 128, 0.3));
   display: flex;

@@ -1,6 +1,6 @@
 /** Writing view: report list (left), LaTeX editor + PDF preview (right), compile feedback (bottom). */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { CompileResultView, ReportVersionView } from '@deepseek-ai/dsh-writing-api/types'
@@ -9,6 +9,9 @@ import css from './writing.module.css'
 
 /** Props of the Writing view: the conversation.view runtime + the inject face + locale. */
 export type WritingViewProps = ConvViewProps & WritingViewInjected & PropsLocale<'writing'>
+
+/** Pause (ms) before an edit is auto-saved and recompiled. */
+const AUTOSAVE_DELAY_MS = 1000
 
 /** The Writing surface. State is view-local; the report data comes from the inject face. */
 export function WritingView(props: WritingViewProps): JSX.Element {
@@ -20,6 +23,14 @@ export function WritingView(props: WritingViewProps): JSX.Element {
   const [versionList, setVersionList] = useState<ReportVersionView[]>([])
   const [message, setMessage] = useState('')
   const [newTitle, setNewTitle] = useState('')
+  const [compiling, setCompiling] = useState(false)
+  const [split, setSplit] = useState(50)
+
+  const editorRef = useRef<HTMLDivElement>(null)
+  const sourceRef = useRef('')
+  const selectedRef = useRef<string | undefined>(undefined)
+  const autosaveRef = useRef<() => Promise<void>>(() => Promise.resolve())
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const reload = useCallback(async (): Promise<void> => {
     setReports(await listReports())
@@ -34,9 +45,42 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     return () => { active = false }
   }, [listReports])
 
+  const compileSelected = useCallback(async (): Promise<void> => {
+    const id = selectedRef.current
+    if (id === undefined) return
+    setCompiling(true)
+    try {
+      setCompileResult(await compile(id))
+      setVersionList(await versions(id))
+    } finally {
+      setCompiling(false)
+    }
+  }, [compile, versions])
+
+  autosaveRef.current = async (): Promise<void> => {
+    const id = selectedRef.current
+    if (id === undefined) return
+    await updateSource(id, sourceRef.current)
+    setMessage(t('saved'))
+    await compileSelected()
+  }
+
+  const scheduleAutosave = useCallback((): void => {
+    if (autosaveTimer.current !== undefined) clearTimeout(autosaveTimer.current)
+    autosaveTimer.current = setTimeout(() => { void autosaveRef.current() }, AUTOSAVE_DELAY_MS)
+  }, [])
+
+  useEffect(() => () => {
+    if (autosaveTimer.current !== undefined) clearTimeout(autosaveTimer.current)
+  }, [])
+
   const select = useCallback(async (reportId: string): Promise<void> => {
+    if (autosaveTimer.current !== undefined) clearTimeout(autosaveTimer.current)
+    selectedRef.current = reportId
     setSelected(reportId)
-    setSource(await getSource(reportId))
+    const loaded = await getSource(reportId)
+    sourceRef.current = loaded
+    setSource(loaded)
     setVersionList(await versions(reportId))
     setCompileResult(undefined)
     setMessage('')
@@ -53,24 +97,44 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     if (created !== undefined) await select(created.reportId)
   }, [newTitle, createReport, reload, listReports, select])
 
-  const onSave = useCallback(async (): Promise<void> => {
-    if (selected === undefined) return
-    await updateSource(selected, source)
-    setMessage(t('saved'))
-  }, [selected, source, updateSource, t])
+  const onSourceEdit = useCallback((value: string): void => {
+    sourceRef.current = value
+    setSource(value)
+    scheduleAutosave()
+  }, [scheduleAutosave])
 
-  const onCompile = useCallback(async (): Promise<void> => {
-    if (selected === undefined) return
-    setCompileResult(await compile(selected))
-    setVersionList(await versions(selected))
-    setMessage('')
-  }, [selected, compile, versions])
+  const onCompile = useCallback((): void => {
+    void compileSelected()
+  }, [compileSelected])
 
   const onRestore = useCallback(async (versionId: string): Promise<void> => {
-    if (selected === undefined) return
-    setSource(await restore(selected, versionId))
+    if (autosaveTimer.current !== undefined) clearTimeout(autosaveTimer.current)
+    const id = selectedRef.current
+    if (id === undefined) return
+    const restored = await restore(id, versionId)
+    sourceRef.current = restored
+    setSource(restored)
     setMessage(t('restored'))
-  }, [selected, restore, t])
+    await compileSelected()
+  }, [restore, compileSelected, t])
+
+  const onDividerPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>): void => {
+    const container = editorRef.current
+    if (container === null) return
+    const rect = container.getBoundingClientRect()
+    const startX = event.clientX
+    const startSplit = split
+    const onMove = (move: PointerEvent): void => {
+      const delta = ((move.clientX - startX) / rect.width) * 100
+      setSplit(Math.min(80, Math.max(20, Math.round(startSplit + delta))))
+    }
+    const onUp = (): void => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }, [split])
 
   const pdfUrl = compileResult?.pdfUrl
 
@@ -99,35 +163,38 @@ export function WritingView(props: WritingViewProps): JSX.Element {
           ))}
         </ul>
       </nav>
-      <main className={css.editor}>
+      <main ref={editorRef} className={css.editor} style={{ gridTemplateColumns: `${split}% 6px 1fr` }}>
         <textarea
           className={css.source}
           value={source}
-          onChange={event => setSource(event.target.value)}
+          onChange={event => onSourceEdit(event.target.value)}
           spellCheck={false}
         />
+        <div className={css.divider} onPointerDown={onDividerPointerDown} />
         <div className={css.preview}>
-          {pdfUrl === undefined
-            ? <div className={css.none}>{t('noPreview')}</div>
-            : <iframe className={css.frame} src={pdfUrl} title={t('preview')} />}
+          {compiling
+            ? <div className={css.none}>{t('compiling')}</div>
+            : pdfUrl === undefined
+              ? <div className={css.none}>{t('noPreview')}</div>
+              : <iframe className={css.frame} src={pdfUrl} title={t('preview')} />}
         </div>
       </main>
       <footer className={css.footer}>
-        <button className={css.button} onClick={() => { void onSave() }}>{t('save')}</button>
         <button className={css.button} onClick={() => { void onCompile() }}>{t('compile')}</button>
         {message.length > 0 && <span className={css.status}>{message}</span>}
-        {compileResult !== undefined && (
+        {compileResult !== undefined && !compileResult.ok && compileResult.diagnostics.some(d => d.severity === 'error') && (
           <div className={css.diagnostics}>
-            {compileResult.ok
-              ? <p className={css.ok}>{t('compiledOk')}</p>
-              : compileResult.diagnostics.map((diagnostic, index) => (
+            {compileResult.diagnostics
+              .filter(diagnostic => diagnostic.severity === 'error')
+              .map((diagnostic, index) => (
                 // eslint-disable-next-line react/no-array-index-key -- stable position in one compile result
-                <p key={index} className={diagnostic.severity === 'error' ? css.error : css.warning}>
-                  {diagnostic.severity}{diagnostic.line === undefined ? '' : ` @ ${diagnostic.line}`}: {diagnostic.message}
+                <p key={index} className={css.error}>
+                  {diagnostic.line === undefined ? '' : `@ ${diagnostic.line} `}: {diagnostic.message}
                 </p>
               ))}
           </div>
         )}
+        {compileResult !== undefined && compileResult.ok && <p className={css.ok}>{t('compiledOk')}</p>}
         {versionList.length > 0 && (
           <div className={css.versions}>
             <span className={css.heading}>{t('versions')}</span>
