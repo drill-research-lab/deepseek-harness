@@ -15,6 +15,9 @@ export type WritingViewProps = ConvViewProps & WritingViewInjected & PropsLocale
 /** Pause (ms) before an edit is auto-saved and recompiled. */
 const AUTOSAVE_DELAY_MS = 1000
 
+/** Served prefix for a compiled report's PDF; matches the writing-api route. */
+const PDF_PATH_PREFIX = '/writing'
+
 /** The Writing surface. State is view-local; the report data comes from the inject face. */
 export function WritingView(props: WritingViewProps): JSX.Element {
   const { listReports, createReport, rename, getSource, updateSource, compile, versions, restore, t } = props
@@ -98,11 +101,17 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     const loaded = await getSource(reportId)
     sourceRef.current = loaded
     setSource(loaded)
-    setVersionList(await versions(reportId))
-    setCompileResult(undefined)
+    const listed = await versions(reportId)
+    setVersionList(listed)
     setMessage('')
-    // Compile once when the document is opened.
-    await compileSelected()
+    // Show the latest compiled version when one exists; compile only for a
+    // report that has never compiled.
+    if (listed.length > 0) {
+      setCompileResult({ ok: true, diagnostics: [], versionCreated: false, pdfUrl: `${PDF_PATH_PREFIX}/${reportId}/pdf` })
+    } else {
+      setCompileResult(undefined)
+      await compileSelected()
+    }
   }, [getSource, versions, reports, compileSelected])
 
   const onCreate = useCallback(async (): Promise<void> => {
@@ -160,10 +169,10 @@ export function WritingView(props: WritingViewProps): JSX.Element {
   }, [selectedTitle, rename, reload])
 
   const openPreview = useCallback((): void => {
+    // Opening the window never recompiles: selection already resolved to the
+    // latest compiled version, or compiled when the report had none.
     setPreviewModalOpen(true)
-    // Compile once when the window opens and nothing has been compiled yet.
-    if (compileResult?.pdfUrl === undefined) void compileSelected()
-  }, [compileResult, compileSelected])
+  }, [])
 
   const jumpOutline = useCallback((line: number): void => {
     const textarea = mainTextareaRef.current

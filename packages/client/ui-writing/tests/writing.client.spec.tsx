@@ -170,11 +170,20 @@ describe('WritingView', () => {
     expect(container.querySelector('[class*="modal"]')).toBeNull()
   })
 
-  it('auto-compiles once when a report is opened', async () => {
+  it('compiles on open when the report has no version yet', async () => {
     const actions = view()
     render(<WritingView {...props(actions)} />)
     fireEvent.click(await screen.findByText('Paper'))
     await waitFor(() => expect(actions.compile).toHaveBeenCalledWith('r1'))
+  })
+
+  it('shows the latest compiled PDF without recompiling when a version exists', async () => {
+    const actions = view({ versions: vi.fn().mockResolvedValue([{ versionId: 'v1', reportId: 'r1', label: 'l', source: 's', createdAt: 't1' }]) })
+    const { container } = render(<WritingView {...props(actions)} />)
+    fireEvent.click(await screen.findByText('Paper'))
+    await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
+    expect(actions.compile).not.toHaveBeenCalled()
+    expect(container.querySelector('[class*="frame"]')?.getAttribute('src')).toBe('/writing/r1/pdf')
   })
 
   it('does not recompile when opening the preview after an open-compile', async () => {
