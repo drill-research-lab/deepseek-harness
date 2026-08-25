@@ -25,6 +25,7 @@ export function WritingView(props: WritingViewProps): JSX.Element {
   const [newTitle, setNewTitle] = useState('')
   const [compiling, setCompiling] = useState(false)
   const [split, setSplit] = useState(50)
+  const [showAllVersions, setShowAllVersions] = useState(false)
 
   const editorRef = useRef<HTMLDivElement>(null)
   const sourceRef = useRef('')
@@ -197,16 +198,24 @@ export function WritingView(props: WritingViewProps): JSX.Element {
         {compileResult !== undefined && compileResult.ok && <p className={css.ok}>{t('compiledOk')}</p>}
         {versionList.length > 0 && (
           <div className={css.versions}>
-            <span className={css.heading}>{t('versions')}</span>
-            <ul className={css.versionList}>
-              {versionList.map(version => (
-                <li key={version.versionId}>
-                  <button className={css.versionButton} onClick={() => { void onRestore(version.versionId) }}>
-                    {version.label}
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <button
+              className={css.versionLatest}
+              onClick={() => setShowAllVersions(visible => !visible)}
+            >
+              {t('versions')}: {versionList[0]?.label ?? ''}
+              {versionList.length > 1 ? ` (${t('more')} ${versionList.length - 1})` : ''}
+            </button>
+            {showAllVersions && (
+              <ul className={css.versionList}>
+                {versionList.map(version => (
+                  <li key={version.versionId}>
+                    <button className={css.versionButton} onClick={() => { void onRestore(version.versionId) }}>
+                      {version.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
       </footer>

@@ -128,4 +128,21 @@ describe('WritingView', () => {
     fireEvent.pointerUp(window)
     expect(editor!.style.gridTemplateColumns).toContain('60%')
   })
+
+  it('shows only the latest version and expands the list on demand', async () => {
+    const versions = [
+      { versionId: 'v2', reportId: 'r1', label: 'successful compile #2', source: 's', createdAt: 't2' },
+      { versionId: 'v1', reportId: 'r1', label: 'successful compile #1', source: 's', createdAt: 't1' },
+    ]
+    const actions = view({ versions: vi.fn().mockResolvedValue(versions) })
+    render(<WritingView {...props(actions)} />)
+    fireEvent.click(await screen.findByText('Paper'))
+    await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
+
+    expect(screen.getByText(/successful compile #2/)).toBeTruthy()
+    expect(screen.queryByText(/successful compile #1/)).toBeNull()
+
+    fireEvent.click(screen.getByText(/successful compile #2/))
+    expect(screen.getByText(/successful compile #1/)).toBeTruthy()
+  })
 })

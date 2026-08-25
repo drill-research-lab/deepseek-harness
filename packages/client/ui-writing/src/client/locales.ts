@@ -18,6 +18,7 @@ export const zh = {
   restored: '已還原',
   compiledOk: '編譯成功。',
   versions: '版本',
+  more: '更多',
 } as const
 
 export const zhTw = {
@@ -35,6 +36,7 @@ export const zhTw = {
   restored: '已還原',
   compiledOk: '編譯成功。',
   versions: '版本',
+  more: '更多',
 } as const
 
 export const en = {
@@ -52,6 +54,7 @@ export const en = {
   restored: 'Restored',
   compiledOk: 'Compiled successfully.',
   versions: 'Versions',
+  more: 'more',
 } as const
 
 export type WritingKey = keyof typeof zh
