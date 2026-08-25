@@ -10,7 +10,7 @@
  */
 
 import { mkdir, opendir, realpath, stat } from 'node:fs/promises'
-import { basename, join, posix, relative, resolve, sep, win32 } from 'node:path'
+import { join, posix, resolve, win32 } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import {
@@ -25,14 +25,23 @@ import { isPathUnder } from '@deepseek-ai/dsh-path-containment'
 /**
  * Ancestor chain from `root` to `target` inclusive — the breadcrumb rows of
  * a listing, every one a permitted jump target.
+ * @param target - listed directory.
+ * @param root - current owner's canonical root.
+ * @param platform - path rules to apply; replaces `process.platform` for tests.
+ * @returns ordered jump targets from root through target.
  */
-function ancestryCrumbs(target: string, root: string): DirectoryEntry[] {
-  const crumbs: DirectoryEntry[] = [{ name: basename(root) || root, path: root, hidden: false }]
-  const suffix = relative(root, target)
+export function ancestryCrumbs(
+  target: string,
+  root: string,
+  platform: NodeJS.Platform = process.platform,
+): DirectoryEntry[] {
+  const path = platform === 'win32' ? win32 : posix
+  const crumbs: DirectoryEntry[] = [{ name: path.basename(root) || root, path: root, hidden: false }]
+  const suffix = path.relative(root, target)
   if (suffix === '') return crumbs
   let current = root
-  for (const segment of suffix.split(sep)) {
-    current = join(current, segment)
+  for (const segment of suffix.split(path.sep)) {
+    current = path.join(current, segment)
     crumbs.push({ name: segment, path: current, hidden: false })
   }
   return crumbs
@@ -172,7 +181,7 @@ async function directoryRow(
       enterable = (await raceAbort(stat(path), signal)).isDirectory()
       if (enterable) {
         const canonicalPath = await raceAbort(realpath(path), signal)
-        enterable = await isPathUnder(canonicalPath, ownerRoot)
+        enterable = await raceAbort(isPathUnder(canonicalPath, ownerRoot), signal)
       }
     } catch {
       /* v8 ignore next 2 -- an abort landing mid-probe needs a stalled stat; the per-candidate check in list covers the settled path. */
@@ -196,7 +205,6 @@ export interface Config {
 /** The `ctx.directoryPicker` browse implementation (stable capability object per service life). */
 export default class BrowseDirectoryPicker extends DirectoryPicker {
   static inject = ['ownership']
-  private readonly rootContext: Context
 
   /**
    * `maxEntries` bounds the complete listing level a single `list` call may
@@ -217,7 +225,6 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
 
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx)
-    this.rootContext = ctx.root
   }
 
   /**
@@ -229,7 +236,8 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
   }
 
   private async list(path?: string, signal?: AbortSignal): Promise<DirectoryListing> {
-    const ownership = this.rootContext.ownership
+    const ownership = this.ctx.root.get('ownership')
+    if (ownership === undefined) throw new Error('BrowseDirectoryPicker requires ctx.ownership')
     const ownerRoot = await ownership.resolveOwnerRoot(ownership.currentPrincipal())
     // The seam contract takes fully qualified paths only; resolve() would
     // silently rebase a relative or empty wire value under the host process
@@ -249,7 +257,7 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
         `cannot list ${requestedTarget}: ${messageOf(error)}`,
       )
     }
-    if (!(await isPathUnder(target, ownerRoot.path))) {
+    if (!(await raceAbort(isPathUnder(target, ownerRoot.path), signal))) {
       throw new DirectoryPickerError(
         'directory-outside-owner-root',
         requestedTarget,
@@ -337,7 +345,8 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
   }
 
   private async createDirectory(path: string, name: string): Promise<string> {
-    const ownership = this.rootContext.ownership
+    const ownership = this.ctx.root.get('ownership')
+    if (ownership === undefined) throw new Error('BrowseDirectoryPicker requires ctx.ownership')
     const ownerRoot = await ownership.resolveOwnerRoot(ownership.currentPrincipal())
     // Same fully-qualified fence as list: never rebase a parent under the
     // cwd or the current drive.

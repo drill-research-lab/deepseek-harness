@@ -9,7 +9,7 @@ import { DirectoryPickerError } from '@deepseek-ai/dsh-host-directory-picker'
 import type { DirectoryPickerBrowseCapability } from '@deepseek-ai/dsh-host-directory-picker'
 import { OwnerRoot, OwnershipService } from '@deepseek-ai/dsh-ownership'
 import type { OwnerPrincipal, UserHome } from '@deepseek-ai/dsh-ownership'
-import BrowseDirectoryPicker, { boundedInsert, fullyQualified, raceAbort } from '../src/index.ts'
+import BrowseDirectoryPicker, { ancestryCrumbs, boundedInsert, fullyQualified, raceAbort } from '../src/index.ts'
 import type { ListingCandidate } from '../src/index.ts'
 
 class TestOwnership extends OwnershipService {
@@ -208,6 +208,17 @@ describe('BrowseDirectoryPicker', () => {
     expect(listing.crumbs.at(-2)!.name).toBe(basename(root))
     // The chain starts at the owner root; no ancestor outside it becomes a jump target.
     expect(listing.crumbs[0]).toMatchObject({ name: basename(root), path: root })
+  })
+
+  it('builds ancestry crumbs with Windows separators and drive-root names', () => {
+    expect(ancestryCrumbs('C:\\Users\\alice\\projects\\harness', 'C:\\Users\\alice', 'win32')).toEqual([
+      { name: 'alice', path: 'C:\\Users\\alice', hidden: false },
+      { name: 'projects', path: 'C:\\Users\\alice\\projects', hidden: false },
+      { name: 'harness', path: 'C:\\Users\\alice\\projects\\harness', hidden: false },
+    ])
+    expect(ancestryCrumbs('C:\\', 'C:\\', 'win32')).toEqual([
+      { name: 'C:\\', path: 'C:\\', hidden: false },
+    ])
   })
 
   it('lists the current owner root when no path is given', async () => {
