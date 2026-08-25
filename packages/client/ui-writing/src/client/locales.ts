@@ -24,6 +24,8 @@ export const zh = {
   openPreview: '預覽視窗',
   previewWindowTitle: 'Latex 編譯與PDF預覽',
   close: '關閉',
+  outline: '大綱',
+  errorSummary: '個錯誤',
 } as const
 
 export const zhTw = {
@@ -47,6 +49,8 @@ export const zhTw = {
   openPreview: '預覽視窗',
   previewWindowTitle: 'Latex 編譯與PDF預覽',
   close: '關閉',
+  outline: '大綱',
+  errorSummary: '個錯誤',
 } as const
 
 export const en = {
@@ -70,6 +74,8 @@ export const en = {
   openPreview: 'Preview',
   previewWindowTitle: 'LaTeX Compile & PDF Preview',
   close: 'Close',
+  outline: 'Outline',
+  errorSummary: 'errors',
 } as const
 
 export type WritingKey = keyof typeof zh

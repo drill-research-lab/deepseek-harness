@@ -21,6 +21,8 @@ export interface WritingViewInjected {
   listReports(): Promise<ReportSummaryView[]>
   /** Create a report from a title. */
   createReport(title: string): Promise<void>
+  /** Rename a report. */
+  rename(reportId: string, title: string): Promise<void>
   /** Read a report's current source. */
   getSource(reportId: string): Promise<string>
   /** Replace a report's current source (autosave). */

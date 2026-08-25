@@ -59,6 +59,10 @@ export function apply(ctx: ClientContext): void {
         const result = await ctx.remote.writing.create({ title })
         if (!result.ok) throw new Error(result.error.message)
       },
+      rename: async (reportId, title) => {
+        const result = await ctx.remote.writing.rename({ reportId, title })
+        if (!result.ok) throw new Error(result.error.message)
+      },
       getSource: async (reportId) => {
         const result = await ctx.remote.writing.get({ reportId })
         if (!result.ok) throw new Error(result.error.message)

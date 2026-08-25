@@ -1,9 +1,11 @@
 /** Writing view: report list (left), LaTeX editor + PDF preview (right), compile feedback (bottom). */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { CompileResultView, ReportVersionView } from '@deepseek-ai/dsh-writing-api/types'
+import { SourceEditor } from './SourceEditor.tsx'
+import { buildOutline, jumpToLine } from './outline.ts'
 import type { ReportSummaryView, WritingViewInjected } from './types.ts'
 import css from './writing.module.css'
 
@@ -15,9 +17,10 @@ const AUTOSAVE_DELAY_MS = 1000
 
 /** The Writing surface. State is view-local; the report data comes from the inject face. */
 export function WritingView(props: WritingViewProps): JSX.Element {
-  const { listReports, createReport, getSource, updateSource, compile, versions, restore, t } = props
+  const { listReports, createReport, rename, getSource, updateSource, compile, versions, restore, t } = props
   const [reports, setReports] = useState<ReportSummaryView[]>([])
   const [selected, setSelected] = useState<string | undefined>(undefined)
+  const [selectedTitle, setSelectedTitle] = useState('')
   const [source, setSource] = useState('')
   const [compileResult, setCompileResult] = useState<CompileResultView | undefined>(undefined)
   const [versionList, setVersionList] = useState<ReportVersionView[]>([])
@@ -29,11 +32,15 @@ export function WritingView(props: WritingViewProps): JSX.Element {
   const [listCollapsed, setListCollapsed] = useState(false)
   const [previewModalOpen, setPreviewModalOpen] = useState(false)
   const [modalSplit, setModalSplit] = useState(50)
+  const [showOutline, setShowOutline] = useState(false)
 
   const editorRef = useRef<HTMLDivElement>(null)
   const modalRef = useRef<HTMLDivElement>(null)
+  const mainTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const modalTextareaRef = useRef<HTMLTextAreaElement>(null)
   const sourceRef = useRef('')
   const selectedRef = useRef<string | undefined>(undefined)
+  const committedTitleRef = useRef('')
   const autosaveRef = useRef<() => Promise<void>>(() => Promise.resolve())
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
@@ -49,6 +56,8 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     })()
     return () => { active = false }
   }, [listReports])
+
+  const outline = useMemo(() => buildOutline(source), [source])
 
   const compileSelected = useCallback(async (): Promise<void> => {
     const id = selectedRef.current
@@ -83,13 +92,16 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     if (autosaveTimer.current !== undefined) clearTimeout(autosaveTimer.current)
     selectedRef.current = reportId
     setSelected(reportId)
+    const summary = reports.find(report => report.reportId === reportId)
+    setSelectedTitle(summary?.title ?? '')
+    committedTitleRef.current = summary?.title ?? ''
     const loaded = await getSource(reportId)
     sourceRef.current = loaded
     setSource(loaded)
     setVersionList(await versions(reportId))
     setCompileResult(undefined)
     setMessage('')
-  }, [getSource, versions])
+  }, [getSource, versions, reports])
 
   const onCreate = useCallback(async (): Promise<void> => {
     const title = newTitle.trim()
@@ -123,6 +135,28 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     await compileSelected()
   }, [restore, compileSelected, t])
 
+  const onTitleCommit = useCallback(async (): Promise<void> => {
+    const id = selectedRef.current
+    if (id === undefined) return
+    const trimmed = selectedTitle.trim()
+    if (trimmed.length === 0 || trimmed === committedTitleRef.current) return
+    await rename(id, trimmed)
+    setSelectedTitle(trimmed)
+    committedTitleRef.current = trimmed
+    await reload()
+  }, [selectedTitle, rename, reload])
+
+  const openPreview = useCallback((): void => {
+    setPreviewModalOpen(true)
+    // Compile once when the window opens and nothing has been compiled yet.
+    if (compileResult?.pdfUrl === undefined) void compileSelected()
+  }, [compileResult, compileSelected])
+
+  const jumpOutline = useCallback((line: number): void => {
+    const textarea = mainTextareaRef.current
+    if (textarea !== null) jumpToLine(textarea, sourceRef.current, line)
+  }, [])
+
   const beginSplitDrag = useCallback((
     event: React.PointerEvent<HTMLDivElement>,
     ref: React.RefObject<HTMLDivElement>,
@@ -154,6 +188,16 @@ export function WritingView(props: WritingViewProps): JSX.Element {
   }, [beginSplitDrag, modalSplit])
 
   const pdfUrl = compileResult?.pdfUrl
+  const errorCount = compileResult !== undefined && !compileResult.ok
+    ? compileResult.diagnostics.filter(diagnostic => diagnostic.severity === 'error').length
+    : 0
+  const headerStatus = compiling
+    ? t('compiling')
+    : compileResult?.ok === true
+      ? t('compiledOk')
+      : compileResult !== undefined && errorCount > 0
+        ? `${errorCount} ${t('errorSummary')}`
+        : t('noPreview')
 
   return (
     <div className={css.writing} style={{ gridTemplateColumns: `${listCollapsed ? '34px' : '220px'} 1fr` }}>
@@ -186,16 +230,31 @@ export function WritingView(props: WritingViewProps): JSX.Element {
                   </li>
                 ))}
               </ul>
+              <div className={css.outlineSection}>
+                <button className={css.outlineToggle} onClick={() => setShowOutline(visible => !visible)}>
+                  {t('outline')}{outline.length > 0 ? ` (${outline.length})` : ''}
+                </button>
+                {showOutline && (
+                  <ul className={css.outlineList}>
+                    {outline.map(item => (
+                      <li key={item.line} className={css.outlineRow}>
+                        <button
+                          className={css.outlineItem}
+                          style={{ paddingLeft: `${item.depth * 12}px` }}
+                          onClick={() => jumpOutline(item.line)}
+                        >
+                          {item.title}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </>
           )}
       </nav>
       <main ref={editorRef} className={css.editor} style={{ gridTemplateColumns: `${split}% 6px 1fr` }}>
-        <textarea
-          className={css.source}
-          value={source}
-          onChange={event => onSourceEdit(event.target.value)}
-          spellCheck={false}
-        />
+        <SourceEditor value={source} onChange={onSourceEdit} textareaRef={mainTextareaRef} />
         <div className={css.divider} onPointerDown={onDividerPointerDown} />
         <div className={css.preview}>
           {compiling
@@ -208,10 +267,10 @@ export function WritingView(props: WritingViewProps): JSX.Element {
       <footer className={css.footer}>
         <div className={css.actions}>
           <button className={css.button} onClick={() => { void onCompile() }}>{t('compile')}</button>
-          <button className={css.button} onClick={() => setPreviewModalOpen(true)}>{t('openPreview')}</button>
+          <button className={css.button} onClick={openPreview}>{t('openPreview')}</button>
         </div>
         {message.length > 0 && <span className={css.status}>{message}</span>}
-        {compileResult !== undefined && !compileResult.ok && compileResult.diagnostics.some(d => d.severity === 'error') && (
+        {compileResult !== undefined && !compileResult.ok && errorCount > 0 && (
           <div className={css.diagnostics}>
             {compileResult.diagnostics
               .filter(diagnostic => diagnostic.severity === 'error')
@@ -250,7 +309,19 @@ export function WritingView(props: WritingViewProps): JSX.Element {
       {previewModalOpen && (
         <div className={css.modal}>
           <div className={css.modalHeader}>
-            <h3 className={css.modalTitle}>{t('previewWindowTitle')}</h3>
+            <input
+              className={css.modalTitleInput}
+              value={selectedTitle}
+              onChange={event => setSelectedTitle(event.target.value)}
+              onBlur={() => { void onTitleCommit() }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  void onTitleCommit()
+                  event.currentTarget.blur()
+                }
+              }}
+            />
+            <span className={css.modalStatus}>{headerStatus}</span>
             <button className={css.modalClose} title={t('close')} onClick={() => setPreviewModalOpen(false)}>×</button>
           </div>
           <div
@@ -258,12 +329,7 @@ export function WritingView(props: WritingViewProps): JSX.Element {
             className={css.modalEditor}
             style={{ gridTemplateColumns: `${modalSplit}% 6px 1fr` }}
           >
-            <textarea
-              className={css.source}
-              value={source}
-              onChange={event => onSourceEdit(event.target.value)}
-              spellCheck={false}
-            />
+            <SourceEditor value={source} onChange={onSourceEdit} textareaRef={modalTextareaRef} />
             <div className={css.divider} onPointerDown={onModalDividerPointerDown} />
             <div className={css.preview}>
               {compiling

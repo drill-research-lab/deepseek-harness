@@ -16,6 +16,7 @@ function view(over: Partial<WritingViewInjected> = {}): WritingViewInjected {
   return {
     listReports: vi.fn().mockResolvedValue([{ reportId: 'r1', title: 'Paper', updatedAt: '2026-01-01' }]),
     createReport: vi.fn().mockResolvedValue(undefined),
+    rename: vi.fn().mockResolvedValue(undefined),
     getSource: vi.fn().mockResolvedValue('\\documentclass{article}'),
     updateSource: vi.fn().mockResolvedValue(undefined),
     compile: vi.fn().mockResolvedValue({ ok: true, diagnostics: [], versionCreated: true, pdfUrl: '/writing/r1/pdf' }),
@@ -158,15 +159,46 @@ describe('WritingView', () => {
   })
 
   it('opens and closes the LaTeX preview window', async () => {
-    render(<WritingView {...props(view())} />)
+    const { container } = render(<WritingView {...props(view())} />)
     fireEvent.click(await screen.findByText('Paper'))
     await waitFor(() => expect(screen.getByText('openPreview')).toBeTruthy())
 
     fireEvent.click(screen.getByText('openPreview'))
-    expect(screen.getByText('previewWindowTitle')).toBeTruthy()
+    expect(container.querySelector('[class*="modal"]')).toBeTruthy()
 
     fireEvent.click(screen.getByText('×'))
-    expect(screen.queryByText('previewWindowTitle')).toBeNull()
+    expect(container.querySelector('[class*="modal"]')).toBeNull()
+  })
+
+  it('auto-compiles once when opening the preview window with no prior compile', async () => {
+    const actions = view()
+    render(<WritingView {...props(actions)} />)
+    fireEvent.click(await screen.findByText('Paper'))
+    await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
+    expect(actions.compile).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByText('openPreview'))
+    await waitFor(() => expect(actions.compile).toHaveBeenCalledWith('r1'))
+  })
+
+  it('shows line numbers in the editor gutter', async () => {
+    const { container } = render(<WritingView {...props(view())} />)
+    fireEvent.click(await screen.findByText('Paper'))
+    await waitFor(() => expect(screen.getByText('openPreview')).toBeTruthy())
+    const gutter = container.querySelector('[class*="gutter"]')
+    expect(gutter?.textContent).toBe('1')
+  })
+
+  it('lists the document outline and jumps to a heading', async () => {
+    const actions = view({ getSource: vi.fn().mockResolvedValue('\\section{Intro}\nbody\n\\subsection{Setup}') })
+    const { container } = render(<WritingView {...props(actions)} />)
+    fireEvent.click(await screen.findByText('Paper'))
+    await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
+    fireEvent.click(screen.getByText(/outline/))
+    expect(screen.getByText('Intro')).toBeTruthy()
+    expect(screen.getByText('Setup')).toBeTruthy()
+    const textarea = container.querySelector('textarea')
+    fireEvent.click(screen.getByText('Intro'))
+    expect(textarea).toBeTruthy()
   })
 
   it('auto-saves and recompiles from the full-screen editor', async () => {
