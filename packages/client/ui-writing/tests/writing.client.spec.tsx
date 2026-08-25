@@ -170,14 +170,21 @@ describe('WritingView', () => {
     expect(container.querySelector('[class*="modal"]')).toBeNull()
   })
 
-  it('auto-compiles once when opening the preview window with no prior compile', async () => {
+  it('auto-compiles once when a report is opened', async () => {
     const actions = view()
     render(<WritingView {...props(actions)} />)
     fireEvent.click(await screen.findByText('Paper'))
-    await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
-    expect(actions.compile).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByText('openPreview'))
     await waitFor(() => expect(actions.compile).toHaveBeenCalledWith('r1'))
+  })
+
+  it('does not recompile when opening the preview after an open-compile', async () => {
+    const actions = view()
+    render(<WritingView {...props(actions)} />)
+    fireEvent.click(await screen.findByText('Paper'))
+    await waitFor(() => expect(actions.compile).toHaveBeenCalledWith('r1'))
+    const before = vi.mocked(actions.compile).mock.calls.length
+    fireEvent.click(screen.getByText('openPreview'))
+    expect(vi.mocked(actions.compile).mock.calls.length).toBe(before)
   })
 
   it('shows line numbers in the editor gutter', async () => {

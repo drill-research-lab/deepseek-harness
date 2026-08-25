@@ -101,7 +101,9 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     setVersionList(await versions(reportId))
     setCompileResult(undefined)
     setMessage('')
-  }, [getSource, versions, reports])
+    // Compile once when the document is opened.
+    await compileSelected()
+  }, [getSource, versions, reports, compileSelected])
 
   const onCreate = useCallback(async (): Promise<void> => {
     const title = newTitle.trim()
