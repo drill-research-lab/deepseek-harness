@@ -4,6 +4,8 @@
   grid-template-columns: 220px 1fr;
   gap: 8px;
   height: 100%;
+  max-height: calc(100vh - 220px);
+  overflow: hidden;
   padding: 8px;
   box-sizing: border-box;
 }
@@ -141,6 +143,7 @@
   padding: 6px 6px 6px 0;
   box-sizing: border-box;
   overflow: hidden;
+  white-space: pre;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 13px;
   line-height: 1.4;
