@@ -26,6 +26,7 @@ export function WritingView(props: WritingViewProps): JSX.Element {
   const [compiling, setCompiling] = useState(false)
   const [split, setSplit] = useState(50)
   const [showAllVersions, setShowAllVersions] = useState(false)
+  const [listCollapsed, setListCollapsed] = useState(false)
 
   const editorRef = useRef<HTMLDivElement>(null)
   const sourceRef = useRef('')
@@ -140,29 +141,38 @@ export function WritingView(props: WritingViewProps): JSX.Element {
   const pdfUrl = compileResult?.pdfUrl
 
   return (
-    <div className={css.writing}>
+    <div className={css.writing} style={{ gridTemplateColumns: `${listCollapsed ? '34px' : '220px'} 1fr` }}>
       <nav className={css.list}>
-        <h2 className={css.heading}>{t('title')}</h2>
-        <div className={css.newRow}>
-          <input
-            className={css.newInput}
-            value={newTitle}
-            onChange={event => setNewTitle(event.target.value)}
-            placeholder={t('newPlaceholder')}
-          />
-          <button className={css.button} onClick={() => { void onCreate() }}>{t('create')}</button>
-        </div>
-        <ul className={css.reports}>
-          {reports.map(report => (
-            <li
-              key={report.reportId}
-              className={report.reportId === selected ? css.rowActive : css.row}
-              onClick={() => { void select(report.reportId) }}
-            >
-              {report.title}
-            </li>
-          ))}
-        </ul>
+        {listCollapsed
+          ? <button className={css.listExpander} title={t('listExpand')} onClick={() => setListCollapsed(false)}>{t('title')}</button>
+          : (
+            <>
+              <div className={css.listHeader}>
+                <h2 className={css.heading}>{t('title')}</h2>
+                <button className={css.listToggle} title={t('listCollapse')} onClick={() => setListCollapsed(true)}>−</button>
+              </div>
+              <div className={css.newRow}>
+                <input
+                  className={css.newInput}
+                  value={newTitle}
+                  onChange={event => setNewTitle(event.target.value)}
+                  placeholder={t('newPlaceholder')}
+                />
+                <button className={css.button} onClick={() => { void onCreate() }}>{t('create')}</button>
+              </div>
+              <ul className={css.reports}>
+                {reports.map(report => (
+                  <li
+                    key={report.reportId}
+                    className={report.reportId === selected ? css.rowActive : css.row}
+                    onClick={() => { void select(report.reportId) }}
+                  >
+                    {report.title}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
       </nav>
       <main ref={editorRef} className={css.editor} style={{ gridTemplateColumns: `${split}% 6px 1fr` }}>
         <textarea

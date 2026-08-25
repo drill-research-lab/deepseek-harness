@@ -145,4 +145,15 @@ describe('WritingView', () => {
     fireEvent.click(screen.getByText(/successful compile #2/))
     expect(screen.getByText(/successful compile #1/)).toBeTruthy()
   })
+
+  it('collapses and re-expands the report list', async () => {
+    render(<WritingView {...props(view())} />)
+    expect(await screen.findByText('Paper')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('−'))
+    expect(screen.queryByText('Paper')).toBeNull()
+
+    fireEvent.click(screen.getByTitle('listExpand'))
+    expect(await screen.findByText('Paper')).toBeTruthy()
+  })
 })

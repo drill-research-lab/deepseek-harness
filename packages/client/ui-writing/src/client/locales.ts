@@ -19,6 +19,8 @@ export const zh = {
   compiledOk: '編譯成功。',
   versions: '版本',
   more: '更多',
+  listCollapse: '收合報告區',
+  listExpand: '展開報告區',
 } as const
 
 export const zhTw = {
@@ -37,6 +39,8 @@ export const zhTw = {
   compiledOk: '編譯成功。',
   versions: '版本',
   more: '更多',
+  listCollapse: '收合報告區',
+  listExpand: '展開報告區',
 } as const
 
 export const en = {
@@ -55,6 +59,8 @@ export const en = {
   compiledOk: 'Compiled successfully.',
   versions: 'Versions',
   more: 'more',
+  listCollapse: 'Collapse reports',
+  listExpand: 'Expand reports',
 } as const
 
 export type WritingKey = keyof typeof zh
