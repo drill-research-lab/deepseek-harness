@@ -36,7 +36,9 @@ export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
  * @param policy - file-effect policy to express as Landlock allow-list grants.
  * @param executable - exact outer consumer executable; an absolute packaged
  *   binary outside `/usr` and the workspace needs a file-only read grant to
- *   reach `execve`.
+ *   reach `execve`. The landlock-run CLI contract guarantees that a
+ *   non-directory grant applies to that file alone, never its parent
+ *   directory tree.
  * @returns launcher grant arguments before the trailing separator and command argv.
  */
 export function landlockProfileArgs(policy: SandboxPolicy, executable?: string): string[] {
