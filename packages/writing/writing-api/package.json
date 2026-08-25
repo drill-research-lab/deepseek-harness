@@ -66,11 +66,11 @@
     "@deepseek-ai/dsh-storage": "workspace:^",
     "@deepseek-ai/dsh-storage-domain": "workspace:^",
     "@deepseek-ai/dsh-storage-json": "workspace:^",
-    "@deepseek-ai/dsh-shell": "workspace:^",
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",
     "@deepseek-ai/dsh-writing": "workspace:^",
     "@deepseek-ai/dsh-writing-compile": "workspace:^",
     "@deepseek-ai/dsh-host-webserver": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-subprocess": "workspace:^"
   }
 }

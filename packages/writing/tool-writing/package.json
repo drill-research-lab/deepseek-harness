@@ -54,6 +54,7 @@
     "@deepseek-ai/dsh-tools": "workspace:^",
     "@deepseek-ai/dsh-writing": "workspace:^",
     "@deepseek-ai/dsh-writing-compile": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-subprocess": "workspace:^"
   }
 }

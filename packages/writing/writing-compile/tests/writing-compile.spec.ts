@@ -26,7 +26,7 @@ describe('LatexCompileService', () => {
   })
 
   it('compiles cleanly and reports the produced PDF', async () => {
-    const { ctx, shell } = await harness({
+    const { ctx, subprocess } = await harness({
       onRun: async (workdir) => {
         await writeArtifacts(workdir, { log: '', pdf: true })
       },
@@ -35,12 +35,12 @@ describe('LatexCompileService', () => {
     expect(output.ok).toBe(true)
     expect(output.diagnostics).toEqual([])
     expect(output.pdfPath).toBeDefined()
-    expect(shell.requested?.workdir).toContain('report-a')
+    expect(subprocess.spawned[0]?.cwd).toContain('report-a')
   })
 
   it('returns exit-code failures with a nonzero os as not ok', async () => {
-    const { ctx, shell } = await harness()
-    shell.runResults = [outputRun({ exitCode: 1 })]
+    const { ctx, subprocess } = await harness()
+    subprocess.outcomes = [outputRun({ exitCode: 1 })]
     const output = await ctx.latexCompile.compile({ reportId: 'report-b', source: 'x' })
     expect(output.ok).toBe(false)
     expect(output.pdfPath).toBeUndefined()
@@ -116,11 +116,11 @@ describe('delivery PDF path', () => {
     expect(await another.ctx.latexCompile.pdfPath('report-e')).toBe(output.pdfPath)
   })
 
-  it('forwards an abort signal to the shell request', async () => {
-    const { ctx } = await harness()
+  it('forwards an abort signal to the subprocess request', async () => {
+    const { ctx, subprocess } = await harness()
     const signal = new AbortController().signal
     await ctx.latexCompile.compile({ reportId: 'report-sig', source: 'x', signal })
-    expect(ctx.latexCompile).toBeDefined()
+    expect(subprocess.spawned[0]?.signal).toBe(signal)
   })
 
   it('ignores a bare position line that follows no error', () => {

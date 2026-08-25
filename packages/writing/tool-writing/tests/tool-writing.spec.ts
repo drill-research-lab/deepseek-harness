@@ -88,14 +88,14 @@ describe('dsh-tool-writing', () => {
   })
 
   it('compiles, returns diagnostics on failure, and does not snapshot', async () => {
-    const { ctx, shell } = await harness({
+    const { ctx, subprocess } = await harness({
       onRun: async (workdir) => { await writeArtifacts(workdir, { log: '! Undefined control sequence.\nl.5 \\foo' }) },
     })
     const created = await okValue(ctx, 'report_create', { title: 'A', source: '\\foo' })
     const reportId = created.reportId as string
 
-    // One failing compile: the shell returns exit 1.
-    shell.runResults = [outputRun({ exitCode: 1 })]
+    // One failing compile: the subprocess returns exit 1.
+    subprocess.outcomes = [outputRun({ exitCode: 1 })]
     const result = await callTool(ctx, 'report_compile', { reportId })
     expect(result.isError).toBe(false)
     const value = result.value as { ok: boolean; diagnostics: unknown[]; versionCreated: boolean }

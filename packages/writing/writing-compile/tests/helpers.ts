@@ -2,75 +2,78 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import ShellExecutor from '@deepseek-ai/dsh-shell'
+import SubprocessRuntime from '@deepseek-ai/dsh-subprocess'
 import type {
-  CollectedOutput,
-  ShellExecRequest,
-  ShellExecSpec,
-  ShellProcess,
-  ShellRunResult,
-} from '@deepseek-ai/dsh-shell'
+  SubprocessHandle,
+  SubprocessOutcome,
+  SubprocessOutputReader,
+  SubprocessSpawnSpec,
+  SubprocessTerminalSpawnSpec,
+  SubprocessTerminalHandle,
+} from '@deepseek-ai/dsh-subprocess'
 import LatexCompileService from '../src/index.ts'
 
 export interface TestHarness {
   readonly ctx: Context
-  readonly shell: FakeShellExecutor
+  readonly subprocess: FakeSubprocessRuntime
   readonly root: string
   dispose(): Promise<void>
 }
 
-class FakeShellExecutor extends ShellExecutor {
-  requested: ShellExecRequest | undefined
-  runResults: ShellRunResult[] = []
-  onRun: ((workdir: string) => void | Promise<void>) | undefined
+class FakeSubprocessRuntime extends SubprocessRuntime {
+  spawned: SubprocessSpawnSpec[] = []
+  outcomes: SubprocessOutcome[] = []
+  onSpawn: ((spec: SubprocessSpawnSpec) => void | Promise<void>) | undefined
 
-  resolve(request: ShellExecRequest): ShellExecSpec {
-    this.requested = request
-    const spec: ShellExecSpec = {
-      command: request.command,
-      workdir: request.workdir ?? '',
-      timeoutMs: request.timeoutMs ?? 1,
-      stdoutMaxBytes: request.stdoutMaxBytes ?? 1_000_000,
-      sandboxPolicy: undefined,
-    }
-    if (request.signal !== undefined) spec.signal = request.signal
-    if (request.stdin !== undefined) spec.stdin = request.stdin
-    if (request.env !== undefined) spec.env = request.env
-    if (request.dshEnv !== undefined) spec.dshEnv = request.dshEnv
-    return spec
+  resolveExecutable(command: string): Promise<string> {
+    return Promise.resolve(command === 'pdflatex' ? 'C:\\TeX\\pdflatex.exe' : command)
   }
 
-  async run(spec: ShellExecSpec): Promise<ShellRunResult> {
-    if (this.onRun !== undefined) await this.onRun(spec.workdir)
-    return this.runResults.shift() ?? defaultRun()
+  spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+    this.spawned.push(spec)
+    const outcome = this.outcomes.shift() ?? { exitCode: 0, signal: null }
+    return makeHandle(spec, outcome, this.onSpawn)
   }
 
-  start(_spec: ShellExecSpec): ShellProcess {
-    throw new Error('background compile is not used by the writing-compile tests')
+  spawnTerminal(_spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {
+    throw new Error('terminal subprocess is not used by the writing-compile tests')
   }
 }
 
-function collect(text: string): CollectedOutput {
-  return { text, truncated: false }
+function reader(text: string): SubprocessOutputReader {
+  return { readFrom: () => ({ text, nextOffset: 0, lossy: false }) }
 }
 
-function defaultRun(): ShellRunResult {
+function makeHandle(
+  spec: SubprocessSpawnSpec,
+  outcome: SubprocessOutcome,
+  onSpawn: ((spec: SubprocessSpawnSpec) => void | Promise<void>) | undefined,
+): SubprocessHandle {
+  const done = (async () => {
+    if (onSpawn !== undefined) await onSpawn(spec)
+    return outcome
+  })()
   return {
-    exitCode: 0,
-    signal: null,
-    timedOut: false,
-    aborted: false,
-    timeoutMs: 1,
-    stdout: collect(''),
-    stderr: collect(''),
+    pid: 1,
+    stdin: undefined,
+    stdout: undefined,
+    stderr: undefined,
+    collected: { stdout: reader(''), stderr: reader('') },
+    done,
+    terminate() {},
+    waitForExit: () => Promise.resolve(true),
   }
 }
 
-export function outputRun(partial: Partial<ShellRunResult>): ShellRunResult {
-  return { ...defaultRun(), ...partial }
+function defaultOutcome(): SubprocessOutcome {
+  return { exitCode: 0, signal: null }
 }
 
-/** Compose the compile service over a fake shell executor. */
+export function outputRun(partial: Partial<SubprocessOutcome>): SubprocessOutcome {
+  return { ...defaultOutcome(), ...partial }
+}
+
+/** Compose the compile service over a fake subprocess runtime. */
 export async function setupHarness(
   options: { readonly onRun?: (workdir: string) => void | Promise<void> } = {},
 ): Promise<TestHarness> {
@@ -78,9 +81,11 @@ export async function setupHarness(
   const ctx = new Context()
   const artifactRoot = join(root, 'artifacts')
   try {
-    await ctx.plugin(FakeShellExecutor)
-    const shell = ctx.shell as unknown as FakeShellExecutor
-    if (options.onRun !== undefined) shell.onRun = options.onRun
+    await ctx.plugin(FakeSubprocessRuntime)
+    const subprocess = ctx.subprocess as unknown as FakeSubprocessRuntime
+    if (options.onRun !== undefined) {
+      subprocess.onSpawn = spec => options.onRun!(spec.cwd)
+    }
     await ctx.plugin(LatexCompileService, {
       command: 'pdflatex -interaction=nonstopmode -halt-on-error',
       timeoutMs: 1000,
@@ -93,7 +98,7 @@ export async function setupHarness(
   }
   return {
     ctx,
-    shell: ctx.shell as unknown as FakeShellExecutor,
+    subprocess: ctx.subprocess as unknown as FakeSubprocessRuntime,
     root,
     async dispose() {
       await ctx.fiber.dispose()

@@ -8577,6 +8577,9 @@ importers:
       '@deepseek-ai/dsh-storage-json':
         specifier: workspace:^
         version: link:../../storage/storage-json
+      '@deepseek-ai/dsh-subprocess':
+        specifier: workspace:^
+        version: link:../../subprocess/subprocess
       '@deepseek-ai/dsh-tools':
         specifier: workspace:^
         version: link:../../core/tools
@@ -8633,9 +8636,6 @@ importers:
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
-      '@deepseek-ai/dsh-shell':
-        specifier: workspace:^
-        version: link:../../shell/shell
       '@deepseek-ai/dsh-storage':
         specifier: workspace:^
         version: link:../../storage/storage
@@ -8645,6 +8645,9 @@ importers:
       '@deepseek-ai/dsh-storage-json':
         specifier: workspace:^
         version: link:../../storage/storage-json
+      '@deepseek-ai/dsh-subprocess':
+        specifier: workspace:^
+        version: link:../../subprocess/subprocess
       '@deepseek-ai/dsh-typert-protocol':
         specifier: workspace:^
         version: link:../../typert/protocol
@@ -8667,9 +8670,9 @@ importers:
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
-      '@deepseek-ai/dsh-shell':
+      '@deepseek-ai/dsh-subprocess':
         specifier: workspace:^
-        version: link:../../shell/shell
+        version: link:../../subprocess/subprocess
 
   python/sdk-runtime:
     dependencies:

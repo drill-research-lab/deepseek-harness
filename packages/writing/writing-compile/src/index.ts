@@ -1,7 +1,8 @@
 /**
  * LaTeX compile service (`ctx.latexCompile`): write a report's source into a
- * per-report artifact directory, run a configurable engine through the shell
- * seam, parse the compiler log into diagnostics, and report the produced PDF.
+ * per-report artifact directory, run a configurable engine through the
+ * subprocess seam, parse the compiler log into diagnostics, and report the
+ * produced PDF.
  * @module @deepseek-ai/dsh-writing-compile
  */
 
@@ -10,14 +11,14 @@ import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Context, Service } from '@deepseek-ai/cordis'
 import s from '@deepseek-ai/schemastery'
-import type {} from '@deepseek-ai/dsh-shell'
+import type {} from '@deepseek-ai/dsh-subprocess'
 import type { CompileDiagnostic, CompileOutput, CompileRequest } from './types.ts'
 
 export type { CompileDiagnostic, CompileOutput, CompileRequest } from './types.ts'
 
 /** Deployment-varying compiler behavior, all changeable from cordis.yml. */
 export interface Config {
-  /** Shell command line run in the artifact directory; `main.tex` is appended. */
+  /** Engine command line run in the artifact directory; `main.tex` is appended. */
   readonly command: string
   /** Foreground compiler timeout in milliseconds. */
   readonly timeoutMs: number
@@ -33,6 +34,7 @@ declare module '@deepseek-ai/cordis' {
 
 const DEFAULT_COMMAND = 'pdflatex -interaction=nonstopmode -halt-on-error'
 const DEFAULT_TIMEOUT_MS = 120_000
+const GRACE_MS = 3000
 
 /** A report id is used as a directory segment, so only separators and traversal are rejected. */
 function assertSafeSegment(reportId: string): string {
@@ -43,12 +45,12 @@ function assertSafeSegment(reportId: string): string {
 }
 
 /**
- * Compiles one report's LaTeX source. The engine is configuration; the shell
- * seam owns process launch. The service writes `main.tex`, runs the engine,
- * parses `main.log`, and leaves the artifact directory for later serving.
+ * Compiles one report's LaTeX source. The engine is configuration; the
+ * subprocess seam owns process launch. The service writes `main.tex`, runs the
+ * engine, parses `main.log`, and leaves the artifact directory for later serving.
  */
 export class LatexCompileService extends Service {
-  static inject = ['shell']
+  static inject = ['subprocess']
 
   static Config: s<Config> = s.object({
     command: s.string().default(DEFAULT_COMMAND),
@@ -57,25 +59,26 @@ export class LatexCompileService extends Service {
   })
 
   /**
-   * @param ctx - Host context carrying the shell seam.
+   * @param ctx - Host context carrying the subprocess seam.
    * @param config - Validated engine command, timeout, and artifact root.
    */
   constructor(ctx: Context, config: Config) {
     super(ctx, 'latexCompile')
-    this.command = config.command
-    this.timeoutMs = config.timeoutMs
     this.artifactRoot = resolve(config.artifactRoot)
+    const [engine, ...args] = config.command.split(' ').filter(Boolean)
+    this.engine = engine ?? 'pdflatex'
+    this.args = args
   }
 
-  private readonly command: string
-  private readonly timeoutMs: number
+  private readonly engine: string
+  private readonly args: readonly string[]
   private readonly artifactRoot: string
 
   /**
    * Compile a report's source and return diagnostics plus the produced PDF.
    * @param request - Report id, source, and optional cancellation.
    * @returns the compile outcome; a missing compiler surfaces as a run failure
-   * that the shell seam resolves (nonzero exit), it does not reject here.
+   * (nonzero exit), it does not reject here.
    */
   async compile(request: CompileRequest): Promise<CompileOutput> {
     const segment = assertSafeSegment(request.reportId)
@@ -83,13 +86,21 @@ export class LatexCompileService extends Service {
     await mkdir(dir, { recursive: true })
     await writeFile(join(dir, 'main.tex'), request.source, 'utf8')
 
-    const spec = this.ctx.shell.resolve({
-      command: `${this.command} main.tex`,
-      workdir: dir,
-      timeoutMs: this.timeoutMs,
+    const executable = await this.ctx.subprocess.resolveExecutable(this.engine, undefined, request.signal)
+    const handle = this.ctx.subprocess.spawn({
+      argv: [executable, ...this.args, 'main.tex'],
+      cwd: dir,
+      stdio: {
+        stdin: 'ignore',
+        stdout: { maxBytes: 4_000_000 },
+        stderr: { maxBytes: 1_000_000 },
+      },
+      graceMs: GRACE_MS,
       ...(request.signal === undefined ? {} : { signal: request.signal }),
     })
-    const result = await this.ctx.shell.run(spec)
+    const outcome = await handle.done
+    const stdout = handle.collected.stdout?.readFrom(0)?.text ?? ''
+    const stderr = handle.collected.stderr?.readFrom(0)?.text ?? ''
 
     const log = await this.readLog(join(dir, 'main.log'))
     const diagnostics = parseLatexLog(log)
@@ -98,12 +109,12 @@ export class LatexCompileService extends Service {
     const hasErrors = diagnostics.some(diagnostic => diagnostic.severity === 'error')
 
     return {
-      ok: result.exitCode === 0 && !hasErrors,
+      ok: outcome.exitCode === 0 && !hasErrors,
       diagnostics,
       ...(pdfExists ? { pdfPath } : {}),
       artifactDir: dir,
-      stdout: result.stdout.text,
-      stderr: result.stderr.text,
+      stdout,
+      stderr,
     }
   }
 

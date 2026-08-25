@@ -2,15 +2,15 @@
 
 English | [简体中文](README.zh.md) | [繁體中文](README.zh-tw.md)
 
-LaTeX compilation for the writing capability (`ctx.latexCompile`). The service writes a report's source into a per-report artifact directory, runs a configurable engine through the `ctx.shell` seam, parses the compiler `.log` into ordered diagnostics, and reports the produced PDF path. It is the compile step of the write → compile → fix loop.
+LaTeX compilation for the writing capability (`ctx.latexCompile`). The service writes a report's source into a per-report artifact directory, runs a configurable engine through the `ctx.subprocess` seam, parses the compiler `.log` into ordered diagnostics, and reports the produced PDF path. It is the compile step of the write → compile → fix loop.
 
 ## Configuration
 
 | Key | Default | Meaning |
 |---|---|---|
-| `command` | `pdflatex -interaction=nonstopmode -halt-on-error` | Shell command run in the artifact directory; `main.tex` is appended. |
+| `command` | `pdflatex -interaction=nonstopmode -halt-on-error` | Engine command run in the artifact directory; `main.tex` is appended. |
 | `timeoutMs` | `120000` | Foreground compiler timeout. |
-| `artifactRoot` | `<tmp>/dsh-writing` | Root holding one `main.tex`/`main.log`/`main.pdf` set per report. |
+| `artifactRoot` | `<tmp>/dsh-writing` (pin to an absolute path in production) | Root holding one `main.tex`/`main.log`/`main.pdf` set per report. |
 
 Report ids become directory segments, so only a safe segment (alphanumeric, no separators or traversal) is accepted.
 

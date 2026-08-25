@@ -4,14 +4,15 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { AuthService, authenticatedUserId } from '@deepseek-ai/dsh-auth'
 import type { AuthenticatedUser } from '@deepseek-ai/dsh-auth'
-import ShellExecutor from '@deepseek-ai/dsh-shell'
+import SubprocessRuntime from '@deepseek-ai/dsh-subprocess'
 import type {
-  CollectedOutput,
-  ShellExecRequest,
-  ShellExecSpec,
-  ShellProcess,
-  ShellRunResult,
-} from '@deepseek-ai/dsh-shell'
+  SubprocessHandle,
+  SubprocessOutcome,
+  SubprocessOutputReader,
+  SubprocessSpawnSpec,
+  SubprocessTerminalHandle,
+  SubprocessTerminalSpawnSpec,
+} from '@deepseek-ai/dsh-subprocess'
 import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
@@ -41,50 +42,46 @@ export function testUser(): AuthenticatedUser {
   return { userId: authenticatedUserId('test:user'), username: 'test' }
 }
 
-export class FakeShellExecutor extends ShellExecutor {
-  runResults: ShellRunResult[] = []
-  onRun: ((workdir: string) => void | Promise<void>) | undefined
+export class FakeSubprocessRuntime extends SubprocessRuntime {
+  spawned: SubprocessSpawnSpec[] = []
+  outcomes: SubprocessOutcome[] = []
+  onSpawn: ((spec: SubprocessSpawnSpec) => void | Promise<void>) | undefined
 
-  resolve(request: ShellExecRequest): ShellExecSpec {
-    const spec: ShellExecSpec = {
-      command: request.command,
-      workdir: request.workdir ?? '',
-      timeoutMs: request.timeoutMs ?? 1,
-      stdoutMaxBytes: request.stdoutMaxBytes ?? 1_000_000,
-      sandboxPolicy: undefined,
+  resolveExecutable(command: string): Promise<string> {
+    return Promise.resolve(command === 'pdflatex' ? 'C:\\TeX\\pdflatex.exe' : command)
+  }
+
+  spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+    this.spawned.push(spec)
+    const outcome = this.outcomes.shift() ?? { exitCode: 0, signal: null }
+    const onSpawn = this.onSpawn
+    const done = (async () => {
+      if (onSpawn !== undefined) await onSpawn(spec)
+      return outcome
+    })()
+    return {
+      pid: 1,
+      stdin: undefined,
+      stdout: undefined,
+      stderr: undefined,
+      collected: { stdout: reader(''), stderr: reader('') },
+      done,
+      terminate() {},
+      waitForExit: () => Promise.resolve(true),
     }
-    if (request.signal !== undefined) spec.signal = request.signal
-    return spec
   }
 
-  async run(spec: ShellExecSpec): Promise<ShellRunResult> {
-    if (this.onRun !== undefined) await this.onRun(spec.workdir)
-    return this.runResults.shift() ?? defaultRun()
-  }
-
-  start(_spec: ShellExecSpec): ShellProcess {
-    throw new Error('background compile is not used by the writing-api tests')
+  spawnTerminal(_spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {
+    throw new Error('terminal subprocess is not used by the writing-api tests')
   }
 }
 
-function collect(text: string): CollectedOutput {
-  return { text, truncated: false }
+function reader(text: string): SubprocessOutputReader {
+  return { readFrom: () => ({ text, nextOffset: 0, lossy: false }) }
 }
 
-function defaultRun(): ShellRunResult {
-  return {
-    exitCode: 0,
-    signal: null,
-    timedOut: false,
-    aborted: false,
-    timeoutMs: 1,
-    stdout: collect(''),
-    stderr: collect(''),
-  }
-}
-
-export function outputRun(partial: Partial<ShellRunResult>): ShellRunResult {
-  return { ...defaultRun(), ...partial }
+export function outputRun(partial: Partial<SubprocessOutcome>): SubprocessOutcome {
+  return { exitCode: 0, signal: null, ...partial }
 }
 
 /** Write a compiler log plus an optional PDF into the artifact workdir. */
@@ -110,9 +107,11 @@ export async function setupHarness(
     await ctx.plugin(Storage)
     await ctx.plugin(StorageJson, { root })
     await ctx.plugin(StorageDomain, { backend: 'json' })
-    await ctx.plugin(FakeShellExecutor)
-    const shell = ctx.shell as unknown as FakeShellExecutor
-    if (options.onRun !== undefined) shell.onRun = options.onRun
+    await ctx.plugin(FakeSubprocessRuntime)
+    const subprocess = ctx.subprocess as unknown as FakeSubprocessRuntime
+    if (options.onRun !== undefined) {
+      subprocess.onSpawn = spec => options.onRun!(spec.cwd)
+    }
     if (options.authUser !== undefined) {
       await ctx.plugin(FakeAuth, options.authUser === null ? {} : { user: options.authUser })
     }
