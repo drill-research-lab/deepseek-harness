@@ -5679,6 +5679,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
+      zhtw-js:
+        specifier: ^4.4.5
+        version: 4.4.5
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^

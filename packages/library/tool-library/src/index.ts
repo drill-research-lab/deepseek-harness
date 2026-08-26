@@ -9,6 +9,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import { createConverter } from 'zhtw-js'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { ResourceId } from '@deepseek-ai/dsh-library'
 import type { Notebook } from '@deepseek-ai/dsh-library'
@@ -239,11 +240,25 @@ export function apply(ctx: Context, config: Config): void {
   }))
 }
 
-/** Resolve a notebook reference (id or exact title) or throw listing what exists. */
+const titleConverter = createConverter()
+
+/**
+ * Title-matching normal form: trimmed and converted through the zh-TW
+ * converter, so a model writing a notebook title in Simplified Chinese still
+ * matches the stored Traditional title.
+ * @param value - Reference or stored title.
+ * @returns the comparison form.
+ */
+function normalizeTitle(value: string): string {
+  return titleConverter.convert(value.trim())
+}
+
+/** Resolve a notebook reference (id or title, Simplified/Traditional-insensitive) or throw listing what exists. */
 function resolveNotebook(ctx: Context, reference: string): Notebook {
   const notebooks = ctx.librarian.listNotebooks()
-  const found = notebooks.find(notebook => String(notebook.id) === reference)
-    ?? notebooks.find(notebook => notebook.title === reference)
+  const wanted = normalizeTitle(reference)
+  const found = notebooks.find(notebook => String(notebook.id) === reference.trim())
+    ?? notebooks.find(notebook => normalizeTitle(notebook.title) === wanted)
   if (found === undefined) {
     const listing = notebooks.length === 0
       ? 'the library has no notebooks yet'

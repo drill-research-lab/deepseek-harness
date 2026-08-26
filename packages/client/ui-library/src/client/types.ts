@@ -24,6 +24,12 @@ export interface LibraryHooks {
     pageState: HostObservable<LibraryPageState>
     /** Bumped after every notebook/resource mutation so peers refetch. */
     revision: HostObservable<number>
+    /**
+     * Viewport x of the sidebar's right edge, measured by the sidebar
+     * section, so the page view starts beside the sidebar instead of
+     * covering it.
+     */
+    sidebarEdge: HostObservable<number>
   }
 }
 
@@ -31,6 +37,8 @@ export interface LibraryHooks {
 export interface LibrarySectionFace extends LibraryHooks {
   /** Open the Library page, optionally on one notebook. */
   onOpen(notebookId?: string): void
+  /** Report the sidebar's current right edge (viewport x, px). */
+  onMeasure(edge: number): void
   /** List notebooks, newest first. */
   listNotebooks(): Promise<readonly NotebookView[]>
   /** Create a notebook and open the page on it. */

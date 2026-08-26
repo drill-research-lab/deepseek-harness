@@ -70,6 +70,7 @@ export function apply(ctx: ClientContext): void {
 
   const pageState = valueSource<LibraryPageState>({ open: false })
   const revision = valueSource(0)
+  const sidebarEdge = valueSource(0)
   const bump = () => { revision.set(revision.getSnapshot() + 1) }
 
   const unwrap = <T>(result: { ok: true; value: T } | { ok: false; error: { code: string; message: string } }): T => {
@@ -101,10 +102,13 @@ export function apply(ctx: ClientContext): void {
     order: 10,
     locale: NS,
     inject: (): LibrarySectionFace => ({
-      hooks: { pageState, revision },
+      hooks: { pageState, revision, sidebarEdge },
       onOpen: (notebookId) => {
         const next = notebookId ?? pageState.getSnapshot().notebookId
         pageState.set(next === undefined ? { open: true } : { open: true, notebookId: next })
+      },
+      onMeasure: (edge) => {
+        if (edge !== sidebarEdge.getSnapshot()) sidebarEdge.set(edge)
       },
       listNotebooks,
       createNotebook: async (title) => {
@@ -120,7 +124,7 @@ export function apply(ctx: ClientContext): void {
     id: 'library',
     locale: NS,
     inject: (): LibraryViewFace => ({
-      hooks: { pageState, revision },
+      hooks: { pageState, revision, sidebarEdge },
       onClose: () => {
         pageState.set({ ...pageState.getSnapshot(), open: false })
       },

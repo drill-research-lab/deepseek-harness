@@ -3,7 +3,7 @@
  * the header row (+ create) and the notebook rows; the rail renders one icon
  * that expands the sidebar and opens the Library page.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls the ui-sidebar SlotMap merge (the sidebar.section entry).
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
@@ -31,32 +31,49 @@ function BookIcon({ size }: { size: number }) {
 
 /** Render the Library sidebar section. */
 export function LibrarySection({
-  wide, expandSidebar, usePageState, useRevision, onOpen, listNotebooks, createNotebook, t,
+  wide, expandSidebar, usePageState, useRevision, onOpen, onMeasure, listNotebooks, createNotebook, t,
 }: LibrarySectionProps) {
   const [notebooks, setNotebooks] = useState<readonly NotebookView[]>([])
   const revision = useRevision(value => value)
   const pageState = usePageState(state => state)
+  const container = useRef<HTMLDivElement>(null)
 
   const refresh = useCallback(() => {
     void listNotebooks().then(setNotebooks).catch(() => { setNotebooks([]) })
   }, [listNotebooks])
   useEffect(() => { refresh() }, [refresh, revision])
 
+  // The section spans the sidebar column, so its own right edge tracks the
+  // column width through rail/wide flips and drag resizes; the page view
+  // reads it to start beside the sidebar instead of covering it.
+  useEffect(() => {
+    const element = container.current
+    if (!element) return
+    const report = () => { onMeasure(Math.ceil(element.getBoundingClientRect().right) + 12) }
+    report()
+    const observer = new ResizeObserver(report)
+    observer.observe(element)
+    window.addEventListener('resize', report)
+    return () => { observer.disconnect(); window.removeEventListener('resize', report) }
+  }, [onMeasure, wide])
+
   if (!wide) {
     return (
-      <button
-        type="button"
-        className={css.railButton}
-        aria-label={t('section.open')}
-        onClick={() => { expandSidebar(); onOpen() }}
-      >
-        <BookIcon size={18} />
-      </button>
+      <div ref={container} className={css.railWrap}>
+        <button
+          type="button"
+          className={css.railButton}
+          aria-label={t('section.open')}
+          onClick={() => { expandSidebar(); onOpen() }}
+        >
+          <BookIcon size={18} />
+        </button>
+      </div>
     )
   }
 
   return (
-    <div className={css.section}>
+    <div ref={container} className={css.section}>
       <div className={css.sectionHeader}>
         <span className={css.sectionTitle}>
           <BookIcon size={14} />

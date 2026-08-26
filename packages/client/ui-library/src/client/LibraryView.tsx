@@ -22,11 +22,13 @@ export function LibraryView(props: LibraryViewProps) {
 
 /** The open page body; mounted only while the page state is open. */
 function LibraryPage({
-  notebookId, useRevision, onClose, onSelectNotebook,
+  notebookId, useRevision, useSidebarEdge, onClose, onSelectNotebook,
   listNotebooks, createNotebook, renameNotebook, deleteNotebook,
   listResources, deleteResource, ingestText, uploadFile, readMarkdown, ask, fileUrl, t,
 }: LibraryViewProps & { notebookId: string | undefined }) {
   const revision = useRevision(value => value)
+  // Start beside the sidebar (measured by the section) instead of covering it.
+  const sidebarEdge = useSidebarEdge(value => value)
   const [notebooks, setNotebooks] = useState<readonly NotebookView[]>([])
   const [resources, setResources] = useState<readonly ResourceView[]>([])
   const [selectedResource, setSelectedResource] = useState<string | undefined>(undefined)
@@ -68,7 +70,7 @@ function LibraryPage({
   const selected = resources.find(row => row.resourceId === selectedResource)
 
   return (
-    <div className={css.overlay}>
+    <div className={css.overlay} style={{ left: sidebarEdge }}>
       <div className={css.page}>
         <div className={css.pageHeader}>
           <span className={css.pageTitle}>{t('view.title')}</span>
@@ -302,9 +304,10 @@ interface AskExchange {
 }
 
 /**
- * The grounded question panel. Exchanges accumulate newest-first for the
- * session of one notebook; the mount key on the panel resets the thread when
- * the notebook changes, and the always-mounted pane keeps it across tabs.
+ * The grounded question panel, shaped like the native chat: exchanges read
+ * top-down chronologically with autoscroll, and the composer sits at the
+ * bottom. The mount key on the panel resets the thread when the notebook
+ * changes, and the always-mounted pane keeps it across tabs.
  */
 function AskPanel({ notebookId, ask, t }: {
   notebookId: string | undefined
@@ -315,6 +318,12 @@ function AskPanel({ notebookId, ask, t }: {
   const [busy, setBusy] = useState(false)
   const [entries, setEntries] = useState<readonly AskExchange[]>([])
   const [failure, setFailure] = useState<string | undefined>(undefined)
+  const thread = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const element = thread.current
+    if (element) element.scrollTop = element.scrollHeight
+  }, [entries.length, busy])
 
   const submit = () => {
     const asked = question.trim()
@@ -323,7 +332,7 @@ function AskPanel({ notebookId, ask, t }: {
     setFailure(undefined)
     void ask(notebookId, asked)
       .then((result) => {
-        setEntries(current => [{ question: asked, result }, ...current])
+        setEntries(current => [...current, { question: asked, result }])
         setQuestion('')
       })
       .catch((cause: unknown) => { setFailure(cause instanceof Error ? cause.message : String(cause)) })
@@ -332,29 +341,12 @@ function AskPanel({ notebookId, ask, t }: {
 
   return (
     <div className={css.askPanel}>
-      <div className={css.askInputRow}>
-        <textarea
-          className={css.askInput}
-          placeholder={t('view.ask.placeholder')}
-          value={question}
-          rows={2}
-          onChange={(event) => { setQuestion(event.target.value) }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submit() }
-          }}
-        />
-        <button type="button" className={css.smallButton} disabled={busy || notebookId === undefined} onClick={submit}>
-          {busy ? t('view.ask.thinking') : t('view.ask.submit')}
-        </button>
-      </div>
-      <div className={css.askAnswer}>
-        {failure !== undefined && <div className={css.statusError}>{failure}</div>}
-        {busy && <div className={css.columnEmpty}>{t('view.ask.thinking')}</div>}
+      <div ref={thread} className={css.askThread}>
         {entries.length === 0 && failure === undefined && !busy && (
           <div className={css.columnEmpty}>{t('view.ask.empty')}</div>
         )}
         {entries.map((entry, entryIndex) => (
-          <div key={`${String(entries.length - entryIndex)}-${entry.question}`} className={css.askEntry}>
+          <div key={`${String(entryIndex)}-${entry.question}`} className={css.askEntry}>
             <div className={css.askQuestion}>{entry.question}</div>
             <pre className={css.markdown}>{entry.result.answer}</pre>
             {entry.result.sources.length > 0 && (
@@ -369,6 +361,29 @@ function AskPanel({ notebookId, ask, t }: {
             )}
           </div>
         ))}
+        {busy && <div className={css.columnEmpty}>{t('view.ask.thinking')}</div>}
+        {failure !== undefined && <div className={css.statusError}>{failure}</div>}
+      </div>
+      <div className={css.askComposer}>
+        <textarea
+          className={css.askInput}
+          placeholder={t('view.ask.placeholder')}
+          value={question}
+          rows={1}
+          onChange={(event) => { setQuestion(event.target.value) }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submit() }
+          }}
+        />
+        <button
+          type="button"
+          className={css.askSend}
+          aria-label={t('view.ask.submit')}
+          disabled={busy || notebookId === undefined || question.trim() === ''}
+          onClick={submit}
+        >
+          ↑
+        </button>
       </div>
     </div>
   )
