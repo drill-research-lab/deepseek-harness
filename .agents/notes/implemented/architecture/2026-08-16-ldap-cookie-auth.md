@@ -16,6 +16,7 @@ The web transport's browser trust check prevents DNS rebinding and cross-site re
 - Optional registration is explicit and disabled by default. It creates a DSH-local `local:<uuid>` identity in the gateway's owner-only file store; it never provisions or modifies LDAP.
 - LDAPS is mandatory. The client retains certificate verification, operation timeouts, and compact standard ECDHE key shares for the observed WireGuard MTU path.
 - After HTTP or WebSocket authentication, Connection removes browser cookies from both normalized and raw request headers before dispatch. Downstream code receives the verified user only through `AuthService` request scope.
+- The authenticated DSH API exposes `auth.me({})` as `{ userId, username }`. It reads only `AuthService.currentUser()` after the Web carrier establishes the request scope; unauthenticated requests receive HTTP 401 before RPC dispatch. The General settings section reads this method on mount and keeps the result in component-local state.
 
 ## Alternatives considered
 
@@ -27,8 +28,10 @@ The web transport's browser trust check prevents DNS rebinding and cross-site re
 
 **Online gateway introspection.** It provides centralized revocation but makes every DSH request depend on another HTTP service. This single-host phase instead combines signed assertions with one-file-per-session presence checks; a future multi-gateway deployment can replace that store behind the same authentication boundary.
 
+**Let the settings UI call the gateway's `/auth/me`.** This duplicates the browser's authentication integration and couples DSH presentation to the gateway origin and response format. The Host already holds the verified request identity, so its authenticated RPC returns the smaller DSH-owned view.
+
 ## Consequences
 
-The shipped DSH web bundle has no login or registration route and loads neither an LDAP client nor the local account store. The browser uses minimal forms served by the gateway, receives a host-only cookie, and is redirected to DSH. The Host authentication layer consumes that cookie; HTTP, dedicated RPC, and WebSocket entry points reject missing or invalid assertions, strip cookie headers after acceptance, and dispatch only inside the verified user's request scope.
+The shipped DSH web bundle has no login or registration route and loads neither an LDAP client nor the local account store. The browser uses minimal forms served by the gateway, receives a host-only cookie, and is redirected to DSH. The Host authentication layer consumes that cookie; HTTP, dedicated RPC, and WebSocket entry points reject missing or invalid assertions, strip cookie headers after acceptance, and dispatch only inside the verified user's request scope. The settings panel can identify the active user without receiving the cookie or querying the gateway directly.
 
 Logout revocation is immediate for requests that begin after the logout response: deleting the session makes both `/auth/me` and DSH Host verification reject a saved cookie. Requests authenticated before deletion cannot be retroactively cancelled. Per-user filesystem roots, shell isolation, session ownership, and storage partitioning remain separate work.

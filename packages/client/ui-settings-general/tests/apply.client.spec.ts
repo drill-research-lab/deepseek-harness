@@ -40,15 +40,19 @@ async function bench(isLoopback = true) {
       },
     },
   }))
+  const authMe = vi.fn(() => Promise.resolve({
+    rpcId: 'auth-me' as never,
+    result: { ok: true as const, value: { userId: 'ldap:alice', username: 'Alice' } },
+  }))
   const settingsOpenDocument = vi.fn(() => Promise.resolve({
     rpcId: 'settings-open' as never,
     result: { ok: true as const, value: { opened: true as const } },
   }))
   ctx.provide('connection', {
-    api: { settings: { describe: settingsDescribe, openDocument: settingsOpenDocument } },
+    api: { auth: { me: authMe }, settings: { describe: settingsDescribe, openDocument: settingsOpenDocument } },
     isLoopback,
   } as never)
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, settingsDescribe, settingsOpenDocument }
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, authMe, settingsDescribe, settingsOpenDocument }
 }
 
 /** Declare the shell's six child slots the way ui-settings' entry does. */
@@ -91,6 +95,9 @@ describe('ui-settings-general apply', () => {
     expect(resolveSlotLabel(entry.options.label)).toBe('通用设置')
     expect(before.slots.spec('settings.general.item')).toEqual({ kind: 'list', scope: 'root' })
     expect(before.slots.entries('settings.general.item')).toEqual([])
+    const sectionInjected = (entry.inject as unknown as () => { loadCurrentUser(): Promise<unknown> })()
+    await expect(sectionInjected.loadCurrentUser()).resolves.toEqual({ userId: 'ldap:alice', username: 'Alice' })
+    expect(before.authMe).toHaveBeenCalledWith({})
     // The onboarding hole stays declared for feature-owned steps; this plugin
     // no longer seats one.
     expect(before.slots.entries('settings.onboarding')).toEqual([])

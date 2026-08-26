@@ -7,6 +7,23 @@
   width: 100%;
 }
 
+.account {
+  display: grid;
+  gap: 0.25rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.accountLabel,
+.userId {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 0.75rem;
+}
+
+.userId {
+  overflow-wrap: anywhere;
+}
+
 .section > :global([data-slot='settings.general.item']) > :last-child {
   border-bottom: none;
 }

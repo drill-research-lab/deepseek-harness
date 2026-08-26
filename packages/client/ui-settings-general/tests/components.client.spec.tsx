@@ -46,7 +46,13 @@ describe('GeneralSection', () => {
     const renderSlot = vi.fn(
       ((key: string) => <div data-testid={`slot-${key}`} />) as GeneralSectionComponentProps['renderSlot'],
     )
-    const props: GeneralSectionComponentProps = { ...kit, renderSlot, close: vi.fn() }
+    const props: GeneralSectionComponentProps = {
+      ...kit,
+      renderSlot,
+      close: vi.fn(),
+      t,
+      loadCurrentUser: () => Promise.resolve({ userId: 'ldap:alice', username: 'Alice' }),
+    }
     const view = render(<GeneralSection {...props} />)
     return { view, renderSlot }
   }
@@ -55,6 +61,12 @@ describe('GeneralSection', () => {
     const { renderSlot } = mount()
     expect(renderSlot).toHaveBeenCalledWith('settings.general.item', {})
     expect(screen.getByTestId('slot-settings.general.item')).toBeTruthy()
+  })
+
+  it('shows the authenticated user above the General settings rows', async () => {
+    mount()
+    expect(await screen.findByText('Alice')).toBeTruthy()
+    expect(screen.getByText('ldap:alice')).toBeTruthy()
   })
 })
 

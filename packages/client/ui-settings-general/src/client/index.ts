@@ -23,6 +23,7 @@ import type {
 import { SettingsRoot } from './SettingsRoot.tsx'
 import { CloseLabel, HeaderContent, TriggerContent } from './chrome.tsx'
 import { GeneralSection } from './GeneralSection.tsx'
+import type { GeneralSectionInjected } from './GeneralSection.tsx'
 import { SettingsDocumentAction } from './SettingsDocumentAction.tsx'
 import type { SettingsDocumentActionInjected } from './SettingsDocumentAction.tsx'
 import { refreshDocumentIfLoaded, SettingsDocumentStore } from './settings-document-store.ts'
@@ -69,6 +70,11 @@ export function apply(ctx: ClientContext): void {
   // locale/change re-registration wiring.
   const t = ctx.locale.bind(NS)
   const connection = ctx.get('connection') as ConnectionHandle
+  const loadCurrentUser: GeneralSectionInjected['loadCurrentUser'] = async () => {
+    const response = await connection.api.auth.me({})
+    if (!response.result.ok) throw new Error(response.result.error.message)
+    return response.result.value
+  }
   const documentController = connection.isLoopback
     ? new SettingsDocumentStore(connection.api)
     : undefined
@@ -174,5 +180,6 @@ export function apply(ctx: ClientContext): void {
     label: () => t('general.nav'),
     locale: NS,
     children: { 'settings.general.item': { kind: 'list', scope: 'root' } },
+    inject: () => ({ loadCurrentUser }),
   }, GeneralSection))
 }

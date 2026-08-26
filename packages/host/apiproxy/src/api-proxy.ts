@@ -2038,6 +2038,13 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   }
 
   return {
+    auth: {
+      async me(request) {
+        const user = ctx.get('auth')?.currentUser()
+        if (user === undefined) throw new Error('auth.me requires an authenticated request scope')
+        return ok(request, { userId: user.userId, username: user.username })
+      },
+    },
     sessions: {
       // Attached sessions summarize from memory; persisted-but-unattached (cold)
       // sessions merge in from the persistence store so history survives restarts.

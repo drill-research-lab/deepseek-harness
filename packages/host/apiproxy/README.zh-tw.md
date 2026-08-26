@@ -18,6 +18,8 @@ Settings 分節中的 `reasoningEffort` 在 agent-default-model 外掛程式設�
 
 ## 約定層（`/api`）
 
+`auth.me({})` 以 `{ userId, username }` 回傳目前已驗證請求的身分。Web carrier 會在 dispatch 前驗證簽章 session cookie 並建立請求 scope；沒有有效 session 的請求收到 HTTP 401，且不會進入 RPC 實作。
+
 協定訊息組成一個四象限可辨識聯合：發起方 × 請求／回應，與物理通道解耦。四種訊息分別是 `ClientRequest`（POST `/api/<method>` 的請求體）、`ServerResponse`（該 POST 的回應體）、`ServerRequest`（SSE（Server-Sent Events）幀）和 `ClientResponse`（POST `/api/respond` 的請求體）。回應始終回顯對應請求的 `rpcId`，絕不簽發新值。方法的參數與回傳值結構只存在於領域介面簽名（`SessionsApi`、`HostApi`、`EventsApi`）中；`RpcMethodMap` 註冊方法，其他所有位置均透過 `RequestPayload<K>`／`ResponseValue<K>` 派生。Zod schema 以 `satisfies z.ZodType<Wire<T>>` 錨定類型，並分兩層解析：先解析信封，再解析業務載荷，隨後按方法分發。業務錯誤由 `RpcResult` 的錯誤分支承載（`RpcErrorDetailsMap` 封閉錯誤碼集合）；HTTP 狀態只表達載體層結果。每個 `/api` POST 都必須聲明 `application/json` 媒體類型——否則在分發前即以 415 拒絕，因此跨站「簡單請求」（瀏覽器不經 CORS 預檢就會發出）永遠無法盲目執行有副作用的方法。
 
 分層與協定決策記錄在 [GUI 分層與 RPC 協定 RFC](../../../.agents/notes/implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.md) 中；瀏覽器側消費架構記錄在 [Web 用戶端架構 RFC](../../../.agents/notes/implemented/architecture/2026-07-19-gui-web-client-architecture.md) 中。

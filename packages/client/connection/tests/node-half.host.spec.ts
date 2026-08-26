@@ -178,7 +178,7 @@ describe('connection node half', () => {
   it('refuses an unauthenticated request after the browser-trust fence', async () => {
     const { routes, dispose } = await mounted({ authenticated: false })
     const { response, state } = fakeResponse()
-    await routes[0]!.handler(fakeRequest({ host: '127.0.0.1:3080' }), response)
+    await routes[0]!.handler(fakeRequest({ host: '127.0.0.1:3080' }, `${API_PATH}/auth.me`), response)
     expect(state.status).toBe(401)
     expect(state.body).toBe('{"error":"unauthorized"}')
     await dispose()

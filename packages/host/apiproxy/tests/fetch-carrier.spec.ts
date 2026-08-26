@@ -16,6 +16,11 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
     }
   }
   return {
+    auth: {
+      async me(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { userId: 'ldap:alice', username: 'Alice' } } }
+      },
+    },
     sessions: {
       async list(request) {
         if (overrides.crashOn === 'session.list') throw new Error('impl crashed')

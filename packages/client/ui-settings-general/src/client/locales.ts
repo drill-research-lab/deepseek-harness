@@ -8,6 +8,7 @@ export const zh = {
   'openDocument': '打开配置文件',
   'openDocument.error': '无法打开配置文件',
   'general.nav': '通用设置',
+  'account.title': '账号',
 } satisfies Record<string, string>
 
 /** Traditional Chinese dictionary, checked complete against zh. */
@@ -18,6 +19,7 @@ export const zhTw = {
   'openDocument': '開啟設定檔案',
   'openDocument.error': '無法開啟設定檔案',
   'general.nav': '通用設定',
+  'account.title': '帳號',
 } satisfies Record<keyof typeof zh, string>
 
 /** The settings namespace key union. */
@@ -31,4 +33,5 @@ export const en = {
   'openDocument': 'Open configuration file',
   'openDocument.error': 'Could not open configuration file',
   'general.nav': 'General',
+  'account.title': 'Account',
 } satisfies Record<SettingsKey, string>
