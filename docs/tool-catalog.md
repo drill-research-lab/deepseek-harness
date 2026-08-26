@@ -1039,7 +1039,7 @@ create, edit, pause, and resume require direct-human root authority; complete an
 
 ### `library_ask`
 
-Ask the Library (the research knowledge base) a question and get an answer grounded in the stored documents, with inline [source] citations. This is the primary way to use the knowledge base — prefer one good question over reading files one by one. The answer declines when the notebook holds nothing relevant.
+Ask the Library (the research knowledge base) a question and get an answer grounded in the stored documents, with inline [source] citations. This is the primary way to use the knowledge base — prefer one good question over reading files one by one. Overview questions answer from each document's leading content; only an empty notebook declines.
 
 ```json
 {

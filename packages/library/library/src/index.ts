@@ -422,8 +422,10 @@ export class LibrarianService extends Service {
   /**
    * Answer one question grounded in a notebook's converted documents: retrieve
    * the best chunks, then ask the configured model to answer from them with
-   * inline citations. Without any grounding excerpt the result declines
-   * (`grounded: false`) instead of calling the model.
+   * inline citations. A question with no keyword match (an overview ask like
+   * "introduce this") falls back to each document's leading content, so it
+   * still answers grounded; only a notebook with no readable content declines
+   * (`grounded: false`) without a model call.
    * @param notebookId - Notebook to answer from.
    * @param question - Natural-language question.
    * @param signal - Optional caller cancellation.
@@ -433,10 +435,11 @@ export class LibrarianService extends Service {
     if (this.requireNotebooks().get(notebookId) === undefined) {
       throw new Error(`unknown notebook '${notebookId}'`)
     }
-    const excerpts = await this.search(notebookId, question, this.config.searchLimit)
+    let excerpts = await this.search(notebookId, question, this.config.searchLimit)
+    if (excerpts.length === 0) excerpts = await this.leadingExcerpts(notebookId)
     if (excerpts.length === 0) {
       return {
-        answer: 'No matching content was found in this notebook for the question.',
+        answer: 'This notebook has no readable content yet — add a document first.',
         sources: [],
         grounded: false,
       }
@@ -486,6 +489,21 @@ export class LibrarianService extends Service {
       sources.push({ resourceId: ResourceId(excerpt.resourceId), name: excerpt.resourceName, heading: excerpt.heading })
     }
     return { answer, sources, grounded: true }
+  }
+
+  /**
+   * Overview grounding for questions no keyword matches: the leading chunks
+   * of every ready resource, in listing order, capped at the search limit.
+   */
+  private async leadingExcerpts(notebookId: NotebookId): Promise<ScoredChunk[]> {
+    const excerpts: ScoredChunk[] = []
+    for (const resource of this.listResources(notebookId)) {
+      if (resource.status !== 'ready') continue
+      const chunks = chunkMarkdown(String(resource.id), resource.name, await this.readMarkdown(resource.id))
+      for (const chunk of chunks.slice(0, 2)) excerpts.push({ ...chunk, score: 0 })
+      if (excerpts.length >= this.config.searchLimit) break
+    }
+    return excerpts.slice(0, this.config.searchLimit)
   }
 
   /** Run the converter seam for one stored original and settle the record. */

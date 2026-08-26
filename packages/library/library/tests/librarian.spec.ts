@@ -84,12 +84,25 @@ describe('LibrarianService', () => {
     expect(outlines).toContain('晚餐')
   })
 
-  it('declines ungrounded questions without an LLM call', async () => {
+  it('declines questions on an empty notebook without an LLM call', async () => {
     const { ctx } = await harness()
     const notebook = await ctx.librarian.createNotebook('kb')
     const result = await ctx.librarian.ask(notebook.id, 'anything at all?')
     expect(result.grounded).toBe(false)
     expect(result.sources).toEqual([])
+  })
+
+  it('falls back to leading excerpts for overview questions with no keyword match', async () => {
+    const { ctx } = await harness()
+    const notebook = await ctx.librarian.createNotebook('kb')
+    await ctx.librarian.ingest({
+      notebookId: notebook.id,
+      name: 'notes.md',
+      content: { text: '# Shaders\nContent about shaders.' },
+    })
+    // No keyword overlap, yet the ask proceeds to the model call — which is
+    // exactly the llm-missing error in this composition-without-llm harness.
+    await expect(ctx.librarian.ask(notebook.id, '簡單介紹一下')).rejects.toThrow(/requires the llm service/)
   })
 
   it('rejects operations on unknown notebooks and resources', async () => {
