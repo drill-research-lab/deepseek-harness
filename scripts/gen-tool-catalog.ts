@@ -6,8 +6,9 @@
  * `.agents/notes/implemented/process/2026-07-02-tool-schema-catalog.md`.
  */
 
-import { globSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename, resolve } from 'node:path'
+import { globSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { basename, join, resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import type { ToolSchema } from '@deepseek-ai/dsh-llm'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
@@ -17,6 +18,11 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SqliteSessionQueryEngine from '@deepseek-ai/dsh-session-query-sqlite'
 import GoalService from '@deepseek-ai/dsh-goal'
+import Storage from '@deepseek-ai/dsh-storage'
+import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
+import * as StorageJson from '@deepseek-ai/dsh-storage-json'
+import LibrarianService from '@deepseek-ai/dsh-library'
+import * as ToolLibrary from '@deepseek-ai/dsh-tool-library'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { type Config as ToolsConfig } from '@deepseek-ai/dsh-tools'
 import LocalBashExecutor from '@deepseek-ai/dsh-bash-local'
@@ -364,6 +370,31 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'create, edit, pause, and resume require direct-human root authority; complete and blocked also accept the exact current goal round. The default blocked lower bound is three admitted rounds.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-library',
+    dir: 'tool-library',
+    source: 'packages/library/tool-library/src/index.ts',
+    requires: ['ctx.tools', 'ctx.librarian'],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) {
+      const home = mkdtempSync(join(tmpdir(), 'dsh-tool-catalog-library-'))
+      await ctx.plugin(Storage)
+      await ctx.plugin(StorageJson, { root: join(home, 'storages') })
+      await ctx.plugin(StorageDomain, { backend: 'json' })
+      await ctx.plugin(LibrarianService, {
+        dshHome: home,
+        markitdown: false,
+        python: 'python',
+        convertTimeoutMs: 120_000,
+        searchLimit: 8,
+        maxAnswerTokens: 2048,
+        askTimeoutMs: 60_000,
+      })
+      await ctx.plugin(ToolLibrary)
+    },
+    note:
+      'library_ask answers only from stored notebook content and declines when nothing relevant is stored; notebook parameters accept an id or an exact title, and an unknown reference errors with the live notebook listing.',
   },
   {
     pkg: '@deepseek-ai/dsh-schedule',
