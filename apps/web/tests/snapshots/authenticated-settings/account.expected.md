@@ -20,7 +20,7 @@
   - region "账号":
     - text: 账号
     - strong: Alice
-    - text: ldap:alice
+    - button "登出"
   - text: Agent 预设 对此后新建的会话生效。运行中的会话保持它开始时的预设。
   - button "标准模式":
     - text: 标准模式

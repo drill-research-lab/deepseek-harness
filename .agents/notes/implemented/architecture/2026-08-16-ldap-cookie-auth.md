@@ -16,7 +16,8 @@ The web transport's browser trust check prevents DNS rebinding and cross-site re
 - Optional registration is explicit and disabled by default. It creates a DSH-local `local:<uuid>` identity in the gateway's owner-only file store; it never provisions or modifies LDAP.
 - LDAPS is mandatory. The client retains certificate verification, operation timeouts, and compact standard ECDHE key shares for the observed WireGuard MTU path.
 - After HTTP or WebSocket authentication, Connection removes browser cookies from both normalized and raw request headers before dispatch. Downstream code receives the verified user only through `AuthService` request scope.
-- The authenticated DSH API exposes `auth.me({})` as `{ userId, username }`. It reads only `AuthService.currentUser()` after the Web carrier establishes the request scope; unauthenticated requests receive HTTP 401 before RPC dispatch. The General settings section distinguishes loading, an empty response, a verified identity, and failure in component-local state; failure exposes an explicit retry.
+- The authenticated DSH API exposes `auth.me({})` as `{ userId, username }`. It reads only `AuthService.currentUser()` after the Web carrier establishes the request scope; unauthenticated requests receive HTTP 401 before RPC dispatch. The General settings section distinguishes loading, an empty response, a verified identity, and failure in component-local state; failure exposes an explicit retry. A verified identity shows the username beside a logout action rather than exposing the raw user id.
+- The Host authentication boundary registers its own `/auth/logout` POST route, so the settings logout action revokes the shared file-session record and clears the identity cookie on the DSH origin without crossing the gateway origin. The browser reloads into the unauthenticated redirect, and a replayed cookie is rejected because its session record is gone.
 
 ## Alternatives considered
 

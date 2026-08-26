@@ -160,7 +160,7 @@ describe('web e2e: authenticated account settings', () => {
       const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(ACCOUNT_EXPECTED, snapshot, MODE)
       expect(snapshot).toContain('Alice')
-      expect(snapshot).toContain('ldap:alice')
+      expect(snapshot).toContain('登出')
     } finally {
       await browser.close()
     }

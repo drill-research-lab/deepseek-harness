@@ -75,6 +75,10 @@ export function apply(ctx: ClientContext): void {
     if (!response.result.ok) throw new Error(response.result.error.message)
     return response.result.value
   }
+  const logout: GeneralSectionInjected['logout'] = async () => {
+    await fetch('/auth/logout', { method: 'POST', credentials: 'include' })
+    location.reload()
+  }
   const documentController = connection.isLoopback
     ? new SettingsDocumentStore(connection.api)
     : undefined
@@ -180,6 +184,6 @@ export function apply(ctx: ClientContext): void {
     label: () => t('general.nav'),
     locale: NS,
     children: { 'settings.general.item': { kind: 'list', scope: 'root' } },
-    inject: () => ({ loadCurrentUser }),
+    inject: () => ({ loadCurrentUser, logout }),
   }, GeneralSection))
 }

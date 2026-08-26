@@ -6,7 +6,8 @@ import css from './GeneralSection.module.css'
 
 /** Data access injected by the settings shell registration. */
 export interface GeneralSectionInjected {
-  loadCurrentUser(): Promise<CurrentUserView | undefined>
+  loadCurrentUser: () => Promise<CurrentUserView | undefined>
+  logout: () => Promise<void>
 }
 
 type AccountState =
@@ -25,7 +26,7 @@ export type GeneralSectionComponentProps =
  * @param props - composed slot props (contract/slots.ts).
  * @returns the section element tree.
  */
-export function GeneralSection({ loadCurrentUser, renderSlot, t }: GeneralSectionComponentProps) {
+export function GeneralSection({ loadCurrentUser, logout, renderSlot, t }: GeneralSectionComponentProps) {
   const [account, setAccount] = useState<AccountState>({ status: 'loading' })
   const [attempt, setAttempt] = useState(0)
 
@@ -46,10 +47,12 @@ export function GeneralSection({ loadCurrentUser, renderSlot, t }: GeneralSectio
       <section className={css.account} aria-label={t('account.title')}>
         <span className={css.accountLabel}>{t('account.title')}</span>
         {account.status === 'ready' ? (
-          <>
+          <div className={css.identity}>
             <strong>{account.user.username}</strong>
-            <span className={css.userId}>{account.user.userId}</span>
-          </>
+            <button type="button" className={css.logout} onClick={() => { void logout() }}>
+              {t('account.logout')}
+            </button>
+          </div>
         ) : account.status === 'failed' ? (
           <div className={css.accountStatus} role="alert">
             <span>{t('account.error')}</span>

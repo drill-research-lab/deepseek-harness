@@ -14,14 +14,15 @@
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
-.accountLabel,
-.userId {
+.accountLabel {
   color: var(--dsw-alias-label-tertiary);
   font-size: 0.75rem;
 }
 
-.userId {
-  overflow-wrap: anywhere;
+.identity {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .accountStatus {
@@ -32,13 +33,18 @@
   font-size: 0.875rem;
 }
 
-.retry {
+.retry,
+.logout {
   padding: 0;
   border: 0;
   color: var(--dsw-alias-link-primary);
   background: transparent;
   cursor: pointer;
   font: inherit;
+}
+
+.logout {
+  font-size: 0.875rem;
 }
 
 .section > :global([data-slot='settings.general.item']) > :last-child {

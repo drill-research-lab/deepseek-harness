@@ -4,6 +4,7 @@
   "include": ["src"],
   "references": [
     { "path": "../../identity/auth" }, { "path": "../../credentials/credentials" },
+    { "path": "../../host/webserver" },
     { "path": "../../runtime-diagnostics/invariants" }
   ]
 }

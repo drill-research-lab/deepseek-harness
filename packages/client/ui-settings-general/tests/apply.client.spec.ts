@@ -124,6 +124,25 @@ describe('ui-settings-general apply', () => {
     })
   })
 
+  it('exposes a logout callback that revokes the cookie and reloads', async () => {
+    const b = await bench()
+    declare(b.slots)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = generalEntry(b.slots)!
+    const sectionInjected = (entry.inject as unknown as () => { logout(): Promise<void> })()
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true }))
+    const reload = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('location', { reload })
+    try {
+      await sectionInjected.logout()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+    expect(fetchMock).toHaveBeenCalledWith('/auth/logout', { method: 'POST', credentials: 'include' })
+    expect(reload).toHaveBeenCalledOnce()
+  })
+
   it('registers the zh/en settings dictionaries and frees the seats on teardown', async () => {
     const b = await bench()
     declare(b.slots)

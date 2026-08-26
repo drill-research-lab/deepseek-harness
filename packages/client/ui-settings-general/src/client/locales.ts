@@ -13,6 +13,7 @@ export const zh = {
   'account.empty': '没有可显示的账号信息',
   'account.error': '无法加载账号信息',
   'account.retry': '重试',
+  'account.logout': '登出',
 } satisfies Record<string, string>
 
 /** Traditional Chinese dictionary, checked complete against zh. */
@@ -28,6 +29,7 @@ export const zhTw = {
   'account.empty': '沒有可顯示的帳號資訊',
   'account.error': '無法載入帳號資訊',
   'account.retry': '重試',
+  'account.logout': '登出',
 } satisfies Record<keyof typeof zh, string>
 
 /** The settings namespace key union. */
@@ -46,4 +48,5 @@ export const en = {
   'account.empty': 'No account information is available',
   'account.error': 'Could not load account information',
   'account.retry': 'Retry',
+  'account.logout': 'Log out',
 } satisfies Record<SettingsKey, string>
