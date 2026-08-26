@@ -182,7 +182,8 @@ describe('LDAP authentication gateway', () => {
     const loginPage = response()
     await app.routes.get('/auth/login')!.handler(browserRequest('/auth/login', 'GET'), loginPage.value)
     expect(loginPage.state.status).toBe(200)
-    expect(loginPage.state.body).toContain('<h2>LDAP</h2>')
+    expect(loginPage.state.body).toContain('<label for="tab-ldap">LDAP</label>')
+    expect(loginPage.state.body).toContain('<label for="tab-local">一般帳號</label>')
     expect(loginPage.state.body).toContain('建立一般帳號')
 
     const registerPage = response()
