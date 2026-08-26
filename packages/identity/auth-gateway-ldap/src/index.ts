@@ -127,26 +127,55 @@ function json(response: ServerResponse, status: number, body: unknown, cookie?: 
 }
 
 const PAGE_STYLE = `
-  body { font-family: sans-serif; margin: 40px auto; max-width: 420px; padding: 0 16px; }
-  label { display: block; margin: 12px 0; }
-  input { box-sizing: border-box; display: block; width: 100%; padding: 8px; }
-  button { padding: 8px 12px; }
-  section { margin-bottom: 32px; }
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    padding: 24px 16px; background: #0f1115; color: #ffffff;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .card { width: 100%; max-width: 400px; background: #1b1b1c; border: 1px solid #353638; border-radius: 12px; padding: 28px 24px; }
+  .brand { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+  .subtitle { margin: 0 0 22px; font-size: 13px; color: #adb2b8; }
+  .tabs input[type="radio"] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .tab-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; margin-bottom: 20px; background: #232324; border-radius: 8px; }
+  .tab-buttons label { padding: 8px 0; border-radius: 6px; text-align: center; font-size: 14px; font-weight: 500; color: #adb2b8; cursor: pointer; transition: background-color .15s cubic-bezier(.4,0,.2,1), color .15s cubic-bezier(.4,0,.2,1); }
+  #tab-ldap:checked ~ .tab-buttons label[for="tab-ldap"], #tab-local:checked ~ .tab-buttons label[for="tab-local"] { background: #353638; color: #ffffff; }
+  .field { display: block; margin-bottom: 14px; font-size: 13px; color: #adb2b8; }
+  .field input { display: block; width: 100%; margin-top: 6px; padding: 9px 12px; font-size: 14px; color: #ffffff; background: #232324; border: 1px solid #353638; border-radius: 8px; outline: none; }
+  .field input:focus { border-color: #4176e6; }
+  button[type="submit"] { display: block; width: 100%; padding: 10px 12px; margin-top: 4px; font-size: 15px; font-weight: 600; color: #ffffff; background: #4176e6; border: none; border-radius: 8px; cursor: pointer; transition: background-color .15s cubic-bezier(.4,0,.2,1); }
+  button[type="submit"]:hover { background: #679efe; }
+  .hint { margin: 16px 0 0; text-align: center; font-size: 13px; color: #adb2b8; }
+  .hint a { color: #679efe; text-decoration: none; }
+  .hint a:hover { text-decoration: underline; }
+  #tab-ldap:checked ~ .panes #pane-local { display: none; }
+  #tab-local:checked ~ .panes #pane-ldap { display: none; }
 `
 
 function page(title: string, content: string): string {
-  return `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>${PAGE_STYLE}</style></head><body><main>${content}</main></body></html>`
+  return `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>${PAGE_STYLE}</style></head><body><main class="card">${content}</main></body></html>`
 }
 
 function loginPage(registrationEnabled: boolean, csrf: string): string {
-  return page('DSH 登入', `<h1>DSH 登入</h1>
-    <section><h2>LDAP</h2><form method="post" action="/auth/login"><input type="hidden" name="_csrf" value="${csrf}"><input type="hidden" name="provider" value="ldap"><label>帳號<input name="username" autocomplete="username" required></label><label>密碼<input name="password" type="password" autocomplete="current-password" required></label><button type="submit">登入</button></form></section>
-    <section><h2>一般帳號</h2><form method="post" action="/auth/login"><input type="hidden" name="_csrf" value="${csrf}"><input type="hidden" name="provider" value="local"><label>帳號<input name="username" autocomplete="username" required></label><label>密碼<input name="password" type="password" autocomplete="current-password" required></label><button type="submit">登入</button></form></section>
-    ${registrationEnabled ? '<p><a href="/auth/register">建立一般帳號</a></p>' : '<p>一般帳號註冊未開放。</p>'}`)
+  return page('DSH 登入', `<h1 class="brand">DeepSeek Harness</h1>
+    <p class="subtitle">登入</p>
+    <div class="tabs">
+      <input type="radio" name="auth-tab" id="tab-ldap" checked>
+      <input type="radio" name="auth-tab" id="tab-local">
+      <div class="tab-buttons"><label for="tab-ldap">LDAP</label><label for="tab-local">一般帳號</label></div>
+      <div class="panes">
+        <form id="pane-ldap" method="post" action="/auth/login"><input type="hidden" name="_csrf" value="${csrf}"><input type="hidden" name="provider" value="ldap"><label class="field">帳號<input name="username" autocomplete="username" required></label><label class="field">密碼<input name="password" type="password" autocomplete="current-password" required></label><button type="submit">登入</button></form>
+        <form id="pane-local" method="post" action="/auth/login"><input type="hidden" name="_csrf" value="${csrf}"><input type="hidden" name="provider" value="local"><label class="field">帳號<input name="username" autocomplete="username" required></label><label class="field">密碼<input name="password" type="password" autocomplete="current-password" required></label><button type="submit">登入</button><p class="hint">${registrationEnabled ? '<a href="/auth/register">建立一般帳號</a>' : '一般帳號註冊未開放。'}</p></form>
+      </div>
+    </div>`)
 }
 
 function registerPage(csrf: string): string {
-  return page('建立 DSH 帳號', `<h1>建立一般帳號</h1><form method="post" action="/auth/register"><input type="hidden" name="_csrf" value="${csrf}"><label>帳號<input name="username" autocomplete="username" pattern="[A-Za-z0-9._-]{1,64}" required></label><label>顯示名稱<input name="displayName" autocomplete="name" required></label><label>Email<input name="email" type="email" autocomplete="email" required></label><label>密碼（至少 12 個字元）<input name="password" type="password" minlength="12" autocomplete="new-password" required></label><button type="submit">建立</button></form><p><a href="/auth/login">返回登入</a></p>`)
+  return page('建立 DSH 帳號', `<h1 class="brand">建立一般帳號</h1>
+    <p class="subtitle">建立一個 DSH 本地帳號</p>
+    <form method="post" action="/auth/register"><input type="hidden" name="_csrf" value="${csrf}"><label class="field">帳號<input name="username" autocomplete="username" pattern="[A-Za-z0-9._-]{1,64}" required></label><label class="field">顯示名稱<input name="displayName" autocomplete="name" required></label><label class="field">Email<input name="email" type="email" autocomplete="email" required></label><label class="field">密碼（至少 12 個字元）<input name="password" type="password" minlength="12" autocomplete="new-password" required></label><button type="submit">建立</button></form><p class="hint"><a href="/auth/login">返回登入</a></p>`)
 }
 
 function html(response: ServerResponse, status: number, body: string, cookie?: string, formAction = "'self'"): void {
