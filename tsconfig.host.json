@@ -170,7 +170,6 @@
     { "path": "./packages/identity/auth-ldap" },
     { "path": "./packages/identity/auth-local" },
     { "path": "./packages/identity/auth-gateway-ldap" },
-    { "path": "./packages/identity/auth-dev" },
     { "path": "./packages/session/session-telemetry-otel" },
     { "path": "./packages/core/system-prompt" },
     { "path": "./packages/core/agent" },
