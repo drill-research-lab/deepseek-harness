@@ -19,6 +19,8 @@ import { SettingsProvider, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { CredentialInfo, CredentialRef, ResolvedCredential } from '@deepseek-ai/dsh-credentials'
+import { OwnershipService } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal, OwnerRoot, UserHome } from '@deepseek-ai/dsh-ownership'
 import type { HostFrame } from '../src/api/index.ts'
 import type { RpcRequest, RpcResponse } from '../src/api/rpc.ts'
 import { RpcId } from '../src/api/rpc.ts'
@@ -75,6 +77,10 @@ class MemorySettings extends SettingsProvider {
 
   override prepareDocument(): Promise<string | undefined> {
     return Promise.resolve(this.preparedPath ?? this.documentPath)
+  }
+
+  publishOwned(ownerUserId: string, ns: SettingsNamespace, revision: number): void {
+    this.emitOwnedDocumentUpdated(ownerUserId, ns, revision)
   }
 
   protected load(): Promise<Record<string, unknown>> {
@@ -155,6 +161,25 @@ class BrokenCatalogAdapter extends CatalogAdapter {
   }
 }
 
+class TestOwnership extends OwnershipService {
+  readonly principal = {
+    userId: 'ldap:test-alice' as OwnerPrincipal['userId'],
+    source: 'request' as const,
+  }
+
+  currentPrincipal(): OwnerPrincipal { return this.principal }
+
+  currentPrincipalOrUndefined(): OwnerPrincipal { return this.principal }
+
+  backgroundPrincipal(userId: OwnerPrincipal['userId']): OwnerPrincipal {
+    return { userId, source: 'background' }
+  }
+
+  resolveUserHome(): Promise<UserHome> { throw new Error('not used by these tests') }
+
+  resolveOwnerRoot(): Promise<OwnerRoot> { throw new Error('not used by these tests') }
+}
+
 const NS = settingsNamespace('llm-deepseek')
 
 const AdapterConfig = z.object({
@@ -171,6 +196,7 @@ async function harness(options?: {
     preparedPath?: string
   }
   credentials?: false | { shadowed?: string[] }
+  ownership?: boolean
   /** Skip the directory registration to exercise a namespace the proxy does not expose. */
   configurableProviders?: false
 }): Promise<Context> {
@@ -181,6 +207,7 @@ async function harness(options?: {
   await ctx.plugin(UserQuestionService)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(LlmRuntime)
+  if (options?.ownership === true) await ctx.plugin(TestOwnership)
   if (options?.settings !== false) await ctx.plugin(MemorySettings, options?.settings)
   if (options?.credentials !== false) await ctx.plugin(MemoryCredentials, options?.credentials)
   // Model-provider namespaces plus the explicit Web preference and product
@@ -192,7 +219,11 @@ async function harness(options?: {
   }
   // Host-stream opener reads the committed-workspace baseline; the stub
   // suffices — the real workspace composition is api-proxy-workspace.spec's.
-  ctx.provide('workspaceRegistry', { list: () => [] } as never)
+  ctx.provide('workspaceRegistry', {
+    archivedSessionIds: [],
+    list: () => [],
+    prepareOwner: () => Promise.resolve(),
+  } as never)
   return ctx
 }
 
@@ -235,6 +266,23 @@ function forwardedSettings(ns: string): HostFrame {
 }
 
 describe('settings domain', () => {
+  it('keeps an owner-scoped host stream open when settings is an optional dependency', async () => {
+    const ctx = await harness({ ownership: true })
+    let api!: ReturnType<typeof createApiProxy>
+    const gateway = ctx.plugin(Object.assign((gatewayCtx: Context) => {
+      api = createApiProxy(gatewayCtx, DEFAULTS)
+    }, { inject: ['agents', 'llm', 'sessions', 'tools', 'userQuestions', 'workspaceRegistry'] }))
+    await gateway.await()
+
+    const frames = await collectHost(api, ['host/remote-event'], 1, async () => {
+      await new Promise(resolve => setTimeout(resolve, 0))
+      ;(ctx.get('settings') as MemorySettings).publishOwned('ldap:test-alice', NS, 7)
+    })
+
+    expect(frames).toEqual([{ ...forwardedSettings('llm-deepseek'), args: ['llm-deepseek', 7] }])
+    await gateway.dispose()
+  })
+
   it('reports an actionable error when no settings provider is mounted', async () => {
     const ctx = await harness({ settings: false })
     const api = createApiProxy(ctx, DEFAULTS)

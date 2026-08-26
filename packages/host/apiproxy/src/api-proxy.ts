@@ -3596,6 +3596,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async *host(_request, signal) {
         const streamPrincipal = ctx.root.get('ownership')?.currentPrincipal()
+        const settings = ctx.root.get('settings')
         const visibleSession = (session: Session): boolean => streamPrincipal === undefined
           || session.header.ownerUserId === streamPrincipal.userId
         if (ctx.root.get('ownership') !== undefined) await ctx.workspaceRegistry.prepareOwner()
@@ -3634,8 +3635,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             if (!visibleSession(agent.session)) return
             queue.push(frame({ type: 'host/agent-error', sessionId: agent.id, message: errorChain(error) }))
           }),
-          ...streamPrincipal === undefined || ctx.get('settings') === undefined ? [] : [
-            ctx.settings.onOwnedDocumentUpdated((ownerUserId, ns, revision) => {
+          ...streamPrincipal === undefined || settings === undefined ? [] : [
+            settings.onOwnedDocumentUpdated((ownerUserId, ns, revision) => {
               if (ownerUserId !== streamPrincipal.userId) return
               queue.push(frame({
                 type: 'host/remote-event',
