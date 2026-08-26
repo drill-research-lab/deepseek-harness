@@ -24,6 +24,23 @@
   overflow-wrap: anywhere;
 }
 
+.accountStatus {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 0.875rem;
+}
+
+.retry {
+  padding: 0;
+  border: 0;
+  color: var(--dsw-alias-link-primary);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
 .section > :global([data-slot='settings.general.item']) > :last-child {
   border-bottom: none;
 }

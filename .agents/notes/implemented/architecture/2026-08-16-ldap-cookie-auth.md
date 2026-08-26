@@ -16,7 +16,7 @@ The web transport's browser trust check prevents DNS rebinding and cross-site re
 - Optional registration is explicit and disabled by default. It creates a DSH-local `local:<uuid>` identity in the gateway's owner-only file store; it never provisions or modifies LDAP.
 - LDAPS is mandatory. The client retains certificate verification, operation timeouts, and compact standard ECDHE key shares for the observed WireGuard MTU path.
 - After HTTP or WebSocket authentication, Connection removes browser cookies from both normalized and raw request headers before dispatch. Downstream code receives the verified user only through `AuthService` request scope.
-- The authenticated DSH API exposes `auth.me({})` as `{ userId, username }`. It reads only `AuthService.currentUser()` after the Web carrier establishes the request scope; unauthenticated requests receive HTTP 401 before RPC dispatch. The General settings section reads this method on mount and keeps the result in component-local state.
+- The authenticated DSH API exposes `auth.me({})` as `{ userId, username }`. It reads only `AuthService.currentUser()` after the Web carrier establishes the request scope; unauthenticated requests receive HTTP 401 before RPC dispatch. The General settings section distinguishes loading, an empty response, a verified identity, and failure in component-local state; failure exposes an explicit retry.
 
 ## Alternatives considered
 
@@ -32,6 +32,6 @@ The web transport's browser trust check prevents DNS rebinding and cross-site re
 
 ## Consequences
 
-The shipped DSH web bundle has no login or registration route and loads neither an LDAP client nor the local account store. The browser uses minimal forms served by the gateway, receives a host-only cookie, and is redirected to DSH. The Host authentication layer consumes that cookie; HTTP, dedicated RPC, and WebSocket entry points reject missing or invalid assertions, strip cookie headers after acceptance, and dispatch only inside the verified user's request scope. The settings panel can identify the active user without receiving the cookie or querying the gateway directly.
+The shipped DSH web bundle has no login or registration route and loads neither an LDAP client nor the local account store. The browser uses minimal forms served by the gateway, receives a host-only cookie, and is redirected to DSH. The Host authentication layer consumes that cookie; HTTP, dedicated RPC, and WebSocket entry points reject missing or invalid assertions, strip cookie headers after acceptance, and dispatch only inside the verified user's request scope. The settings panel can identify the active user without receiving the cookie or querying the gateway directly. Keyless Web coverage uses a fixed request-scoped identity for scenarios unrelated to external authentication; the authenticated settings scenario instead boots the shipping verifier, logs in through the real gateway, alternates two live cookies, and snapshots the assembled settings dialog.
 
 Logout revocation is immediate for requests that begin after the logout response: deleting the session makes both `/auth/me` and DSH Host verification reject a saved cookie. Requests authenticated before deletion cannot be retroactively cancelled. Per-user filesystem roots, shell isolation, session ownership, and storage partitioning remain separate work.

@@ -61,6 +61,7 @@ import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-agent'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
+import { AuthService, authenticatedUserId, type AuthenticatedUser } from '@deepseek-ai/dsh-auth'
 import { REPO_ROOT, requireDist } from './support.ts'
 
 // Host-side web e2e cannot import a browser package: doing so would pull that
@@ -103,6 +104,15 @@ const WEB_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/web-app/cordis.patch.yml
 const INSTALL_ANCHOR = join(REPO_ROOT, 'apps/cli/package.json')
 /** The deployment's own agent-preset root, shipped beside the app's config. */
 const SHIPPED_PRESET_DIR = join(REPO_ROOT, 'apps/cli/config/agent-presets')
+const SCAFFOLD_USER: AuthenticatedUser = {
+  userId: authenticatedUserId('fixture:web-user'),
+  username: 'Web fixture user',
+}
+
+/** Request-scoped identity for scenarios that do not exercise external cookie verification. */
+class ScaffoldAuthService extends AuthService {
+  authenticateRequest(): Promise<AuthenticatedUser> { return Promise.resolve(SCAFFOLD_USER) }
+}
 
 // Replay publishes the provider catalog the gateway routes to (providers
 // mode, never catch-all: with llm-deepseek disabled no adapter exists, so a
@@ -191,6 +201,21 @@ export interface LaunchOptions {
    * ordering.
    */
   extraOverlayPath?: string
+  /**
+   * Exercise the shipping external-cookie verifier against this public key
+   * and revocable session directory. Omit to use the scaffold's fixed
+   * request-scoped identity without external credentials.
+   */
+  authentication?: {
+    /** Ed25519 public key in SPKI PEM form. */
+    publicKey: string
+    /** Exact token issuer accepted by the Host. */
+    issuer: string
+    /** Exact token audience accepted by the Host. */
+    audience: string
+    /** Session directory shared with the test authentication gateway. */
+    sessionDirectory: string
+  }
   /**
    * Replay fixture (session.jsonl) served by the inserted dsh-llm-replay row
    * in replay/refresh modes; ignored in record mode (the real adapter
@@ -322,6 +347,14 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   // paths at load, and an in-process boot must NEVER touch the developer's
   // real ~/.dsh document or credential file.
   const harnessHome = options.harnessHome ?? join(workspaceCwd, '.dsh-home')
+  const authenticationCredentials = join(workspaceCwd, '.auth-credentials.yaml')
+  if (options.authentication !== undefined) {
+    await writeFile(authenticationCredentials, `${JSON.stringify({
+      AUTH_COOKIE_PUBLIC_KEY: options.authentication.publicKey,
+      AUTH_COOKIE_ISSUER: options.authentication.issuer,
+      AUTH_COOKIE_AUDIENCE: options.authentication.audience,
+    }, undefined, 2)}\n`, { mode: 0o600 })
+  }
   // Skill discovery is model-visible input, and its roots now resolve inside a
   // PRESET — a subtree this lane's include patches cannot reach, because the
   // roster mounts it directly per session rather than as a row of the booted
@@ -451,7 +484,12 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       ? []
       : [{ id: 'connection', config: { trustedHosts: [options.remoteAuthority] } }],
     { id: 'settings', config: { dshHome: harnessHome } },
-    { id: 'credentials', config: { dshHome: harnessHome } },
+    options.authentication === undefined
+      ? { id: 'authentication', disabled: true }
+      : { id: 'authentication', config: { sessionDirectory: options.authentication.sessionDirectory } },
+    { id: 'credentials', config: options.authentication === undefined
+      ? { dshHome: harnessHome }
+      : { path: authenticationCredentials, watch: false } },
     // The shipped directory-picker row is the -auto chooser, which resolves
     // the interaction from the RUNNING host (display, SSH launch, bind). The
     // lane's goldens are interaction-specific (workspace-management drives
@@ -509,6 +547,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     ctx.baseUrl = pathToFileURL(profileDir).href + '/'
     // This direct Loader harness supplies the same root-path capability as app-boot.
     ctx.provide('dshHomePath', dshHomePath)
+    if (options.authentication === undefined) await ctx.plugin(ScaffoldAuthService)
     // A host with no command line still provides one: the web bundle's startup
     // row releases the rows waiting on it, and with no arguments each starts on
     // the values this scaffold composed above. An exit request can only come

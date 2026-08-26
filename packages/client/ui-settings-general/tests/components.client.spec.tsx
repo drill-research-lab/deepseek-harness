@@ -42,7 +42,9 @@ describe('chrome content', () => {
 })
 
 describe('GeneralSection', () => {
-  function mount() {
+  function mount(loadCurrentUser: GeneralSectionComponentProps['loadCurrentUser'] = () => Promise.resolve({
+    userId: 'ldap:alice', username: 'Alice',
+  })) {
     const renderSlot = vi.fn(
       ((key: string) => <div data-testid={`slot-${key}`} />) as GeneralSectionComponentProps['renderSlot'],
     )
@@ -51,7 +53,7 @@ describe('GeneralSection', () => {
       renderSlot,
       close: vi.fn(),
       t,
-      loadCurrentUser: () => Promise.resolve({ userId: 'ldap:alice', username: 'Alice' }),
+      loadCurrentUser,
     }
     const view = render(<GeneralSection {...props} />)
     return { view, renderSlot }
@@ -65,8 +67,27 @@ describe('GeneralSection', () => {
 
   it('shows the authenticated user above the General settings rows', async () => {
     mount()
+    expect(screen.getByRole('status').textContent).toBe('Loading account information…')
     expect(await screen.findByText('Alice')).toBeTruthy()
     expect(screen.getByText('ldap:alice')).toBeTruthy()
+  })
+
+  it('distinguishes a successful empty account response', async () => {
+    mount(() => Promise.resolve(undefined))
+    expect(await screen.findByText('No account information is available')).toBeTruthy()
+  })
+
+  it('shows a failed load and retries successfully', async () => {
+    const loadCurrentUser = vi.fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({ userId: 'ldap:alice', username: 'Alice' })
+    mount(loadCurrentUser)
+
+    expect((await screen.findByRole('alert')).textContent).toContain('Could not load account information')
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+
+    expect(await screen.findByText('Alice')).toBeTruthy()
+    expect(loadCurrentUser).toHaveBeenCalledTimes(2)
   })
 })
 
