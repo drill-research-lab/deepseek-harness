@@ -85,15 +85,40 @@
     - id: credentials
       name: '@deepseek-ai/dsh-credentials-local'
 
-    # The pi-ai multi-provider twin, mounted dormant: zero routes (and no extra
-    # models in the picker) until a `llm-pi-ai:` settings section supplies provider
-    # profiles — then those routes register live, keys resolving per request
-    # through their apiKeyEnv references, and drop again when the section empties.
-    # Supplying those profiles is exactly what the web Models page does. Which
-    # adapters exist is composition; which providers run is the user's settings
-    # document.
+    # The pi-ai multi-provider twin. The `providers` config below declares the
+    # deployment-default routes; a `llm-pi-ai:` settings section (what the web
+    # Models page writes) still adds or overrides routes, and keys resolve per
+    # request through each route's apiKeyEnv reference. Catalog routes (openai,
+    # anthropic, xai, opencode) reuse pi-ai's shipped endpoints and model lists,
+    # so they name only a key; the self-hosted vLLM route names its endpoint
+    # and model explicitly.
     - id: llm-pi-ai
       name: '@deepseek-ai/dsh-llm-pi-ai'
+      config:
+        providers:
+          openai:
+            displayName: OpenAI
+            apiKeyEnv: OPENAI_API_KEY
+          anthropic:
+            displayName: Anthropic
+            apiKeyEnv: ANTHROPIC_API_KEY
+          xai:
+            displayName: xAI (Grok)
+            apiKeyEnv: XAI_API_KEY
+          opencode:
+            displayName: OpenCode
+            apiKeyEnv: OPENCODE_API_KEY
+          vllm-local:
+            displayName: Self-hosted vLLM
+            apiKeyEnv: VLLM_LOCAL_API_KEY
+            api: openai-completions
+            baseURL: http://192.168.101.70:8888/v1
+            compat:
+              thinkingFormat: deepseek
+            models:
+              - id: deepseek-v4-flash-0731
+                name: DeepSeek V4 Flash (local)
+                contextWindow: 384000
 
     - id: session-persistence-jsonl
       name: '@deepseek-ai/dsh-session-persistence-jsonl'
