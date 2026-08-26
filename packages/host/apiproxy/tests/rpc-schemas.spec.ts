@@ -210,6 +210,7 @@ describe('sessions domain schemas', () => {
       groups: [{
         id: 'deepseek-official',
         name: 'DeepSeek',
+        keyConfigured: true,
         models: [{
           id: 'deepseek-v4-flash',
           name: 'DeepSeek V4 Flash',
@@ -250,6 +251,7 @@ describe('sessions domain schemas', () => {
       groups: [{
         id: 'deepseek-official',
         name: 'DeepSeek',
+        keyConfigured: true,
         models: [{ id: 'm', name: 'M', reasoning: { efforts: [] } }],
       }],
       failures: [],

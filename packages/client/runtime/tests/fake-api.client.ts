@@ -91,6 +91,7 @@ export class FakeApiClient implements IApiClient {
     groups: [{
       id: 'deepseek-official',
       name: 'DeepSeek',
+      keyConfigured: true,
       models: [{ id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash' }],
     }],
     failures: [],

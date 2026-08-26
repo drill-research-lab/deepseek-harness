@@ -134,6 +134,13 @@ export interface ModelProviderGroup {
   id: string
   /** Provider display name. */
   name: string
+  /**
+   * Whether the current request owner has a usable credential for this
+   * provider's `apiKeyEnv`. False lets a selector disable the group instead of
+   * letting a request fail with a missing credential. Providers that name no
+   * credential are always `true`.
+   */
+  keyConfigured: boolean
   /** Models in provider-preferred order. */
   models: ModelCatalogModel[]
 }

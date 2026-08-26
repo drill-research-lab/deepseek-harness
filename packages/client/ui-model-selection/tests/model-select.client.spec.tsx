@@ -36,6 +36,7 @@ function state(overrides: Partial<ModelDirectoryState> = {}): ModelDirectoryStat
     groups: [{
       id: 'deepseek-official',
       name: 'DeepSeek',
+      keyConfigured: true,
       models: [{ id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', reasoning }],
     }],
     failures: [],
@@ -87,6 +88,7 @@ describe('ModelSelect reasoning effort', () => {
       groups: [{
         id: 'provider',
         name: 'Provider',
+        keyConfigured: true,
         models: [{
           id: 'model',
           name: 'Model',
@@ -139,6 +141,7 @@ describe('ModelSelect reasoning effort', () => {
     const groups = [{
       id: 'deepseek-official',
       name: 'DeepSeek',
+      keyConfigured: true,
       models: [
         { id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', reasoning },
         { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro' },
@@ -180,5 +183,31 @@ describe('ModelSelect reasoning effort', () => {
 
     expect(screen.queryByRole('button')).toBeNull()
     expect(load).not.toHaveBeenCalled()
+  })
+
+  it('disables and labels a provider group whose credential is not configured', () => {
+    const directory = createSnapshotStore(state({
+      groups: [{
+        id: 'openai',
+        name: 'OpenAI',
+        keyConfigured: false,
+        models: [{ id: 'gpt-5', name: 'GPT-5' }],
+      }],
+      current: { provider: 'openai', model: 'gpt-5' },
+    }))
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={directory}
+      load={vi.fn()}
+      select={vi.fn().mockResolvedValue(true)}
+      t={t}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: /选择模型|當前|当前/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+    expect(screen.getByText(/尚未設定 API key/)).toBeTruthy()
+    const option = screen.getByRole('menuitemradio', { name: 'GPT-5' }) as HTMLButtonElement
+    expect(option.disabled).toBe(true)
   })
 })

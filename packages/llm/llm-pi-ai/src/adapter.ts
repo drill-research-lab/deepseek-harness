@@ -225,10 +225,15 @@ export class PiAiAdapter extends LlmAdapter {
   }
 
   override providerInfo(provider: string): LlmProviderInfo {
+    const profile = this.current().profiles.get(provider)
     // The configured name, not the route key: `displayName` exists so a
     // deployment can label a route, and a label only the configuration surface
     // reads would leave every selector showing the raw key.
-    return { id: provider, name: this.current().profiles.get(provider)?.displayName ?? provider }
+    return {
+      id: provider,
+      name: profile?.displayName ?? provider,
+      ...profile?.apiKeyEnv === undefined ? {} : { apiKeyEnv: profile.apiKeyEnv },
+    }
   }
 
   override providerRetryPolicy(provider: string): ResolvedRetryPolicy | undefined {

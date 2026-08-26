@@ -17,7 +17,7 @@ import LlmRuntime, { LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmModelInfo, LlmProviderInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SettingsProvider, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
-import { CredentialProvider } from '@deepseek-ai/dsh-credentials'
+import { CredentialProvider, credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialInfo, CredentialRef, ResolvedCredential } from '@deepseek-ai/dsh-credentials'
 import { OwnershipService } from '@deepseek-ai/dsh-ownership'
 import type { OwnerPrincipal, OwnerRoot, UserHome } from '@deepseek-ai/dsh-ownership'
@@ -137,12 +137,16 @@ class MemoryCredentials extends CredentialProvider {
 
 /** Catalog-serving adapter stub for the llm.models path. */
 class CatalogAdapter extends LlmAdapter {
-  constructor(private readonly name: string, private readonly models: readonly string[]) {
+  constructor(
+    private readonly name: string,
+    private readonly models: readonly string[],
+    private readonly apiKeyEnv?: string,
+  ) {
     super()
   }
 
   override providerInfo(provider: string): LlmProviderInfo {
-    return { id: provider, name: this.name }
+    return { id: provider, name: this.name, ...this.apiKeyEnv === undefined ? {} : { apiKeyEnv: this.apiKeyEnv } }
   }
 
   override listModels(provider: string): Promise<readonly LlmModelInfo[]> {
@@ -698,12 +702,34 @@ describe('llm domain', () => {
     expect(value.groups).toEqual([{
       id: 'deepseek-official',
       name: 'DeepSeek',
+      keyConfigured: true,
       models: [
         { id: 'deepseek-v4-flash', name: 'deepseek-v4-flash' },
         { id: 'deepseek-v4-pro', name: 'deepseek-v4-pro' },
       ],
     }])
     expect(value.failures).toEqual([{ id: 'broken', name: 'Broken', message: 'catalog backend down' }])
+  })
+
+  it('marks a provider group key-configured only while its credential resolves', async () => {
+    const ctx = await harness()
+    ctx.llm.registerAdapter(['openai'], new CatalogAdapter('OpenAI', ['gpt-5'], 'OPENAI_API_KEY'))
+    const api = createApiProxy(ctx, DEFAULTS)
+
+    const withoutKey = expectOk(await api.llm.models(request({})))
+    expect(withoutKey.groups).toEqual([{ id: 'openai', name: 'OpenAI', keyConfigured: false, models: [{ id: 'gpt-5', name: 'gpt-5' }] }])
+
+    await ctx.credentials.set(credentialRef('OPENAI_API_KEY'), 'sk-test')
+    const withKey = expectOk(await api.llm.models(request({})))
+    expect(withKey.groups).toEqual([{ id: 'openai', name: 'OpenAI', keyConfigured: true, models: [{ id: 'gpt-5', name: 'gpt-5' }] }])
+  })
+
+  it('treats a provider without a named credential as key-configured', async () => {
+    const ctx = await harness()
+    ctx.llm.registerAdapter(['deepseek-official'], new CatalogAdapter('DeepSeek', ['deepseek-v4-flash']))
+    const api = createApiProxy(ctx, DEFAULTS)
+    const value = expectOk(await api.llm.models(request({})))
+    expect(value.groups[0]).toMatchObject({ id: 'deepseek-official', keyConfigured: true })
   })
 
   it('forwards llm/adapters-updated at every topology commit point', async () => {
