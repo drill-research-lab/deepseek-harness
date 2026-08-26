@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { ApprovalRequestId } from '../src/index.ts'
 import type {
-  ApprovalRequestId as ApprovalRequestIdType, CordisDynamicPluginId,
+  ApprovalRequestId as ApprovalRequestIdType, CordisDynamicPackageId, CordisDynamicPluginId,
+  DynamicCordisHostHalfResult,
 } from '../src/types.ts'
 import { AGENT_A, AGENT_B, CLIENT_CODE, setup, running } from './helpers.ts'
 
@@ -24,6 +25,18 @@ const HOST_CODE = `
 `
 
 type Runner = Awaited<ReturnType<typeof setup>>['runner']
+
+async function approveHostOnly(
+  runner: Runner,
+  pluginId: CordisDynamicPluginId,
+  packageId: CordisDynamicPackageId,
+): Promise<DynamicCordisHostHalfResult> {
+  const requested = await runner.run(AGENT_A, pluginId, packageId, 'run')
+  if (!requested.ok) throw new Error(requested.message)
+  const requestId = runner.inventory().find(row => row.pluginId === pluginId)?.latestRun?.approvalRequestId
+  if (requestId === undefined) throw new Error('host-only run did not create an approval request')
+  return runner.runHostHalf(AGENT_A, pluginId, packageId, 'run', requestId, false)
+}
 
 function define(
   runner: Runner,
@@ -147,7 +160,7 @@ describe('dynamic runner definitions', () => {
 })
 
 describe('dynamic runner dispatch', () => {
-  it('starts a host-only package immediately, with no request and no approval', async () => {
+  it('waits for approval before starting a host-only package', async () => {
     const { ctx, runner, gateway } = await setup()
     const { pluginId, packageId } = define(runner, {
       sessionId: AGENT_A.id, name: 'doubler', purpose: 'p', host: HOST_CODE,
@@ -155,24 +168,32 @@ describe('dynamic runner dispatch', () => {
 
     const receipt = await runner.run(AGENT_A, pluginId, packageId, 'run')
 
-    expect(receipt).toEqual({
-      ok: true,
-      status: 'running',
-      pluginId,
-      packageId,
-      pluginRunId: 'run-1',
-      waitingFor: [],
-      currentPackageId: packageId,
-      mode: 'run',
+    expect(receipt).toMatchObject({
+      ok: true, status: 'awaiting-approval', pluginId, packageId, pluginRunId: 'run-1', mode: 'run',
     })
-    expect(ctx.get('dynDoubler')).toEqual({ ok: true })
-    // Its own business: the only announcement is the run-state one.
+    expect(ctx.get('dynDoubler')).toBeUndefined()
     expect(gateway.events).toEqual([
-      ['cordis/dynamic-package', { pluginId, packageId, pluginRunId: 'run-1', name: 'doubler' }],
+      ['cordis/request-run', expect.objectContaining({ pluginId, packageId, hasClientHalf: false })],
+    ])
+    expect(running(runner, AGENT_A)).toEqual([{ id: pluginId, running: false }])
+
+    const requestId = runner.inventory()[0]?.latestRun?.approvalRequestId
+    expect(requestId).toBeDefined()
+    const started = await runner.runHostHalf(AGENT_A, pluginId, packageId, 'run', requestId!, false)
+
+    expect(started).toMatchObject({ ok: true, pluginId, packageId, pluginRunId: 'run-1' })
+    expect(ctx.get('dynDoubler')).toEqual({ ok: true })
+    expect(runner.inventory()[0]?.latestRun?.client.status).toBe('absent')
+    expect(runner['registry'].pendingRequestFor(pluginId)).toBeUndefined()
+    expect(gateway.events.map(([name]) => name)).toEqual([
+      'cordis/request-run', 'cordis/dynamic-package', 'cordis/request-run-resolved',
     ])
     await expect(runner.invoke(pluginId, 'run-1' as never, 'double', { value: 21 }))
       .resolves.toEqual({ ok: true, value: 42 })
     expect(running(runner, AGENT_A)).toEqual([{ id: pluginId, running: true }])
+
+    await expect(runner.run(AGENT_A, pluginId, packageId, 'run'))
+      .resolves.toMatchObject({ ok: true, status: 'starting', pluginRunId: 'run-2' })
   })
 
   it('returns awaiting approval, then records the page activation asynchronously', async () => {
@@ -408,10 +429,10 @@ describe('dynamic runner dispatch', () => {
       host: 'harness.handle(\'never\', async () => 1)\nthrow new Error(\'host half exploded\')',
     })
 
-    const receipt = await runner.run(AGENT_A, pluginId, packageId, 'run')
+    const receipt = await approveHostOnly(runner, pluginId, packageId)
 
-    expect(receipt).toMatchObject({ ok: false, reason: 'host-half-failed' })
-    expect(gateway.events).toEqual([])
+    expect(receipt).toMatchObject({ ok: false })
+    expect(gateway.events.map(([name]) => name)).toEqual(['cordis/request-run'])
     expect(running(runner, AGENT_A)).toEqual([{ id: pluginId, running: false }])
     await expect(runner.invoke(pluginId, 'run-1' as never, 'never', null))
       .resolves.toMatchObject({ code: 'plugin-not-running' })
@@ -448,15 +469,17 @@ describe('dynamic runner teardown', () => {
     const { pluginId, packageId } = define(runner, {
       sessionId: AGENT_A.id, name: 'doubler', purpose: 'p', host: HOST_CODE,
     })
-    await runner.run(AGENT_A, pluginId, packageId, 'run')
+    await approveHostOnly(runner, pluginId, packageId)
 
     await expect(runner.stop(AGENT_A, pluginId)).resolves.toEqual({ ok: true })
 
     // The retract mirrors the start announcement: a run-control surface tracks
     // "is it running", which is independent of whether a browser half existed.
-    expect(gateway.events).toEqual([
-      ['cordis/dynamic-package', { pluginId, packageId, pluginRunId: 'run-1', name: 'doubler' }],
-      ['cordis/dynamic-retract', { pluginId, packageId, pluginRunId: 'run-1' }],
+    expect(gateway.events.map(([name]) => name)).toEqual([
+      'cordis/request-run', 'cordis/dynamic-package', 'cordis/request-run-resolved', 'cordis/dynamic-retract',
+    ])
+    expect(gateway.events.at(-1)).toEqual([
+      'cordis/dynamic-retract', { pluginId, packageId, pluginRunId: 'run-1' },
     ])
   })
 
@@ -474,14 +497,14 @@ describe('dynamic runner teardown', () => {
     const { pluginId, packageId } = define(runner, {
       sessionId: AGENT_A.id, name: 'doubler', purpose: 'p', host: HOST_CODE,
     })
-    await runner.run(AGENT_A, pluginId, packageId, 'run')
+    await approveHostOnly(runner, pluginId, packageId)
 
     await expect(runner.undefine(AGENT_A, pluginId)).resolves.toEqual({ ok: true, wasRunning: true })
 
     expect(ctx.get('dynDoubler')).toBeUndefined()
     expect(running(runner, AGENT_A)).toEqual([])
     expect(gateway.events.map(([name]) => name))
-      .toEqual(['cordis/dynamic-package', 'cordis/dynamic-retract'])
+      .toEqual(['cordis/request-run', 'cordis/dynamic-package', 'cordis/request-run-resolved', 'cordis/dynamic-retract'])
     await expect(runner.run(AGENT_A, pluginId, packageId, 'run'))
       .resolves.toMatchObject({ ok: false, reason: 'plugin-missing' })
   })
@@ -499,7 +522,7 @@ describe('dynamic runner teardown', () => {
     const { pluginId, packageId } = define(runner, {
       sessionId: AGENT_A.id, name: 'doubler', purpose: 'p', host: HOST_CODE,
     })
-    await runner.run(AGENT_A, pluginId, packageId, 'run')
+    await approveHostOnly(runner, pluginId, packageId)
     expect(ctx.get('dynDoubler')).toEqual({ ok: true })
 
     await ctx.fiber.dispose()
@@ -554,7 +577,7 @@ describe('render failure reports', () => {
     const { pluginId, packageId } = define(runner, {
       sessionId: AGENT_A.id, name: 'ui', purpose: 'renders', host: 'return () => {}',
     })
-    const first = await runner.run(AGENT_A, pluginId, packageId, 'run')
+    const first = await approveHostOnly(runner, pluginId, packageId)
     if (!first.ok) throw new Error(first.message)
     await runner.reportRenderFailure(
       AGENT_A, pluginId, first.pluginRunId,

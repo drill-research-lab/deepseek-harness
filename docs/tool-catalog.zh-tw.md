@@ -424,7 +424,7 @@ pwsh 工具是 Windows 組閤中 bash 執行器 seam 的 PowerShell 方言消費
 
 ### `cordis_run`
 
-啟用動態 Plugin 的一個精確 Package。首次啟用、重新啟動 currentPackageId 或回退使用 mode:"run"；已有 current 時，即使 Plugin 當前已停止，切換到其他 Package 也使用 mode:"update"。未授權的 Client Package 建立審批請求並返回 awaiting-approval；已授權的 Package 返回 starting，並在瀏覽器中非同步繼續。兩種結果都不會在 Tool 內等待最終結局。currentPackageId 只在完整成功後改變；失敗時保留舊 current 和目標 next。非同步成功、拒絕或技術失敗透過狀態與 steering 報告。技術失敗後，用 cordis_inspect_self 讀取診斷，修正同一 Plugin 並自主重試。使用者拒絕後不要再次申請審批。
+啟用動態 Plugin 的一個精確 Package。首次啟用、重新啟動 currentPackageId 或回退使用 mode:"run"；已有 current 時，即使 Plugin 當前已停止，切換到其他 Package 也使用 mode:"update"。未授權的 Package 建立審批請求並返回 awaiting-approval；已授權的 Package 返回 starting，並透過作答頁面非同步繼續。純 Host 啟用在其 Host 半啟動後完成；雙半 Package 隨後在該頁面載入其 Client 半。兩種結果都不會在 Tool 內等待最終結局。currentPackageId 只在完整成功後改變；失敗時保留舊 current 和目標 next。非同步成功、拒絕或技術失敗透過狀態與 steering 報告。技術失敗後，用 cordis_inspect_self 讀取診斷，修正同一 Plugin 並自主重試。使用者拒絕後不要再次申請審批。
 
 ```json
 {

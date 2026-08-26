@@ -3,7 +3,7 @@ import type { CordisDynamicPackageId, CordisDynamicPluginId } from '../src/types
 import { missingServices } from '../src/lifecycle.ts'
 import {
   AGENT_A, call, CONSUMER_CODE, CONTENT_OUTPUT_CODE, dummyTool, LISTENER_CODE, mount,
-  PROVIDER_CODE, REVERSE_TOOL_CODE, setup, text,
+  PROVIDER_CODE, REVERSE_TOOL_CODE, runApprovedHostOnly, setup, text,
   running,
 } from './helpers.ts'
 
@@ -77,8 +77,8 @@ describe('cross-package provide/inject', () => {
 
     // The same definition, a new dispatch: the consumer's apply re-runs through
     // a new façade rather than needing its own re-definition.
-    await expect(harness.runner.run(
-      AGENT_A, provider, latestPackage(harness, provider), 'run',
+    await expect(runApprovedHostOnly(
+      harness.runner, provider, latestPackage(harness, provider), 'run',
     )).resolves.toMatchObject({ ok: true })
     expect(harness.ctx.tools.get('greet')).toBeDefined()
     expect(text(await call(harness.ctx, 'greet', { name: 'again' }))).toBe('hi again')
@@ -165,7 +165,7 @@ describe('stop reaches quiescence', () => {
     await harness.runner.stop(AGENT_A, id)
     expect(harness.ctx.tools.get('reverse_text')).toBeUndefined()
 
-    await harness.runner.run(AGENT_A, id, latestPackage(harness, id), 'run')
+    await runApprovedHostOnly(harness.runner, id, latestPackage(harness, id), 'run')
     expect(harness.ctx.tools.get('reverse_text')).toBeDefined()
   })
 

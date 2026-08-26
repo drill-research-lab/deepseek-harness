@@ -369,7 +369,7 @@ export interface Config {
   audienceRef?: string
   /** Browser cookie carrying the compact signed identity token. */
   cookieName?: string
-  /** Identity token and cookie lifetime, capped at fifteen minutes. */
+  /** Identity token and cookie lifetime, capped at one hour. */
   cookieExpireSeconds?: number
   /** Whether the identity cookie carries the Secure attribute. */
   cookieSecure?: boolean

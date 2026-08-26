@@ -245,6 +245,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
    * @param signal - Tool-call cancellation signal while the activation request is being created.
    * @returns The successful activation identity or an actionable refusal.
    */
+  // oxlint-disable-next-line typescript/require-await -- The Remote method keeps its Promise API while dispatch itself is synchronous.
   async run(
     agent: Agent,
     pluginId: CordisDynamicPluginId,
@@ -267,13 +268,6 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
     const attempt = this.createAttempt(plan)
     plan.plugin.nextPackageId = packageId
     plan.plugin.latestRun = attempt
-    if (plan.definition.clientCode === undefined) {
-      const started = await this.activate(plan, undefined, false, attempt)
-      if (started.ok) return this.runResponse(plan.plugin, started)
-      this.failAttempt(plan.plugin, attempt, 'host-load', started)
-      return { ...started, reason: 'host-half-failed' }
-    }
-
     const requestId = ApprovalRequestId(this.registry.mintApprovalRequestId())
     const requiresApproval = !plan.plugin.clientVersionUpdatesApproved
       && !plan.plugin.approvedClientPackages.has(packageId)
@@ -297,6 +291,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
       name: plan.definition.name,
       purpose: plan.definition.purpose,
       requiresApproval,
+      hasClientHalf: plan.definition.clientCode !== undefined,
     })
     return {
       ok: true,
@@ -420,10 +415,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
     if (resolution.ok && plugin?.run?.pluginRunId !== resolution.pluginRunId) return { accepted: false }
     if (!resolution.ok && resolution.pluginRunId !== undefined
       && plugin?.run?.pluginRunId !== resolution.pluginRunId) return { accepted: false }
-    this.registry.claimRequest(requestId)
-    const settled = await this.settleActivation(plugin, resolution, requestId)
-    this.announceResolved(requestId, resolution, pending.requiresApproval ? undefined : 'completed')
-    this.steerRunOutcome(pending, settled)
+    await this.settleRequestRun(pending, plugin, requestId, resolution)
     return { accepted: true }
   }
 
@@ -866,6 +858,25 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
     }
     if (definition.clientCode === undefined) {
       this.commitActivation(plugin, run)
+      if (requestId !== undefined) {
+        const pending = this.registry.peekRequest(requestId)
+        if (pending !== undefined) {
+          const resolution = { ok: true as const, pluginRunId: run.pluginRunId }
+          await this.completeRequestRun(
+            pending,
+            requestId,
+            resolution,
+            () => Promise.resolve(this.runResponse(plugin, {
+              ok: true,
+              pluginId: plugin.pluginId,
+              packageId: run.packageId,
+              pluginRunId: run.pluginRunId,
+              waitingFor: missingFor(this.ctx, run),
+              startedHere: false,
+            })),
+          )
+        }
+      }
     } else {
       attempt.status = 'client-pending'
       attempt.client = { status: 'pending', waitingFor: [] }
@@ -1014,6 +1025,32 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
   ): void {
     const outcome = override ?? (resolution.ok ? 'approved' : resolution.reason === 'rejected' ? 'rejected' : 'failed')
     this.ctx.emit('cordis/request-run-resolved', { requestId, outcome })
+  }
+
+  private async settleRequestRun(
+    pending: DynamicCordisPendingRequest,
+    plugin: DynamicCordisPlugin | undefined,
+    requestId: ApprovalRequestId,
+    resolution: DynamicCordisRunResolution,
+  ): Promise<void> {
+    await this.completeRequestRun(
+      pending,
+      requestId,
+      resolution,
+      () => this.settleActivation(plugin, resolution, requestId),
+    )
+  }
+
+  private async completeRequestRun(
+    pending: DynamicCordisPendingRequest,
+    requestId: ApprovalRequestId,
+    resolution: DynamicCordisRunResolution,
+    settle: () => Promise<DynamicCordisRunResponse>,
+  ): Promise<void> {
+    this.registry.claimRequest(requestId)
+    const settled = await settle()
+    this.announceResolved(requestId, resolution, pending.requiresApproval ? undefined : 'completed')
+    this.steerRunOutcome(pending, settled)
   }
 
   private steerRunOutcome(
