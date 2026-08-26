@@ -22,7 +22,15 @@ export async function setupHarness(): Promise<TestHarness> {
     await ctx.plugin(StorageJson, { root: join(root, 'storages') })
     await ctx.plugin(StorageDomain, { backend: 'json' })
     // markitdown stays off so tests exercise the built-in text converter only.
-    await ctx.plugin(LibrarianService, { dshHome: root, markitdown: false })
+    await ctx.plugin(LibrarianService, {
+      dshHome: root,
+      markitdown: false,
+      python: 'python',
+      convertTimeoutMs: 120_000,
+      searchLimit: 8,
+      maxAnswerTokens: 2048,
+      askTimeoutMs: 60_000,
+    })
   } catch (error) {
     await ctx.fiber.dispose()
     await rm(root, { recursive: true, force: true })
