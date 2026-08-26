@@ -290,7 +290,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
     // only — the prompt and full tool output must stay on screen.
     expect(await page.getByText(PROMPT, { exact: true }).count()).toBe(1)
 
-    const agent = scaffold.ctx.agents.get(SessionId(SEED_ID))
+    const agent = scaffold.ctx.agents.get(SessionId(SEED_ID), 'trusted-internal')
     if (agent === undefined) throw new Error('seeded session did not attach an agent')
     agent.session.append('user/message', createUserMessage({
       content: [{
@@ -457,7 +457,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
       await disclosure.click()
       await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('true')
 
-      const agent = scaffold.ctx.agents.get(SessionId(SEED_ID))
+      const agent = scaffold.ctx.agents.get(SessionId(SEED_ID), 'trusted-internal')
       if (agent === undefined) throw new Error('seeded session did not attach an agent')
       const done = agent.session.events.filter(event => event.type === 'command/done').at(-1)
       if (done?.type !== 'command/done') throw new Error('feedback command did not settle')
@@ -479,7 +479,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
   }, 60_000)
 
   it.skipIf(MODE === 'record')('fits short logged context without a scrollport', async () => {
-    const agent = scaffold.ctx.agents.get(SessionId(SEED_ID))
+    const agent = scaffold.ctx.agents.get(SessionId(SEED_ID), 'trusted-internal')
     if (agent === undefined) throw new Error('seeded session did not attach an agent')
     agent.session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'Short injected context.' }],

@@ -137,7 +137,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: 'async list(): Promise<AgentPreset[]>',
-        description: 'Every preset the configured roots currently supply.',
+        description: 'Every preset the configured roots currently supply, narrowed to Config.approvedIds when the deployment set one. `resolve()` and `mount()` read this method, so the production capability policy applies uniformly across every entry point — there is no "list hides it, mount still accepts it" gap.',
         parameters: [],
         returns: 'the presets, first-root-wins per id.',
       },
@@ -279,9 +279,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['if `agent` is not the exact live registry entry for its id, or its creation announcement already began (including a reentrant call from a creation listener).'],
       },
       {
-        signature: 'get(id: SessionId): Agent | undefined',
-        description: 'Look up a live agent.',
-        parameters: [{ name: 'id', description: 'the shared agent/session id to look up.' }],
+        signature: 'get(id: SessionId, access: \'trusted-internal\'): Agent | undefined',
+        description: 'Look up a live agent. Unfiltered: trusted internal machinery (lifecycle, lineage, and identity checks on an agent the caller already holds) relies on this seeing every live agent in the process regardless of the current request\'s owner. The caller MUST pass the literal `\'trusted-internal\'` marker, declaring — at every call site, checked by the compiler — that it is one of those trusted internal callers. A caller resolving a client-supplied id for an authenticated request MUST narrow the result through ownedAgent instead, which performs this trusted lookup and the owner check together.',
+        parameters: [{ name: 'id', description: 'the shared agent/session id to look up.' }, { name: 'access', description: 'must be the literal `\'trusted-internal\'`, naming this call site as trusted internal machinery rather than a request-facing caller resolving a client-supplied id.' }],
         returns: 'the agent, or undefined when no live agent has that id.',
       },
       {
@@ -291,15 +291,15 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'true only while the exact child entry is live under that owner.',
       },
       {
-        signature: 'list(): Agent[]',
-        description: 'All live agents, in registration order.',
-        parameters: [],
+        signature: 'list(access: \'trusted-internal\'): Agent[]',
+        description: 'All live agents, in registration order. Unfiltered — see get.',
+        parameters: [{ name: 'access', description: 'must be the literal `\'trusted-internal\'` — see {@link get}.' }],
         returns: 'a fresh array; mutating it does not affect the registry.',
       },
       {
-        signature: 'roots(): Agent[]',
-        description: 'All live top-level agents in registration order. A top-level agent was created without an owning agent context; durable session lineage does not affect this runtime relation, so a resumed fork may still be a root.',
-        parameters: [],
+        signature: 'roots(access: \'trusted-internal\'): Agent[]',
+        description: 'All live top-level agents in registration order. A top-level agent was created without an owning agent context; durable session lineage does not affect this runtime relation, so a resumed fork may still be a root. Unfiltered — see get.',
+        parameters: [{ name: 'access', description: 'must be the literal `\'trusted-internal\'` — see {@link get}.' }],
         returns: 'a fresh array; mutating it does not affect the registry.',
       },
     ],
@@ -527,6 +527,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Abstract credential service. Providers implement the four operations over their source layers; one seam-wide rule binds them all: an empty stored value is absent everywhere — `resolve` skips it, `describe` reports it unconfigured — so a blank never masquerades as a configured secret.',
     methods: [
       {
+        signature: 'reserveDeployment(ref: CredentialRef): void',
+        description: 'Reserve a reference for deployment/bootstrap use before authenticated user resolution exists.',
+        parameters: [{ name: 'ref', description: 'the reference to forbid from every user-managed credential layer.' }],
+      },
+      {
         signature: 'abstract resolve(ref: CredentialRef): Promise<ResolvedCredential | undefined>',
         description: 'Resolve one reference to its current value. Resolution is per call: consumers re-resolve at each operation and must not cache across operations — that per-operation read is what makes a changed credential reach the next operation without a restart.',
         parameters: [{ name: 'ref', description: 'the reference to resolve.' }],
@@ -617,39 +622,39 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'true when `child` is `parent` or a descendant of it.',
       },
       {
-        signature: 'abstract stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined>',
+        signature: 'abstract stat( target: FsTarget, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy, ): Promise<FsInfo | undefined>',
         description: 'Return target metadata, or `undefined` when the target does not exist.',
-        parameters: [{ name: 'target', description: 'the resolved target to stat.' }, { name: 'signal', description: 'aborts the metadata round-trip.' }],
+        parameters: [{ name: 'target', description: 'the resolved target to stat.' }, { name: 'signal', description: 'aborts the metadata round-trip.' }, { name: 'sandboxPolicy', description: 'the per-call mode and workspace root this read runs under; a sandboxing backend fences the read by it, the bare backend ignores it. Omit to leave the backend its own default.' }],
         returns: 'metadata only, never content; undefined for an absent target.',
       },
       {
-        signature: 'abstract lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined>',
+        signature: 'abstract lstat( path: string, opts?: { cwd?: string }, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy, ): Promise<FsPathInfo | undefined>',
         description: 'Return path metadata without following the final path component when it is a symbolic link. This is intentionally path-shaped, not target-shaped: resolve follows symlinks to produce the stable identity used by normal reads/writes, while `lstat` lets a consumer reject the path itself before that follow happens.\n\n`opts.cwd` follows resolve\'s cwd rules. `undefined` means the path is absent.',
-        parameters: [{ name: 'path', description: 'the path to inspect; relative paths resolve against `opts.cwd`.' }, { name: 'opts', description: '`cwd` overrides the backend\'s default base for relative paths.' }, { name: 'signal', description: 'aborts the metadata round-trip.' }],
+        parameters: [{ name: 'path', description: 'the path to inspect; relative paths resolve against `opts.cwd`.' }, { name: 'opts', description: '`cwd` overrides the backend\'s default base for relative paths.' }, { name: 'signal', description: 'aborts the metadata round-trip.' }, { name: 'sandboxPolicy', description: 'the per-call mode and workspace root this read runs under; a sandboxing backend fences the path by it without following its final component, while the bare backend ignores it.' }],
         returns: 'metadata only, never content; undefined for an absent path.',
       },
       {
-        signature: 'abstract readText(target: FsTarget, signal?: AbortSignal): Promise<string>',
+        signature: 'abstract readText( target: FsTarget, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy, ): Promise<string>',
         description: 'Read the whole regular text file as a single decoded string.',
-        parameters: [{ name: 'target', description: 'the resolved target to read.' }, { name: 'signal', description: 'aborts the read.' }],
+        parameters: [{ name: 'target', description: 'the resolved target to read.' }, { name: 'signal', description: 'aborts the read.' }, { name: 'sandboxPolicy', description: 'the per-call mode and workspace root this read runs under; a sandboxing backend fences the read by it, the bare backend ignores it.' }],
         returns: 'the full decoded UTF-8 content.',
       },
       {
-        signature: 'abstract streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterable<string>>',
+        signature: 'abstract streamText( target: FsTarget, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy, ): Promise<AsyncIterable<string>>',
         description: 'Stream the whole regular text file as decoded text chunks (same text semantics as readText, for large files). The backend owns cross-chunk UTF-8 decoding and binary rejection so the policy layer never touches raw bytes.',
-        parameters: [{ name: 'target', description: 'the resolved target to read.' }, { name: 'signal', description: 'aborts the stream, including between chunks.' }],
+        parameters: [{ name: 'target', description: 'the resolved target to read.' }, { name: 'signal', description: 'aborts the stream, including between chunks.' }, { name: 'sandboxPolicy', description: 'the per-call mode and workspace root this read runs under; a sandboxing backend fences the read by it, the bare backend ignores it.' }],
         returns: 'the chunk iterable, decoded and validated like {@link readText}.',
       },
       {
-        signature: 'abstract readBytes(target: FsTarget, signal: AbortSignal | undefined, maxBytes: number): Promise<Uint8Array>',
+        signature: 'abstract readBytes( target: FsTarget, signal: AbortSignal | undefined, maxBytes: number, sandboxPolicy?: SandboxExecutionPolicy, ): Promise<Uint8Array>',
         description: 'Read the whole regular file as raw bytes with no decoding or binary rejection. The bound lives at this seam so a backend can never buffer an unbounded file: a target known or discovered to exceed `maxBytes` fails with `FS_TOO_LARGE` instead of returning a truncated result.',
-        parameters: [{ name: 'target', description: 'the resolved target to read.' }, { name: 'signal', description: 'aborts the read.' }, { name: 'maxBytes', description: 'inclusive byte cap on the complete content.' }],
+        parameters: [{ name: 'target', description: 'the resolved target to read.' }, { name: 'signal', description: 'aborts the read.' }, { name: 'maxBytes', description: 'inclusive byte cap on the complete content.' }, { name: 'sandboxPolicy', description: 'the per-call mode and workspace root this read runs under; a sandboxing backend fences the read by it, the bare backend ignores it.' }],
         returns: 'the full raw content, at most `maxBytes` long.',
       },
       {
-        signature: 'abstract listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]>',
+        signature: 'abstract listDir( target: FsTarget, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy, ): Promise<FsDirEntry[]>',
         description: 'List direct children of a directory in stable name order. Returns resolved child targets plus cheap metadata only; never reads file contents.',
-        parameters: [{ name: 'target', description: 'the resolved directory target.' }, { name: 'signal', description: 'aborts the listing.' }],
+        parameters: [{ name: 'target', description: 'the resolved directory target.' }, { name: 'signal', description: 'aborts the listing.' }, { name: 'sandboxPolicy', description: 'the per-call mode and workspace root this read runs under; a sandboxing backend fences the read by it, the bare backend ignores it.' }],
         returns: 'one entry per direct child, in stable name order.',
       },
       {
@@ -970,6 +975,44 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'ownership',
+    summary: 'Trusted principal and per-owner home resolver.',
+    description: 'Trusted principal and per-owner home resolver.',
+    methods: [
+      {
+        signature: 'abstract currentPrincipal(): OwnerPrincipal',
+        description: 'Read the principal for the verified authenticated request scope.',
+        parameters: [],
+        returns: 'The current request principal.',
+        throws: ['when called outside an authenticated request scope.'],
+      },
+      {
+        signature: 'abstract currentPrincipalOrUndefined(): OwnerPrincipal | undefined',
+        description: 'Read the verified request principal when execution is inside an authenticated scope.',
+        parameters: [],
+        returns: 'The current request principal, or `undefined` outside a request.',
+      },
+      {
+        signature: 'abstract backgroundPrincipal(userId: AuthenticatedUserId): OwnerPrincipal',
+        description: 'Rehydrate a principal from a durable, server-trusted owner id.',
+        parameters: [{ name: 'userId', description: 'Branded owner id previously read from trusted persistence.' }],
+        returns: 'A background principal.',
+      },
+      {
+        signature: 'abstract resolveUserHome(principal: OwnerPrincipal): Promise<UserHome>',
+        description: 'Open or create the filesystem namespace for a trusted principal.',
+        parameters: [{ name: 'principal', description: 'Server-trusted owner identity.' }],
+        returns: 'A validated owner-scoped home.',
+      },
+      {
+        signature: 'abstract resolveOwnerRoot(principal: OwnerPrincipal): Promise<OwnerRoot>',
+        description: 'Resolve the canonical containment root for a trusted principal. Chosen workspace and session paths must stay beneath this root.',
+        parameters: [{ name: 'principal', description: 'Server-trusted owner identity.' }],
+        returns: 'The canonical owner root.',
+      },
+    ],
+  },
+  {
     key: 'permissionPresets',
     summary: 'Owns the deployment\'s permission presets and their write path.',
     description: 'Owns the deployment\'s permission presets and their write path. Requires a confining `ctx.shell` executor and `ctx.approval`; unmatched knob values are reported as CUSTOM_PRESET, not an error.',
@@ -1042,11 +1085,21 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'sandboxPolicy',
     summary: 'The sandbox-policy service (`ctx.sandboxPolicy`).',
-    description: 'The sandbox-policy service (`ctx.sandboxPolicy`). Owns the deployment default mode, fallback workspace root, and current request-time policy section. Tool layers call resolve for each execution so a session\'s mode log and immutable cwd travel together to every enforcing capability.',
+    description: 'The sandbox-policy service (`ctx.sandboxPolicy`). Owns the deployment default and maximum modes, fallback workspace root, permitted escalation targets, and current request-time policy section. Tool layers call resolve for each execution so a session\'s mode log and immutable cwd travel together to every enforcing capability.',
     methods: [
       {
         signature: 'readonly defaultMode: SandboxMode',
         description: 'The deployment default mode — the fallback beneath a session override.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly maximumMode: SandboxMode',
+        description: 'The widest mode this deployment permits from standing state or escalation.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly escalationTargets: readonly SandboxEscalationTarget[]',
+        description: 'Escalation targets this deployment permits tools to advertise and execute.',
         parameters: [],
       },
       {
@@ -1056,7 +1109,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'resolve(request: SandboxPolicyRequest = {}): SandboxExecutionPolicy',
-        description: 'Resolve the complete policy for one capability call. An approved explicit mode outranks the session\'s last `sandbox/mode` event, which outranks the deployment default. A session cwd is its workspace-write boundary; the configured root is the fallback for agentless calls and sessions without a cwd.',
+        description: 'Resolve the complete policy for one capability call. An approved explicit mode outranks the session\'s last `sandbox/mode` event, which outranks the deployment default. Every source must stay at or below the deployment maximum. A session cwd is its workspace-write boundary; the configured root is the fallback for agentless calls and sessions without a cwd.',
         parameters: [{ name: 'request', description: 'optional session and approved mode override.' }],
         returns: 'the fully resolved per-call mode and absolute workspace root.',
       },
@@ -1102,9 +1155,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'id', description: 'the session the batch belongs to.' }, { name: 'events', description: 'the contiguous batch to persist, in seq order.' }],
       },
       {
-        signature: 'async prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation>',
+        signature: 'async prepare( id: SessionId, signal?: AbortSignal, _ownerHint?: SessionHeader[\'ownerUserId\'], ): Promise<SessionPreparation>',
         description: 'Prepare the exact unpublished Session used by resume. Implementations may reuse object graphs retained by an earlier inspect after confirming their durable revision is still current; disposal releases an unpublished reservation. Revision retries require the durable log to remain unchanged for one read/check round trip; continuous external writers may delay completion.',
-        parameters: [{ name: 'id', description: 'persisted session to prepare.' }, { name: 'signal', description: 'optional cancellation for preparation work.' }],
+        parameters: [{ name: 'id', description: 'persisted session to prepare.' }, { name: 'signal', description: 'optional cancellation for preparation work.' }, { name: '_ownerHint', description: 'trusted durable owner for selecting a scoped backend namespace.' }],
         returns: 'one owned unpublished Session preparation.',
       },
       {
@@ -1114,15 +1167,15 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the header and a log ending on a balanced `turn/end`.',
       },
       {
-        signature: 'abstract inspect(id: SessionId, signal?: AbortSignal): Promise<SessionInspection>',
+        signature: 'abstract inspect( id: SessionId, signal?: AbortSignal, ownerHint?: SessionHeader[\'ownerUserId\'], ): Promise<SessionInspection>',
         description: 'Inspect an immutable logical session without committing recovery or publishing it. A cold complete interrupted turn receives synthetic closers in memory and a torn physical tail remains untouched. An already-live Session instead yields its current immutable snapshot, which may contain an open turn and its `session/end-seed` boundary. Coordinator-backed implementations retain the exact cold unpublished Session for bounded reuse by a later prepare. A stale ready source is reloaded; a source already committing or reserved for resume remains exclusive, and inspection may borrow its immutable view. Callers borrow only the immutable header and log. Continuous external writers may delay revision convergence.',
-        parameters: [{ name: 'id', description: 'the persisted session to inspect.' }, { name: 'signal', description: 'optional cancellation for queued and backend read work.' }],
+        parameters: [{ name: 'id', description: 'the persisted session to inspect.' }, { name: 'signal', description: 'optional cancellation for queued and backend read work.' }, { name: 'ownerHint', description: 'trusted durable owner for selecting a scoped backend namespace.' }],
         returns: 'the validated header and current logical event log.',
       },
       {
-        signature: 'abstract readFrom(id: SessionId, fromSeq: number, signal?: AbortSignal): Promise<{ meta: SessionHeader; events: SessionEvent[] }>',
+        signature: 'abstract readFrom( id: SessionId, fromSeq: number, signal?: AbortSignal, ownerHint?: SessionHeader[\'ownerUserId\'], ): Promise<{ meta: SessionHeader; events: SessionEvent[] }>',
         description: 'Read the stored events from `fromSeq` onward — the read-from-seq primitive for read models that resume from a watermark (e.g. a persisted projection cache folding only the tail past its checkpoint). Unlike inspect, it is a detached physical suffix read: no preparation cache, torn-tail truncation, synthetic closers, or coordinator-state publication. Only events from the valid contiguous stored prefix are returned, so a torn fragment never reaches the caller. `fromSeq` at or beyond the stored prefix returns an empty event list (never an error). Backends whose medium can seek by seq (SQLite) read only the suffix; sequential media (JSONL, both encodings) still parse the whole artifact and skip forward — the primitive bounds what is RETURNED and refolded, not every backend\'s physical read.',
-        parameters: [{ name: 'id', description: 'the persisted session to read.' }, { name: 'fromSeq', description: 'first event seq to include; a non-negative safe integer.' }, { name: 'signal', description: 'optional cancellation for queued and backend read work.' }],
+        parameters: [{ name: 'id', description: 'the persisted session to read.' }, { name: 'fromSeq', description: 'first event seq to include; a non-negative safe integer.' }, { name: 'signal', description: 'optional cancellation for queued and backend read work.' }, { name: 'ownerHint', description: 'trusted durable owner for selecting a scoped backend namespace.' }],
         returns: 'the header and the stored events with `seq >= fromSeq`.',
       },
       {
@@ -1367,15 +1420,15 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['the first registered listener failure after every listener settles.'],
       },
       {
-        signature: 'get(id: SessionId): Session | undefined',
-        description: 'Look up a live session.',
-        parameters: [{ name: 'id', description: 'the session id to look up.' }],
+        signature: 'get(id: SessionId, access: \'trusted-internal\'): Session | undefined',
+        description: 'Look up a live session. Unfiltered: trusted internal machinery (the persistence coordinator, title/checkpoint/projection identity checks, autonomous goal/schedule continuation, and lineage checks on a session the caller already holds) relies on this seeing every live session in the process regardless of the current request\'s owner. The caller MUST pass the literal `\'trusted-internal\'` marker, declaring — at every call site, checked by the compiler — that it is one of those trusted internal callers. A caller resolving a client-supplied id for an authenticated request MUST narrow the result through ownedSession instead, which performs this trusted lookup and the owner check together.',
+        parameters: [{ name: 'id', description: 'the session id to look up.' }, { name: 'access', description: 'must be the literal `\'trusted-internal\'`, naming this call site as trusted internal machinery rather than a request-facing caller resolving a client-supplied id.' }],
         returns: 'the session, or undefined when no live session has that id.',
       },
       {
-        signature: 'list(): Session[]',
-        description: 'All live sessions, in creation order.',
-        parameters: [],
+        signature: 'list(access: \'trusted-internal\'): Session[]',
+        description: 'All live sessions, in creation order. Unfiltered — see get.',
+        parameters: [{ name: 'access', description: 'must be the literal `\'trusted-internal\'` — see {@link get}.' }],
         returns: 'a fresh array; mutating it does not affect the store.',
       },
       {
@@ -1473,6 +1526,33 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Describe every registered namespace for configuration surfaces, including the composition `base` and raw user layers so a form can mark which fields the user overrode (presence in `user`) and what a reset returns to.',
         parameters: [{ name: 'options', description: 'redaction switch; wire surfaces must redact.' }],
         returns: 'one descriptor per registered namespace, in registration order.',
+      },
+      {
+        signature: 'describeOwned(options?: SettingsDescribeOptions): Promise<SettingsDescriptor[]>',
+        description: 'Owner-aware configuration-surface read; providers without owner storage fall back to describe\'s deployment document.',
+        parameters: [{ name: 'options', description: 'redaction switch; wire surfaces must redact.' }],
+        returns: 'one descriptor per registered namespace, in registration order.',
+      },
+      {
+        signature: 'updateOwned(ns: SettingsNamespace, patch: object, expectedRevision?: number): Promise<void>',
+        description: 'Owner-aware merge; providers without owner storage fall back to update\'s deployment document.',
+        parameters: [{ name: 'ns', description: 'the registered namespace to update.' }, { name: 'patch', description: 'plain-object patch over the user section.' }, { name: 'expectedRevision', description: 'the descriptor `revision` the caller read; a namespace that moved past it rejects with {@link SettingsConflictError}.' }],
+      },
+      {
+        signature: 'replaceOwned(ns: SettingsNamespace, section: object, expectedRevision?: number): Promise<void>',
+        description: 'Owner-aware replacement; providers without owner storage fall back to replace\'s deployment document.',
+        parameters: [{ name: 'ns', description: 'the registered namespace to replace.' }, { name: 'section', description: 'the complete next user section.' }, { name: 'expectedRevision', description: 'the descriptor `revision` the caller read; a namespace that moved past it rejects with {@link SettingsConflictError}.' }],
+      },
+      {
+        signature: 'mutateOwned(ns: SettingsNamespace, ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<void>',
+        description: 'Owner-aware path mutation; providers without owner storage fall back to mutate\'s deployment document.',
+        parameters: [{ name: 'ns', description: 'the registered namespace to edit.' }, { name: 'ops', description: 'ordered path edits; later ops observe earlier ones.' }, { name: 'expectedRevision', description: 'the descriptor `revision` the caller read; a namespace that moved past it rejects with {@link SettingsConflictError}.' }],
+      },
+      {
+        signature: 'onOwnedDocumentUpdated( watcher: (ownerUserId: string, ns: SettingsNamespace, revision: number) => void, ): () => void',
+        description: 'Observe owner-document commits without publishing them as deployment settings events. Transport consumers must compare the captured request principal before forwarding a notification.',
+        parameters: [{ name: 'watcher', description: 'Called after an owner document commit.' }],
+        returns: 'a disposer for this exact watcher.',
       },
       {
         signature: 'get(ns: SettingsNamespace): unknown',
@@ -2170,8 +2250,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'workspaceRegistry',
     summary: 'Durable workspace registry.',
-    description: 'Durable workspace registry. Startup waits for `sessionPersistence`, builds one canonical-cwd header index, and completes the one-time history bootstrap before the service becomes active. The persistence dependency is mandatory so an unavailable peer can never be mistaken for an empty history and commit the initialized marker.',
+    description: 'Durable workspace registry. Deployments without ownership complete history bootstrap at startup. Ownership deployments load each authenticated principal\'s history lazily from that principal\'s persistence namespace.',
     methods: [
+      {
+        signature: 'async prepareOwner(): Promise<void>',
+        description: 'Load and index the current authenticated owner\'s persisted history once. Concurrent first operations for the same owner share one preparation.',
+        parameters: [],
+        returns: 'resolution after this owner\'s workspace projection is ready.',
+      },
       {
         signature: 'async create(path: string, title?: string): Promise<Workspace>',
         description: 'Create or reuse a workspace for an existing directory. The path is canonicalized through `fs.realpath`; a nonexistent path rejects with the original error and a non-directory rejects. Repeated calls for the same canonical path return the existing entity without changing its title. A newly created workspace is prepended to the durable registry order. Different canonical paths may share a display title.',
@@ -2183,6 +2269,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Look up a workspace by id.',
         parameters: [{ name: 'id', description: 'Workspace id.' }],
         returns: 'the workspace, or `undefined` when unknown.',
+      },
+      {
+        signature: 'getForPrincipal(principal: OwnerPrincipal, id: WorkspaceId): Workspace | undefined',
+        description: 'Resolve a workspace for a server-captured principal after request scope has ended, such as a long-lived transport subscription callback.',
+        parameters: [{ name: 'principal', description: 'Principal captured from verified request authority.' }, { name: 'id', description: 'Workspace id selected by a durable change event.' }],
+        returns: 'the owned workspace, or `undefined` for a foreign or missing id.',
       },
       {
         signature: 'list(): Workspace[]',
@@ -2201,6 +2293,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Move one workspace within the durable display order, DOM-insertBefore-like. With an anchor it lands before that workspace; without one it appends.',
         parameters: [{ name: 'id', description: 'Workspace to move.' }, { name: 'beforeId', description: 'Workspace anchor; omitted appends.' }],
         returns: 'the complete committed workspace order.',
+      },
+      {
+        signature: 'archivedSessionIdsForPrincipal(principal: OwnerPrincipal): readonly SessionId[]',
+        description: 'Read archived sessions for authority captured by a long-lived server operation.',
+        parameters: [{ name: 'principal', description: 'Principal captured from verified request authority.' }],
+        returns: 'archived session ids owned by that principal, in archive order.',
       },
       {
         signature: 'archiveSession(sessionId: SessionId): Promise<void>',
@@ -2982,7 +3080,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CreateSessionOptions',
-    declaration: 'export interface CreateSessionOptions {\n    readonly seed?: readonly SessionEvent[];\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly createdAt?: number;\n        readonly seedLength?: number;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n}',
+    declaration: 'export interface CreateSessionOptions {\n    readonly owner?: OwnerPrincipal;\n    readonly seed?: readonly SessionEvent[];\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly createdAt?: number;\n        readonly seedLength?: number;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n}',
   },
   {
     name: 'CredentialInfo',
@@ -3549,6 +3647,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface OneShotSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: \'one-shot\';\n    readonly label?: string;\n}',
   },
   {
+    name: 'OwnerPrincipal',
+    declaration: 'export interface OwnerPrincipal {\n    readonly userId: AuthenticatedUserId;\n    readonly source: OwnerPrincipalSource;\n}',
+  },
+  {
+    name: 'OwnerPrincipalSource',
+    declaration: 'export type OwnerPrincipalSource = \'request\' | \'background\';',
+  },
+  {
+    name: 'OwnerRoot',
+    declaration: 'export class OwnerRoot {\n    constructor(readonly owner: OwnerPrincipal, readonly path: string);\n}',
+  },
+  {
     name: 'PermissionSelect',
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
   },
@@ -3698,7 +3808,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ResumeAgentOptions',
-    declaration: 'export interface ResumeAgentOptions {\n    readonly resumeSessionId: SessionId;\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
+    declaration: 'export interface ResumeAgentOptions {\n    readonly resumeSessionId: SessionId;\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly ownerHint?: SessionHeader[\'ownerUserId\'];\n    readonly setup?: AgentSetup;\n}',
   },
   {
     name: 'RpcError',
@@ -3710,7 +3820,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RpcErrorDetailsMap',
-    declaration: 'export interface RpcErrorDetailsMap {\n    \'bad-request\': {\n        issues: ZodIssue[];\n    };\n    \'cancelled\': {};\n    \'session-not-found\': {\n        sessionId: SessionId;\n    };\n    \'model-unavailable\': {\n        provider: string;\n        model: string;\n    };\n    \'session-conflict\': {\n        sessionId: SessionId;\n        requestedCwd: string;\n        existingCwd?: string;\n    };\n    \'invalid-time-zone\': {\n        value: string;\n    };\n    \'workspace-attach-failed\': {\n        sessionId: SessionId;\n        workspaceId: string;\n    };\n    \'workspace-not-found\': {\n        workspaceId: string;\n    };\n    \'workspace-invalid-path\': {\n        path: string;\n    };\n    \'workspace-name-conflict\': {\n        name: string;\n    };\n    \'workspace-move-invalid\': {\n        workspaceId: string;\n        sessionId: SessionId;\n        beforeSessionId?: SessionId;\n    };\n    \'directory-unreadable\': {\n        path: string;\n    };\n    \'directory-exists\': {\n        path: string;\n    };\n    \'directory-create-failed\': {\n        path: string;\n    };\n    \'directory-picker-unavailable\': {\n        capability: string;\n    };\n    \'agent-preset-read-only\': {\n        agentPreset: string;\n        reason: string;\n    };\n    \'agent-preset-locked\': {\n        sessionId: SessionId;\n        agentPreset: string;\n    };\n    \'agent-preset-conflict\': {\n        sessionId: SessionId;\n        requestedPreset: string;\n        existingPreset?: string;\n    };\n    \'agent-preset-not-found\': {\n        agentPreset: string;\n      /* …truncated — full shape in source */',
+    declaration: 'export interface RpcErrorDetailsMap {\n    \'bad-request\': {\n        issues: ZodIssue[];\n    };\n    \'cancelled\': {};\n    \'session-not-found\': {\n        sessionId: SessionId;\n    };\n    \'model-unavailable\': {\n        provider: string;\n        model: string;\n    };\n    \'session-conflict\': {\n        sessionId: SessionId;\n        requestedCwd: string;\n        existingCwd?: string;\n    };\n    \'invalid-time-zone\': {\n        value: string;\n    };\n    \'workspace-attach-failed\': {\n        sessionId: SessionId;\n        workspaceId: string;\n    };\n    \'workspace-not-found\': {\n        workspaceId: string;\n    };\n    \'workspace-outside-owner-root\': {\n        path: string;\n    };\n    \'cwd-outside-owner-root\': {\n        cwd: string;\n    };\n    \'workspace-invalid-path\': {\n        path: string;\n    };\n    \'workspace-name-conflict\': {\n        name: string;\n    };\n    \'workspace-move-invalid\': {\n        workspaceId: string;\n        sessionId: SessionId;\n        beforeSessionId?: SessionId;\n    };\n    \'directory-unreadable\': {\n        path: string;\n    };\n    \'directory-outside-owner-root\': {\n        path: string;\n    };\n    \'directory-exists\': {\n        path: string;\n    };\n    \'directory-create-failed\': {\n        path: string;\n    };\n    \'directory-picker-unavailable\': {\n        capability: string;\n    };\n    \'agent-preset-read-only\': {\n        agentPreset: string;\n        reason: string;\n    };\n    \'agent-preset-locked\': {\n        sessionId: SessionId;\n        agentPreset: string;\n    };\n    \'a /* …truncated — full shape in source */',
   },
   {
     name: 'RpcId',
@@ -3731,6 +3841,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SandboxEnforcement',
     declaration: 'export type SandboxEnforcement = \'full\' | \'partial\';',
+  },
+  {
+    name: 'SandboxEscalationTarget',
+    declaration: 'export type SandboxEscalationTarget = typeof ESCALATION_TARGETS[number];',
   },
   {
     name: 'SandboxExecutionPolicy',
@@ -3870,7 +3984,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionHeader',
-    declaration: 'export interface SessionHeader {\n    readonly version: number;\n    readonly id: SessionId;\n    readonly createdAt: number;\n    readonly cwd?: string;\n    readonly parentSession?: SessionId;\n    readonly seedLength?: number;\n    readonly origin?: \'subagent\';\n    readonly delegationDepth?: number;\n    readonly agentPreset?: string;\n}',
+    declaration: 'export interface SessionHeader {\n    readonly version: number;\n    readonly id: SessionId;\n    readonly createdAt: number;\n    readonly ownerUserId?: AuthenticatedUserId;\n    readonly cwd?: string;\n    readonly parentSession?: SessionId;\n    readonly seedLength?: number;\n    readonly origin?: \'subagent\';\n    readonly delegationDepth?: number;\n    readonly agentPreset?: string;\n}',
   },
   {
     name: 'SessionId',
@@ -4595,6 +4709,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TypertTypeModel',
     declaration: 'export interface TypertTypeModel {\n    readonly name: string;\n    readonly declaration: string;\n}',
+  },
+  {
+    name: 'UserHome',
+    declaration: 'export class UserHome {\n    constructor(readonly owner: OwnerPrincipal, readonly identity: UserHomeIdentity, private readonly root: string);\n    path(...segments: readonly string[]): UserHomePath;\n}',
+  },
+  {
+    name: 'UserHomeIdentity',
+    declaration: 'export interface UserHomeIdentity {\n    readonly schemaVersion: 1;\n    readonly userId: AuthenticatedUserId;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'UserHomePath',
+    declaration: 'export type UserHomePath = Branded<\'UserHomePath\'>;',
   },
   {
     name: 'UserMessage',

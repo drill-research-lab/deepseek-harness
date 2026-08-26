@@ -21,6 +21,7 @@ import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { ProjectionCheckpoint, ProjectionSnapshot } from '@deepseek-ai/dsh-session-projection'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
+import type {} from '@deepseek-ai/dsh-ownership'
 import { projectionCacheDomainSpec } from './spec.ts'
 import type { CheckpointIdentity, CheckpointRecord } from './spec.ts'
 
@@ -147,7 +148,7 @@ export class SessionProjectionCache extends Service {
     // from events no stored log contains). At detach the store entry is
     // already gone; persistence's own retirement drain covers that path and
     // any residual overreach is caught by the cold read's anchored floor.
-    if (this.ctx.sessions.get(session.id) === session) await this.ctx.sessions.flush(session)
+    if (this.ctx.sessions.get(session.id, 'trusted-internal') === session) await this.ctx.sessions.flush(session)
     await this.put(session.id, identityOf(session.header), rows)
   }
 
@@ -164,19 +165,27 @@ export class SessionProjectionCache extends Service {
    * @returns the snapshot cut at the stored log end.
    */
   async coldSnapshot(id: SessionId, signal?: AbortSignal): Promise<ProjectionSnapshot> {
-    const record = this.requireTable().get(id)
+    const currentOwner = this.ctx.root.get('ownership')?.currentPrincipalOrUndefined()?.userId
+    const candidate = this.requireTable().get(id)
+    const record = currentOwner === undefined || candidate?.identity.ownerUserId === currentOwner
+      ? candidate
+      : undefined
     const cached = record?.rows ?? {}
-    const floor = this.ctx.sessionProjections.restoreFloor(cached)
+    const ownerHint = record?.identity.ownerUserId
     const persistence = this.ctx.sessionPersistence
+    const readFrom = (fromSeq: number) => ownerHint === undefined
+      ? persistence.readFrom(id, fromSeq, signal)
+      : persistence.readFrom(id, fromSeq, signal, ownerHint)
+    const floor = this.ctx.sessionProjections.restoreFloor(cached)
     if (floor === undefined) {
       // No unit registered: nothing to fold, but the not-found contract must
       // hold in this topology too — the probe read rejects for an absent log
       // and dates the empty cut for a present one.
-      const probe = await persistence.readFrom(id, 0, signal)
+      const probe = await readFrom(0)
       return { asOfSeq: probe.events.at(-1)?.seq ?? -1, values: {} }
     }
     let restored: { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint }
-    const tail = await persistence.readFrom(id, floor, signal)
+    const tail = await readFrom(floor)
     // The tail's stored header is the identity witness: a record bound to a
     // different lifecycle (recreated id, swapped store) is discarded whole
     // before any of its rows can seed a fold.
@@ -189,7 +198,7 @@ export class SessionProjectionCache extends Service {
       // overreaching the stored log end (or predating the floor). Both imply
       // floor > 0 (baseSeq-0 restores never throw and an unrelated record
       // still carried a usable watermark), so the full log is a fresh read.
-      const whole = await persistence.readFrom(id, 0, signal)
+      const whole = await readFrom(0)
       restored = this.ctx.sessionProjections.restore({}, whole.events, 0)
     }
     await this.putSoft(id, identityOf(tail.meta), restored.checkpoint, 'cold-read write-back')
@@ -289,12 +298,18 @@ export class SessionProjectionCache extends Service {
 
 /** Project a header onto the identity fields a record is bound to. */
 function identityOf(header: SessionHeader): CheckpointIdentity {
-  return { createdAt: header.createdAt, ...header.cwd === undefined ? {} : { cwd: header.cwd } }
+  return {
+    ...header.ownerUserId === undefined ? {} : { ownerUserId: header.ownerUserId },
+    createdAt: header.createdAt,
+    ...header.cwd === undefined ? {} : { cwd: header.cwd },
+  }
 }
 
 /** Whether a stored record's bound identity names the caller's lifecycle. */
 function identityMatches(stored: CheckpointIdentity, expected: CheckpointIdentity): boolean {
-  return stored.createdAt === expected.createdAt && stored.cwd === expected.cwd
+  return stored.ownerUserId === expected.ownerUserId
+    && stored.createdAt === expected.createdAt
+    && stored.cwd === expected.cwd
 }
 
 export default SessionProjectionCache

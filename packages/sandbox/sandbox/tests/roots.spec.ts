@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { canonicalPath, writableRoots } from '@deepseek-ai/dsh-sandbox'
+import { canonicalPath, readableRoots, writableRoots } from '@deepseek-ai/dsh-sandbox'
 
 describe('canonicalPath', () => {
   it('resolves symlinks (an existing path realpaths)', () => {
@@ -35,5 +35,16 @@ describe('writableRoots', () => {
     expect(roots).toContain(realpathSync.native(tmpdir()))
     // Deduplicated after canonicalization (/tmp and os.tmpdir() may coincide).
     expect(new Set(roots).size).toBe(roots.length)
+  })
+})
+
+describe('readableRoots', () => {
+  it.each(['read-only', 'workspace-write'] as const)('%s grants only the canonical workspace root', (mode) => {
+    const ws = mkdtempSync(join(tmpdir(), 'dsh-readable-ws-'))
+    expect(readableRoots({ mode, workspaceRoot: ws })).toEqual([realpathSync.native(ws)])
+  })
+
+  it('danger-full-access has no read allow-list', () => {
+    expect(readableRoots({ mode: 'danger-full-access', workspaceRoot: process.cwd() })).toEqual([])
   })
 })

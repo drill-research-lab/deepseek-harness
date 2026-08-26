@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 /**
  * Keyless publish-path rehearsal. It packs the provider, its workspace peers, the vendored framework
- * peer, and the current repository's Landlock entry/platform packages, then installs those exact
+ * peer, and both current repository native entry/platform families, then installs those exact
  * tarballs in an external plain-Node consumer. The host launcher comes from the exact local tarballs,
  * so no registry copy, tsx, path mapping, or workspace resolution can hide missing files, dependency
  * errors, or lost executable modes. npm may still query registry metadata for an incompatible optional platform
@@ -22,8 +22,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 const packageDir = fileURLToPath(new URL('..', import.meta.url))
 const repoRoot = fileURLToPath(new URL('../../../..', import.meta.url))
 const nativeDir = join(repoRoot, 'native/landlock-run')
+const pidNativeDir = join(repoRoot, 'native/pid-isolate-run')
 const sourceLauncher = join(nativeDir, 'packages', `linux-${process.arch}`, 'bin', 'landlock-run')
+const sourcePidLauncher = join(pidNativeDir, 'packages', `linux-${process.arch}`, 'bin', 'pid-isolate-run')
 const platformPackageName = `@deepseek-ai/node-addon-landlock-run-linux-${process.arch}`
+const pidPlatformPackageName = `@deepseek-ai/node-addon-pid-isolate-run-linux-${process.arch}`
 
 /** The harness closure the consumer needs; native tarballs are packed through their mode-preserving release script. */
 const WORKSPACE_CLOSURE = [
@@ -57,13 +60,17 @@ const packable = process.platform === 'linux'
   && E_MACHINE !== undefined
   && existsSync(join(packageDir, 'lib', 'index.js'))
   && existsSync(join(nativeDir, 'packages/entry/lib/index.js'))
+  && existsSync(join(pidNativeDir, 'packages/entry/lib/index.js'))
   && existsSync(sourceLauncher)
+  && existsSync(sourcePidLauncher)
 
 let consumerDir = ''
 let workDir = ''
+let packDir = ''
 /** The consumer script's JSON verdict (see its source below). */
 let verdict: {
   launcher: string
+  pidLauncher?: string
   launcherExists: boolean
   enforcing: boolean
   wrapArgv0?: string
@@ -76,6 +83,7 @@ let verdict: {
 describe.skipIf(!packable)('sandbox-local: packed-tarball distribution (publish-path rehearsal)', () => {
   beforeAll(async () => {
     const packDest = mkdtempSync(join(tmpdir(), 'dsh-pack-'))
+    packDir = packDest
     consumerDir = mkdtempSync(join(tmpdir(), 'dsh-packed-consumer-'))
     workDir = mkdtempSync(join(tmpdir(), 'dsh-packed-work-'))
 
@@ -87,10 +95,22 @@ describe.skipIf(!packable)('sandbox-local: packed-tarball distribution (publish-
     })
     expect(nativePack.status, `native pack failed:\n${nativePack.stdout}\n${nativePack.stderr}`).toBe(0)
 
+    const pidNativePackDest = join(packDest, 'pid-native')
+    const pidNativePack = spawnSync('node', ['./scripts/pack-release.mjs', pidNativePackDest, '--current-platform-only'], {
+      cwd: pidNativeDir,
+      encoding: 'utf8',
+      timeout: 120_000,
+    })
+    expect(pidNativePack.status, `PID native pack failed:\n${pidNativePack.stdout}\n${pidNativePack.stderr}`).toBe(0)
+
     const nativeTarballs = readFileSync(join(nativePackDest, 'publish-order.txt'), 'utf8')
       .trim()
       .split('\n')
       .map(tarball => join(nativePackDest, tarball))
+    nativeTarballs.push(...readFileSync(join(pidNativePackDest, 'publish-order.txt'), 'utf8')
+      .trim()
+      .split('\n')
+      .map(tarball => join(pidNativePackDest, tarball)))
 
     // Pack each harness closure member with the exact bytes publish would upload.
     const tarballs: string[] = []
@@ -116,6 +136,12 @@ describe.skipIf(!packable)('sandbox-local: packed-tarball distribution (publish-
     })
     expect(install.status, `npm install failed:\n${install.stdout}\n${install.stderr}`).toBe(0)
 
+    const installedPidLauncher = join(consumerDir, 'node_modules', ...pidPlatformPackageName.split('/'), 'bin', 'pid-isolate-run')
+    if (process.env.DSH_REQUIRE_PID_ISOLATION === '1') {
+      const setcap = spawnSync('sudo', ['setcap', 'cap_sys_admin,cap_setpcap+ep', installedPidLauncher], { encoding: 'utf8' })
+      expect(setcap.status, `setcap failed:\n${setcap.stdout}\n${setcap.stderr}`).toBe(0)
+    }
+
     // The consumer script runs under PLAIN node against the installed
     // packages and reports a JSON verdict; every assertion happens back in
     // the test. bwrap is forced off so the wrap must select the INSTALLED
@@ -125,14 +151,16 @@ describe.skipIf(!packable)('sandbox-local: packed-tarball distribution (publish-
       import { existsSync } from 'node:fs'
       import { Context } from '@deepseek-ai/cordis'
       import { launcherPath } from '@deepseek-ai/node-addon-landlock-run'
+      import { launcherPath as pidLauncherPath, probe as probePid } from '@deepseek-ai/node-addon-pid-isolate-run'
       import { LocalSandboxProvider } from '@deepseek-ai/dsh-sandbox-local'
       const ctx = new Context()
       await ctx.plugin(LocalSandboxProvider, {})
       const sandbox = ctx.sandbox
       sandbox.internals = { probeBwrap: () => false }
       const launcher = launcherPath()
+      const pidLauncher = pidLauncherPath()
       const probe = spawnSync(launcher, ['--probe'], { encoding: 'utf8', timeout: 5000 })
-      const out = { launcher, launcherExists: existsSync(launcher), enforcing: probe.status === 0 }
+      const out = { launcher, pidLauncher, launcherExists: existsSync(launcher), enforcing: probe.status === 0 && probePid(pidLauncher) }
       const workdir = process.argv[2]
       if (out.enforcing) {
         const confined = sandbox.confine(['bash', '-c', \`echo hi > \${workdir}/denied.txt\`], { mode: 'read-only', workspaceRoot: workdir })
@@ -157,7 +185,7 @@ describe.skipIf(!packable)('sandbox-local: packed-tarball distribution (publish-
   }, 480_000)
 
   afterAll(async () => {
-    await Promise.all([consumerDir, workDir].filter(Boolean).map(dir => rm(dir, { recursive: true, force: true })))
+    await Promise.all([consumerDir, workDir, packDir].filter(Boolean).map(dir => rm(dir, { recursive: true, force: true })))
   })
 
   it('installs this checkout\'s launcher for the host: present, executable, byte-identical, and right ELF arch', () => {
@@ -168,11 +196,19 @@ describe.skipIf(!packable)('sandbox-local: packed-tarball distribution (publish-
     expect(() => { accessSync(installed, constants.X_OK) }, 'installed launcher is not executable').not.toThrow()
     expect(readFileSync(installed), 'installed launcher bytes').toEqual(readFileSync(sourceLauncher))
     expect(readFileSync(installed).readUInt16LE(18), 'ELF e_machine').toBe(E_MACHINE)
+
+    const installedPid = join(consumerDir, 'node_modules', ...pidPlatformPackageName.split('/'), 'bin', 'pid-isolate-run')
+    expect(existsSync(installedPid), 'PID platform package missing from the installed tree').toBe(true)
+    expect(() => { accessSync(installedPid, constants.X_OK) }, 'installed PID launcher is not executable').not.toThrow()
+    expect(readFileSync(installedPid), 'installed PID launcher bytes').toEqual(readFileSync(sourcePidLauncher))
+    expect(readFileSync(installedPid).readUInt16LE(18), 'PID ELF e_machine').toBe(E_MACHINE)
   })
 
-  it('the installed provider resolves the launcher INSIDE the consumer node_modules platform package', () => {
+  it('the installed provider resolves both launchers inside the consumer node_modules platform packages', () => {
     expect(verdict.launcher)
       .toBe(join(consumerDir, 'node_modules', ...platformPackageName.split('/'), 'bin', 'landlock-run'))
+    expect(verdict.pidLauncher)
+      .toBe(join(consumerDir, 'node_modules', ...pidPlatformPackageName.split('/'), 'bin', 'pid-isolate-run'))
   })
 
   it('confines through the installed launcher (enforcing kernel) or fails closed (non-enforcing) — never unconfined', async () => {
@@ -181,7 +217,7 @@ describe.skipIf(!packable)('sandbox-local: packed-tarball distribution (publish-
     // the first test pins that apart, so nothing hides behind this branch.
     expect(verdict.launcherExists, 'installed launcher missing').toBe(true)
     if (verdict.enforcing) {
-      expect(verdict.wrapArgv0).toBe(verdict.launcher)
+      expect(verdict.wrapArgv0).toBe(verdict.pidLauncher)
       expect(['full', 'partial']).toContain(verdict.enforcement)
       expect(verdict.exitCode).not.toBe(0)
       expect(verdict.stderrHasDialect, 'kernel denial text must match the advertised dialect').toBe(true)

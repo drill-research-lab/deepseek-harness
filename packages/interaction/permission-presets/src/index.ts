@@ -220,7 +220,7 @@ export class PermissionPresetService extends Service {
     ctx.on('session/created', (session) => {
       this.pinInitialPermission(session)
     })
-    for (const session of ctx.sessions.list()) {
+    for (const session of ctx.sessions.list('trusted-internal')) {
       this.pinInitialPermission(session)
     }
 

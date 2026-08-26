@@ -15,8 +15,7 @@
 - `ctx.sessions.create(id?, { seed?, meta? }?)` 校验持久种子／头部数据并生成脱离副本，补齐版本和 id，在未提供 `createdAt` 时使用当前时间，发布会话并将其绑定到调用方 fiber。持久化重建会提供原始的 `createdAt`、`seedLength` 和 `delegationDepth`。
 - `ctx.sessions.flush(session)` 通过会话捕获的作用域分发一个需等待完成的并行持久性检查点。每个监听器都会启动；调用会等待全部结算后才报告失败。未发布、已脱离和陈旧的对象会被拒绝。
 - `ctx.sessions.fork(source, boundary?, childSessionId?): Session`：解析实时会话对象或 id，选取截至 `boundary` 事件序号（含该事件）的种子（默认为当前最后一个事件），要求所选前缀结束时没有开放轮次，再创建带谱系元数据的实时子会话。
-- `ctx.sessions.get(id: SessionId): Session | undefined`
-- `ctx.sessions.list(): Session[]`
+- `ctx.sessions.get(id: SessionId, access: 'trusted-internal'): Session | undefined` 和 `ctx.sessions.list(access: 'trusted-internal'): Session[]` 不做过滤——返回进程中所有 owner 的全部实时会话。字面量标记 `'trusted-internal'` 在每个调用点都是必需参数，因此解析 client 提供 id 的调用方必须改用 `ownedSession(ctx, id)` / `ownedSessions(ctx)`：它们执行同样的查找，并将结果收窄到当前 request 或 background principal（ownership 已挂载但 scope 内没有 principal 时 fail closed；未挂载任何 ownership 服务时则原样放行，不做过滤）。
 
 #### 高级：有序清理生命周期原语
 

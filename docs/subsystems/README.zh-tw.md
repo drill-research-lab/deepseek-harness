@@ -18,6 +18,7 @@
 | [persistence.md](persistence.md) | 持久性 seam：`SessionPersistence`、JSONL + SQLite 後端、`session/flush`、當機復原、`SessionHeader` |
 | [settings.md](settings.md) | 使用者設定 seam：`SettingsNamespace` 註冊、分層解析（預設值 → 組合 `base` → 使用者文件）、owner scope、熱提交 |
 | [credentials.md](credentials.md) | 憑據 seam：設定中的 `CredentialRef` 引用（絕不含值）、按操作解析、對 UI 安全的 `CredentialInfo`、提供方來源層 |
+| [ownership.md](ownership.md) | 可信 owner principal、immutable identity、rooted UserHome 和 single-writer enforcement |
 | [session-query.md](session-query.md) | 邏輯記錄、有界精確事件讀取、關係追蹤、語義篩選器/文件與全文檢索結果頁 |
 | [feedback.md](feedback.md) | 綁定生命週期的逐訊息回饋記錄、樂觀版本、伴隨記錄持久化與 Host Remote 契約 |
 | [session-title.md](session-title.md) | 持久標題快照、被引用的來源訊息 seq 與非同步提供方約定 |

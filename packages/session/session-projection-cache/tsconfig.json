@@ -21,6 +21,12 @@
       "path": "../../core/session"
     },
     {
+      "path": "../../identity/auth"
+    },
+    {
+      "path": "../../identity/ownership"
+    },
+    {
       "path": "../session-persistence"
     },
     {

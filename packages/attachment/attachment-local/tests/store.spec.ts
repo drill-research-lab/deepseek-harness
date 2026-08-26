@@ -6,7 +6,11 @@ import { dirname, join, parse, resolve } from 'node:path'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import sharp from 'sharp'
+import { Context } from '@deepseek-ai/cordis'
 import type { ImageAttachmentLimits } from '@deepseek-ai/dsh-attachment'
+import LocalAttachmentStore from '../src/index.ts'
+import { OwnershipService, UserHome } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal, OwnerRoot } from '@deepseek-ai/dsh-ownership'
 import { readImageFile, saveImageFile } from '../src/store.ts'
 
 const fsControl = vi.hoisted(() => ({
@@ -54,6 +58,34 @@ async function root(): Promise<string> {
   return join(value, 'attachments', 'v1')
 }
 
+class TestOwnership extends OwnershipService {
+  principal: OwnerPrincipal | undefined
+
+  constructor(ctx: Context, private readonly usersRoot: string) { super(ctx) }
+  currentPrincipal(): OwnerPrincipal {
+    if (this.principal === undefined) throw new Error('no test owner')
+    return this.principal
+  }
+  currentPrincipalOrUndefined(): OwnerPrincipal | undefined { return this.principal }
+  backgroundPrincipal(userId: OwnerPrincipal['userId']): OwnerPrincipal {
+    return { userId, source: 'background' }
+  }
+  resolveOwnerRoot(): Promise<OwnerRoot> {
+    throw new Error('not used by these tests')
+  }
+
+  async resolveUserHome(principal: OwnerPrincipal): Promise<UserHome> {
+    const homeRoot = join(this.usersRoot, String(principal.userId).replaceAll(':', '-'))
+    await mkdir(homeRoot, { recursive: true })
+    return new UserHome(principal, {
+      schemaVersion: 1,
+      userId: principal.userId,
+      createdAt: '2026-08-19T00:00:00.000Z',
+      updatedAt: '2026-08-19T00:00:00.000Z',
+    }, homeRoot)
+  }
+}
+
 function parentChainToRoot(path: string): string[] {
   const parents: string[] = []
   let level = resolve(path)
@@ -70,6 +102,30 @@ afterEach(async () => {
 })
 
 describe('local attachment store', () => {
+  it('does not authorize a known content hash outside its owner namespace', async () => {
+    // Constructed directly rather than through `ctx.plugin(...)`: the global
+    // test-invariant harness intercepts every `RegistryService.plugin` call
+    // under this package's `tests/` directory and auto-mounts its own
+    // `attachments` stub, which collides with a second live registration of
+    // the same service name. Direct construction (as `tests/index.spec.ts`
+    // already does) exercises the real class while staying outside that
+    // interception, and still publishes `ctx.ownership`/`ctx.attachments`
+    // because `Service`'s constructor provides synchronously.
+    const usersRoot = await root()
+    const ctx = new Context()
+    const ownership = new TestOwnership(ctx, usersRoot)
+    const store = new LocalAttachmentStore(ctx, { dshHome: usersRoot, ...LIMITS })
+    const alice = { userId: 'ldap:test-alice' as OwnerPrincipal['userId'], source: 'request' as const }
+    const bob = { userId: 'ldap:test-bob' as OwnerPrincipal['userId'], source: 'request' as const }
+
+    ownership.principal = alice
+    const ref = await store.saveImage({ data: PNG, mediaType: 'image/png' })
+    ownership.principal = bob
+    await expect(store.readImage(ref)).rejects.toMatchObject({ code: 'ATTACHMENT_NOT_FOUND' })
+    ownership.principal = alice
+    await expect(store.readImage(ref)).resolves.toEqual({ ref, data: PNG })
+  })
+
   it.skipIf(process.platform === 'win32')('syncs every object ancestor up to the durable boundary before returning', async () => {
     const storageRoot = await root()
     const base = join(storageRoot, '..', '..')

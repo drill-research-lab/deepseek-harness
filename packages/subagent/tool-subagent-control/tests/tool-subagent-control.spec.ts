@@ -95,7 +95,7 @@ function callTool(
 /** Wait until a child's Activation released its handle. */
 async function waitNoActivation(ctx: Context, childId: SessionId): Promise<void> {
   await vi.waitFor(() => {
-    expect(ctx.agents.get(childId)).toBeUndefined()
+    expect(ctx.agents.get(childId, 'trusted-internal')).toBeUndefined()
   }, { timeout: 5_000 })
 }
 
@@ -250,7 +250,7 @@ describe('dsh-tool-subagent-control interrupt_agent', () => {
       signal: testToolSignal,
     })
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-    const child = ctx.agents.get(started.childId)!
+    const child = ctx.agents.get(started.childId, 'trusted-internal')!
     const queued = await callTool(ctx, 'send_message', {
       subagent_id: started.childId,
       message: 'parked follow-up',
@@ -297,7 +297,7 @@ describe('dsh-tool-subagent-control interrupt_agent', () => {
       signal: testToolSignal,
     })
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-    const child = ctx.agents.get(started.childId)!
+    const child = ctx.agents.get(started.childId, 'trusted-internal')!
     const grandchild = await ctx.subagents.startContinuable({
       provider: 'spawn',
       label: 'grandchild',
@@ -305,7 +305,7 @@ describe('dsh-tool-subagent-control interrupt_agent', () => {
       signal: testToolSignal,
     })
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(2) })
-    const grandchildAgent = ctx.agents.get(grandchild.childId)!
+    const grandchildAgent = ctx.agents.get(grandchild.childId, 'trusted-internal')!
     const cancelSpy = vi.spyOn(grandchildAgent, 'cancel')
 
     const result = await callTool(ctx, 'interrupt_agent', { agent_id: grandchild.childId }, parent)
@@ -340,8 +340,8 @@ describe('dsh-tool-subagent-control interrupt_agent', () => {
       signal: testToolSignal,
     })
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(2) })
-    const targetAgent = ctx.agents.get(target.childId)!
-    const siblingAgent = ctx.agents.get(sibling.childId)!
+    const targetAgent = ctx.agents.get(target.childId, 'trusted-internal')!
+    const siblingAgent = ctx.agents.get(sibling.childId, 'trusted-internal')!
     const stranger = ctx.agentLoop.create(SessionId('stranger'), { provider: 'mock', model: 'mock' })
     const cancelSpy = vi.spyOn(targetAgent, 'cancel')
 
@@ -378,7 +378,7 @@ describe('dsh-tool-subagent-control interrupt_agent', () => {
     const unknown = await callTool(ctx, 'interrupt_agent', { agent_id: 'no-such-agent' }, parent)
     expect(unknown.isError).toBe(false)
     // No cold resume: the settled target never rematerialized.
-    expect(ctx.agents.get(started.childId)).toBeUndefined()
+    expect(ctx.agents.get(started.childId, 'trusted-internal')).toBeUndefined()
   })
 
   it('fails loud when invoked without a calling agent', async () => {

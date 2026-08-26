@@ -22,12 +22,25 @@ import { resolve as resolvePath } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent'
-import { canonicalPath, type SandboxExecutionPolicy, type SandboxMode } from '@deepseek-ai/dsh-sandbox'
+import {
+  ESCALATION_TARGETS,
+  canonicalPath,
+  type SandboxExecutionPolicy,
+  type SandboxMode,
+} from '@deepseek-ai/dsh-sandbox'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { effectiveSandboxMode } from './session-mode.ts'
 
 export { SANDBOX_MODES, effectiveSandboxMode, setSandboxMode } from './session-mode.ts'
+
+type SandboxEscalationTarget = typeof ESCALATION_TARGETS[number]
+
+const SANDBOX_MODE_RANK: Record<SandboxMode, number> = {
+  'read-only': 0,
+  'workspace-write': 1,
+  'danger-full-access': 2,
+}
 
 /** Resolve filesystem identity before lexical normalization can erase symlink-sensitive components. */
 function resolveWorkspaceRoot(path: string): string {
@@ -67,6 +80,8 @@ declare module '@deepseek-ai/cordis' {
 export interface Config {
   /** File-sandbox mode a session starts from (default: `read-only`). */
   mode?: SandboxMode
+  /** Widest mode this deployment permits from any standing or one-call policy path (default: `danger-full-access`). */
+  maximumMode?: SandboxMode
   /**
    * Fallback root for agentless calls and sessions without a cwd (default:
    * `process.cwd()`). Normal agent calls use their session cwd instead.
@@ -84,14 +99,16 @@ export interface SandboxPolicyRequest {
 
 /**
  * The sandbox-policy service (`ctx.sandboxPolicy`). Owns the deployment
- * default mode, fallback workspace root, and current request-time policy
- * section. Tool layers call {@link resolve} for each execution so a session's
- * mode log and immutable cwd travel together to every enforcing capability.
+ * default and maximum modes, fallback workspace root, permitted escalation
+ * targets, and current request-time policy section. Tool layers call
+ * {@link resolve} for each execution so a session's mode log and immutable cwd
+ * travel together to every enforcing capability.
  */
 export class SandboxPolicyService extends Service {
   // Inline schema call: the config catalog walks `static Config` statically.
   static Config: z<Config> = z.object({
     mode: z.union(['read-only', 'workspace-write', 'danger-full-access'] as const).default('read-only'),
+    maximumMode: z.union(['read-only', 'workspace-write', 'danger-full-access'] as const).default('danger-full-access'),
     // No schema default: process.cwd() is resolved in the constructor so the
     // stored root is always absolute regardless of how it was supplied.
     workspaceRoot: z.string(),
@@ -99,6 +116,10 @@ export class SandboxPolicyService extends Service {
 
   /** The deployment default mode — the fallback beneath a session override. */
   readonly defaultMode: SandboxMode
+  /** The widest mode this deployment permits from standing state or escalation. */
+  readonly maximumMode: SandboxMode
+  /** Escalation targets this deployment permits tools to advertise and execute. */
+  readonly escalationTargets: readonly SandboxEscalationTarget[]
   /** The absolute `workspace-write` fallback root for calls without a session cwd. */
   readonly workspaceRoot: string
   constructor(ctx: Context, config: Config) {
@@ -107,6 +128,14 @@ export class SandboxPolicyService extends Service {
     // runtime fact. `workspaceRoot` has NO schema default, so its fallback to
     // the process cwd is real branching, resolved absolute either way.
     this.defaultMode = config.mode as SandboxMode
+    this.maximumMode = config.maximumMode as SandboxMode
+    if (!this.modeAllowed(this.defaultMode)) {
+      throw new Error(
+        `sandbox-policy: default mode ${JSON.stringify(this.defaultMode)} exceeds maximumMode `
+        + JSON.stringify(this.maximumMode),
+      )
+    }
+    this.escalationTargets = ESCALATION_TARGETS.filter(mode => this.modeAllowed(mode))
     this.workspaceRoot = resolveWorkspaceRoot(config.workspaceRoot ?? process.cwd())
 
     ctx.inject(['systemPrompt'], (scope: Context) => {
@@ -126,16 +155,23 @@ export class SandboxPolicyService extends Service {
   /**
    * Resolve the complete policy for one capability call. An approved explicit
    * mode outranks the session's last `sandbox/mode` event, which outranks the
-   * deployment default. A session cwd is its workspace-write boundary; the
-   * configured root is the fallback for agentless calls and sessions without a
-   * cwd.
+   * deployment default. Every source must stay at or below the deployment
+   * maximum. A session cwd is its workspace-write boundary; the configured
+   * root is the fallback for agentless calls and sessions without a cwd.
    * @param request - optional session and approved mode override.
    * @returns the fully resolved per-call mode and absolute workspace root.
    */
   resolve(request: SandboxPolicyRequest = {}): SandboxExecutionPolicy {
     const { session } = request
+    const mode = request.mode ?? (session === undefined ? undefined : this.overrideOf(session)) ?? this.defaultMode
+    if (!this.modeAllowed(mode)) {
+      throw new Error(
+        `sandbox-policy: mode ${JSON.stringify(mode)} exceeds deployment maximumMode `
+        + JSON.stringify(this.maximumMode),
+      )
+    }
     return {
-      mode: request.mode ?? (session === undefined ? undefined : this.overrideOf(session)) ?? this.defaultMode,
+      mode,
       workspaceRoot: resolveWorkspaceRoot(session?.header.cwd ?? this.workspaceRoot),
       ...session === undefined ? {} : { sessionId: session.id },
     }
@@ -148,6 +184,11 @@ export class SandboxPolicyService extends Service {
    */
   overrideOf(session: Session): SandboxMode | undefined {
     return effectiveSandboxMode(session.events)
+  }
+
+  /** Whether a mode is at or below this deployment's configured maximum. */
+  private modeAllowed(mode: SandboxMode): boolean {
+    return SANDBOX_MODE_RANK[mode] <= SANDBOX_MODE_RANK[this.maximumMode]
   }
 }
 

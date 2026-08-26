@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh.md) | 繁體中文
 
-**`FileSystem`**（`ctx.fs`）定義同一個執行世界中的儲存原語，包括解析路徑、公開規範化行程路徑與文件 URI、檢查包含關係、完整或流式讀取文字、有界讀取原始位元組、檢查／列出中繼資料、原子寫入和應用字面量編輯，但不規定實作方式。兩個變更操作都**選填** 接收版本防護，因此 `ctx.fs` 本身就是完整且不受約束的儲存 seam。本包還擁有由工具分派、政策外掛程式監聽的 `fs/*` 政策事件詞彙。
+**`FileSystem`**（`ctx.fs`）定義同一個執行世界中的儲存原語，包括解析路徑、公開規範化行程路徑與文件 URI、檢查包含關係、完整或流式讀取文字、有界讀取原始位元組、檢查／列出中繼資料、原子寫入和應用字面量編輯，但不規定實作方式。每個讀取和變更操作都接受選填的按呼叫 `SandboxExecutionPolicy`；裸後端忽略它，施加限制的後端則執行它。兩個變更操作仍**選填**接收版本防護，因此 `ctx.fs` 本身保持為完整且不受約束的儲存 seam。本包還擁有由工具分派、政策外掛程式監聽的 `fs/*` 政策事件詞彙。
 
 本包擁有四層檔案系統棧中的 Service Definition 和提供方約定層；該拆分使每個關注點可以獨立演進和替換（見[能力 seam Agent Note](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)、[檔案系統能力 seam Agent Note](../../../.agents/notes/implemented/architecture/2026-06-17-filesystem-capability-seam.md)、[拆分檔案系統 seam Agent Note](../../../.agents/notes/implemented/simplification/2026-06-26-fsspec-style-fs-seam.md)和[文件上下文事件閘門 Agent Note](../../../.agents/notes/implemented/architecture/2026-06-26-file-context-as-event-gate.md)）：
 
@@ -25,16 +25,18 @@
 | `processPath(target)` | 返回該提供方執行世界中的子行程可以打開的規範化絕對路徑。該路徑有意與不透明的 `targetKey` 分離。 |
 | `fileUrl(target)` | 返回採用執行世界平臺文法的規範化 `file:` URI。編碼由後端而非宿主行程負責。 |
 | `contains(parent, child)` | 在不公開或解析目標 key 的情況下，檢查規範化身份相等或後代包含關係。兩個目標都來自該提供方。 |
-| `stat(target, signal?)` | 返回 `FsInfo` 中繼資料（`version`、`type`、選填 `size`）；目標不存在時返回 `undefined`。絕不返回內容。 |
-| `lstat(path, opts?, signal?)` | 當最後一個路徑元件是符號連結時，不跟隨該元件，返回 `FsPathInfo` 中繼資料。該方法採用路徑形態，使消費端能在 `resolve` 跟隨倉庫所有的符號連結進入目標前拒絕它。 |
-| `readText(target, signal?)` | 把整個普通文字文件讀取為一個解碼後的字串。負責普通文件檢查、UTF-8 解碼和二進位/NUL 拒絕（`FS_NOT_TEXT`）。 |
-| `streamText(target, signal?)` | 為大文件按解碼後的區塊流式讀取相同文字（跨區塊 UTF-8 解碼仍由此處負責）；需要位元組上限的消費端在消費流時執行該上限。 |
-| `readBytes(target, signal, maxBytes)` | 把完整普通文件按原始位元組讀出，不做解碼或二進位拒絕。`maxBytes` 為必填，在該 seam 上限制完整內容：已知或讀取中發現的超限以 `FS_TOO_LARGE` 失敗，而不是截斷或無界緩衝。 |
-| `listDir(target, signal?)` | 按穩定名稱順序列出直接子項。返回條目名稱、條目類型、解析後的子目標和低成本中繼資料（若可用則包括 `version`/文件 `size`）；絕不讀取文件內容。缺失目標拋出 `FS_NOT_FOUND`，非目錄拋出 `FS_NOT_DIRECTORY`，權限失敗拋出 `FS_PERMISSION_DENIED`，其他後端 I/O 失敗拋出 `FS_IO_ERROR`。損壞/消失的子項可以作為無中繼資料的 `other` 返回；子項權限/I/O 失敗會使用相同結構化程式碼使整個清單失敗。 |
+| `stat(target, signal?, sandboxPolicy?)` | 返回 `FsInfo` 中繼資料（`version`、`type`、選填 `size`）；目標不存在時返回 `undefined`。絕不返回內容。 |
+| `lstat(path, opts?, signal?, sandboxPolicy?)` | 當最後一個路徑元件是符號連結時，不跟隨該元件，返回 `FsPathInfo` 中繼資料。該方法採用路徑形態，使消費端能在 `resolve` 跟隨倉庫所有的符號連結進入目標前拒絕它。 |
+| `readText(target, signal?, sandboxPolicy?)` | 把整個普通文字文件讀取為一個解碼後的字串。負責普通文件檢查、UTF-8 解碼和二進位/NUL 拒絕（`FS_NOT_TEXT`）。 |
+| `streamText(target, signal?, sandboxPolicy?)` | 為大文件按解碼後的區塊流式讀取相同文字（跨區塊 UTF-8 解碼仍由此處負責）；需要位元組上限的消費端在消費流時執行該上限。 |
+| `readBytes(target, signal, maxBytes, sandboxPolicy?)` | 把完整普通文件按原始位元組讀出，不做解碼或二進位拒絕。`maxBytes` 為必填，在該 seam 上限制完整內容：已知或讀取中發現的超限以 `FS_TOO_LARGE` 失敗，而不是截斷或無界緩衝。 |
+| `listDir(target, signal?, sandboxPolicy?)` | 按穩定名稱順序列出直接子項。返回條目名稱、條目類型、解析後的子目標和低成本中繼資料（若可用則包括 `version`/文件 `size`）；絕不讀取文件內容。缺失目標拋出 `FS_NOT_FOUND`，非目錄拋出 `FS_NOT_DIRECTORY`，權限失敗拋出 `FS_PERMISSION_DENIED`，其他後端 I/O 失敗拋出 `FS_IO_ERROR`。損壞/消失的子項可以作為無中繼資料的 `other` 返回；子項權限/I/O 失敗會使用相同結構化程式碼使整個清單失敗。 |
 | `writeText(target, content, expected?, signal?)` | 原子建立/替換。`expected` 是選填的：省略 ⇒ 無條件建立或覆蓋；提供 `FsWriteIntent`（`createIfAbsent`/`replaceIfVersion`）⇒ 新增防護。`createIfAbsent` 必須以不替換的方式發布，使初始探測後搶先建立的文件得到保留。 |
 | `editText(target, edit, expected?, signal?)` | 字面量編輯。`expected` 是選填的：省略 ⇒ 無條件編輯當前內容；提供 `{ version }` ⇒ 新增防護，並在匹配之前校驗。無論哪種情況，目標缺失都報告 `FS_STALE_VERSION`。應用和寫入以原子方式完成，使用同一個變更臨界區。 |
 
 無論是否有版本防護，變更都在後端的每目標鎖內執行，因此無條件寫入/編輯仍是原子的；「無條件」只移除*版本*前置條件，不移除原子性。
+
+`readPolicyForTarget(fs, root)` 建立一個 `read-only` 按呼叫策略，其 `workspaceRoot` 是已解析目標在執行世界中的行程路徑。當受信任的內部 loader 所讀取的已設定文件或目錄有意獨立於模型工作階段工作區時，它會使用此策略。面向模型的消費端必須改為傳遞呼叫方已解析的工作階段策略。
 
 ## `fs/*` 政策事件
 

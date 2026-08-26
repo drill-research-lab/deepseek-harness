@@ -18,7 +18,7 @@ export interface Config {
   audienceRef?: string
   /** Browser cookie carrying the compact signed identity token. */
   cookieName?: string
-  /** Identity token and cookie lifetime, capped at fifteen minutes. */
+  /** Identity token and cookie lifetime, capped at one hour. */
   cookieExpireSeconds?: number
   /** Whether the identity cookie carries the Secure attribute. */
   cookieSecure?: boolean
@@ -35,7 +35,7 @@ export const Config: z<Config> = z.object({
   issuerRef: z.string().default('AUTH_COOKIE_ISSUER'),
   audienceRef: z.string().default('AUTH_COOKIE_AUDIENCE'),
   cookieName: z.string().default('dsh_identity'),
-  cookieExpireSeconds: z.natural().min(60).max(900).default(300),
+  cookieExpireSeconds: z.natural().min(60).max(3600).default(300),
   cookieSecure: z.boolean().default(true),
   registrationEnabled: z.boolean().default(false),
   appUrl: z.string().default('http://127.0.0.1:3080/'),
@@ -200,6 +200,7 @@ export class LdapAuthGateway extends Service {
       const privateKeyRef = credentialRef(config.privateKeyRef ?? 'AUTH_COOKIE_PRIVATE_KEY')
       const issuerRef = credentialRef(config.issuerRef ?? 'AUTH_COOKIE_ISSUER')
       const audienceRef = credentialRef(config.audienceRef ?? 'AUTH_COOKIE_AUDIENCE')
+      for (const ref of [privateKeyRef, issuerRef, audienceRef]) ctx.credentials.reserveDeployment(ref)
       const [key, issuer, audience] = await Promise.all([
         ctx.credentials.resolve(privateKeyRef),
         ctx.credentials.resolve(issuerRef),

@@ -96,7 +96,7 @@ function callTool(
 /** Wait until a continuable child released its current Activation. */
 async function waitNoActivation(ctx: Context, childId: SessionId): Promise<void> {
   await vi.waitFor(() => {
-    expect(ctx.agents.get(childId)).toBeUndefined()
+    expect(ctx.agents.get(childId, 'trusted-internal')).toBeUndefined()
   }, { timeout: 5_000 })
 }
 
@@ -276,7 +276,7 @@ describe('dsh-tool-subagent-control/list-agents', () => {
       signal: testToolSignal,
     })
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-    const child = ctx.agents.get(started.childId)!
+    const child = ctx.agents.get(started.childId, 'trusted-internal')!
     const grandchild = await ctx.subagents.startContinuable({
       provider: 'spawn',
       label: 'nested leaf',
@@ -288,7 +288,7 @@ describe('dsh-tool-subagent-control/list-agents', () => {
     // grandchild it owns: the live-registry `idle` status.
     releaseChild.resolve(undefined)
     await vi.waitFor(() => {
-      expect(ctx.agents.get(started.childId)?.status).toBe('idle')
+      expect(ctx.agents.get(started.childId, 'trusted-internal')?.status).toBe('idle')
     }, { timeout: 5_000 })
 
     const result = await callTool(ctx, 'list_agents', { scope: 'descendants' }, parent)

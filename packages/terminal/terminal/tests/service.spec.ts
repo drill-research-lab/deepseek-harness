@@ -167,9 +167,11 @@ describe('TerminalSessionService ownership and lifecycle', () => {
     expect(ctx.terminals.hasOwnerActivity(owner)).toBe(true)
     expect(ctx.terminals.list(owner)).toHaveLength(1)
     expect(ctx.terminals.list(foreign)).toEqual([])
-    expect(() => ctx.terminals.read(foreign, created.sessionId)).toThrow('belongs to another agent')
-    expect(() => ctx.terminals.signal(foreign, created.sessionId, 'SIGINT')).toThrow('belongs to another agent')
-    await expect(Promise.resolve().then(() => ctx.terminals.kill(foreign, created.sessionId))).rejects.toThrow('belongs to another agent')
+    expect(() => ctx.terminals.read(foreign, created.sessionId)).toThrow(`unknown PTY session ${created.sessionId}`)
+    expect(() => ctx.terminals.signal(foreign, created.sessionId, 'SIGINT'))
+      .toThrow(`unknown PTY session ${created.sessionId}`)
+    await expect(Promise.resolve().then(() => ctx.terminals.kill(foreign, created.sessionId)))
+      .rejects.toThrow(`unknown PTY session ${created.sessionId}`)
   })
 
   it('rejects unknown backends, non-live owners, duplicate names, and active sends', async () => {
@@ -234,7 +236,7 @@ describe('TerminalSessionService ownership and lifecycle', () => {
 
     await expect(pending).rejects.toBe(reason)
     expect(session.closed).toEqual(['PTY spawn rolled back'])
-    expect(ctx.agents.get(owner.id)).toBe(owner)
+    expect(ctx.agents.get(owner.id, 'trusted-internal')).toBe(owner)
   })
 
   it('preserves caller cancellation when unpublished rollback fails', async () => {

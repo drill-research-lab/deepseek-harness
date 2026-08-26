@@ -202,7 +202,10 @@ class ConfiningFakeBash extends ShellExecutor {
 }
 
 /** Sandboxed composition: the shared policy service + a confining executor + the pwsh tool (+ optional approval). */
-async function setupSandboxed(withApproval = false) {
+async function setupSandboxed(
+  withApproval = false,
+  maximumMode: 'read-only' | 'workspace-write' | 'danger-full-access' = 'danger-full-access',
+) {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
@@ -210,7 +213,7 @@ async function setupSandboxed(withApproval = false) {
   await ctx.plugin(LocalJobRegistry)
   await ctx.plugin(ToolTasks)
   await ctx.plugin(BashEnvPlugin)
-  await ctx.plugin(SandboxPolicyService, {})
+  await ctx.plugin(SandboxPolicyService, { maximumMode })
   await ctx.plugin(ConfiningFakeBash)
   if (withApproval) await ctx.plugin(ApprovalService)
   await ctx.plugin(ToolPwsh)
@@ -572,6 +575,23 @@ describe('sandbox escalation through ctx.approval', () => {
     }
   })
 
+  it('omits and rejects danger-full-access when the deployment ceiling is workspace-write', async () => {
+    const { ctx, bash } = await setupSandboxed(true, 'workspace-write')
+    const prompted = vi.fn()
+    ctx.on('approval/request', () => { prompted(); return Promise.resolve<ApprovalOutcome>('allowed-once') })
+    const schema = ctx.tools.schemas().find(item => item.name === 'pwsh')!
+    const properties = schema.parameters.properties as Record<string, { enum?: string[] }>
+    expect(properties['sandbox_permissions']?.enum).toEqual(['workspace-write'])
+
+    const result = await call(ctx, 'pwsh', {
+      ...escalate,
+      sandbox_permissions: 'danger-full-access',
+    }, sandboxAgent())
+    expect(text(result)).toContain('must be one of ["workspace-write"]')
+    expect(prompted).not.toHaveBeenCalled()
+    expect(bash.modes).toEqual([])
+  })
+
   it('the escalation fields and the confined-mode clauses stay out of sandbox-less compositions', async () => {
     const { ctx } = await setup()
     const schema = ctx.tools.schemas().find(item => item.name === 'pwsh')!
@@ -597,7 +617,7 @@ describe('sandbox escalation through ctx.approval', () => {
       type: 'sandbox/mode',
       data: { mode: 'unknown-mode' },
     })
-    expect(text(await call(ctx, 'pwsh', escalate, malformed))).toContain('not strictly wider')
+    expect(text(await call(ctx, 'pwsh', escalate, malformed))).toContain('exceeds deployment maximumMode')
   })
 
   it('fails closed when approval cannot be routed', async () => {
@@ -733,7 +753,7 @@ describe('background execution through the job runtime', () => {
 
     const anon = await call(ctx, 'job_output', { job_id: 'pwsh-1' })
     expect(anon.isError).toBe(true)
-    expect(text(anon)).toMatch(/belongs to another session/)
+    expect(text(anon)).toMatch(/unknown job/)
 
     const killed = await call(ctx, 'job_kill', { job_id: 'pwsh-1' }, agent)
     expect(killed.isError).toBe(false)

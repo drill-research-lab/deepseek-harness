@@ -571,10 +571,10 @@ describe('LocalJobRegistry owner isolation', () => {
     expect(ctx.jobs.read(open, other).snapshot.id).toBe(open)
 
     // A different session and a no-agent caller are rejected.
-    expect(() => ctx.jobs.read(owned, other)).toThrow(`job ${owned} belongs to another session`)
-    expect(() => ctx.jobs.kill(owned, other)).toThrow('belongs to another session')
-    await expect(ctx.jobs.wait(owned, 10, other)).rejects.toThrow('belongs to another session')
-    expect(() => ctx.jobs.read(owned)).toThrow('belongs to another session')
+    expect(() => ctx.jobs.read(owned, other)).toThrow(`unknown job ${owned}`)
+    expect(() => ctx.jobs.kill(owned, other)).toThrow(`unknown job ${owned}`)
+    await expect(ctx.jobs.wait(owned, 10, other)).rejects.toThrow(`unknown job ${owned}`)
+    expect(() => ctx.jobs.read(owned)).toThrow(`unknown job ${owned}`)
   })
 
   it('list() shows only caller-owned plus unowned jobs', async () => {

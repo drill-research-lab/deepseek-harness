@@ -523,6 +523,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'DSH verifies an externally signed identity cookie and carries its stable user id through request-local storage; credential collection and assertion signing remain outside the DSH process.',
   },
   {
+    key: 'ownership',
+    pkg: 'ownership',
+    title: 'Trusted owner and UserHome seam',
+    mode: 'seam',
+    implementations: ['host-ownership-file'],
+    consumers: [],
+    note: 'The Host provider derives request principals from verified authentication, validates hashed per-owner homes, and enforces one Linux writer; A1 deliberately leaves resource consumers to the ownership migration.',
+  },
+  {
     key: 'ldapDirectory',
     pkg: 'auth-ldap',
     title: 'LDAP gateway directory',

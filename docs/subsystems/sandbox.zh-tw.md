@@ -8,14 +8,16 @@
 
 ## 模式與強制執行
 
-`SandboxMode` 僅管控檔案系統效果。`read-only` 要求後端拒絕寫入——POSIX runner 還會授予其 shell 所需的 `/dev/null` 接收器，而 Windows ACL runner 不授予任何顯式可寫根目錄，並因環境 ACL 缺口報告部分強制執行；`workspace-write` 允許在工作區根目錄及後端承諾的臨時區域下寫入；`danger-full-access` 繞過隔離。網路與行程可見性不在此處的定義範圍內。
+`SandboxMode` 僅管控檔案系統效果。檔案系統消費端在兩種受限模式下都會將讀取限制在 `workspaceRoot`。`read-only` 拒絕變更，而 `workspace-write` 允許在工作區根目錄及後端承諾的臨時區域下變更。行程 runner 保留執行命令所需的系統讀取權限；POSIX runner 還會授予其 shell 所需的 `/dev/null` 接收器，而 Windows ACL runner 不授予任何顯式可寫根目錄，並因環境 ACL 缺口報告部分強制執行。`danger-full-access` 繞過隔離。網路與行程可見性不在此處的定義範圍內。
 
 ```ts type-equiv
 /**
- * File-effect policy for confined processes. `read-only` permits only required
- * sinks such as `/dev/null`; `workspace-write` also permits the workspace and a
- * backend-defined temp area; `danger-full-access` bypasses confinement. Network
- * and process visibility are outside this vocabulary.
+ * File-effect policy for confined capability calls. Filesystem consumers limit
+ * reads to `workspaceRoot` under both confined modes. `read-only` denies
+ * mutations, while `workspace-write` permits the workspace and a backend-defined
+ * temp area; `danger-full-access` bypasses confinement. Process backends may
+ * retain the system reads needed to execute commands. Network and process
+ * visibility are outside this vocabulary.
  */
 type SandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access'
 ```
@@ -51,7 +53,7 @@ type SandboxEnforcement = 'full' | 'partial'
 interface SandboxExecutionPolicy {
   /** The file-effect mode this execution runs under. */
   mode: SandboxMode
-  /** Absolute root directory `workspace-write` may write under. */
+  /** Absolute root directory confined filesystem reads may access and `workspace-write` may mutate under. */
   workspaceRoot: string
   /**
    * Opaque identity of the calling session (the branded `dsh-session`
@@ -184,21 +186,21 @@ Abstract process-sandbox service. confine must return enforcing argv or fail clo
 abstract confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv
 ```
 
-Source: [`packages/sandbox/sandbox/src/index.ts:158`](../../packages/sandbox/sandbox/src/index.ts)
+Source: [`packages/sandbox/sandbox/src/index.ts:166`](../../packages/sandbox/sandbox/src/index.ts)
 
 <a id="ctxsandboxpolicy--sandboxpolicyservice"></a>
 
 ### `ctx.sandboxPolicy` — `SandboxPolicyService`
 
-The sandbox-policy service (`ctx.sandboxPolicy`). Owns the deployment default mode, fallback workspace root, and current request-time policy section. Tool layers call resolve for each execution so a session's mode log and immutable cwd travel together to every enforcing capability.
+The sandbox-policy service (`ctx.sandboxPolicy`). Owns the deployment default and maximum modes, fallback workspace root, permitted escalation targets, and current request-time policy section. Tool layers call resolve for each execution so a session's mode log and immutable cwd travel together to every enforcing capability.
 
 ```ts cordis-catalog
 /**
  * Resolve the complete policy for one capability call. An approved explicit
  * mode outranks the session's last `sandbox/mode` event, which outranks the
- * deployment default. A session cwd is its workspace-write boundary; the
- * configured root is the fallback for agentless calls and sessions without a
- * cwd.
+ * deployment default. Every source must stay at or below the deployment
+ * maximum. A session cwd is its workspace-write boundary; the configured
+ * root is the fallback for agentless calls and sessions without a cwd.
  * @param request - optional session and approved mode override.
  * @returns the fully resolved per-call mode and absolute workspace root.
  */
@@ -214,5 +216,5 @@ overrideOf(session: Session): SandboxMode | undefined
 
 Types: [Session](session.md)
 
-Source: [`packages/sandbox/sandbox-policy/src/index.ts:91`](../../packages/sandbox/sandbox-policy/src/index.ts)
+Source: [`packages/sandbox/sandbox-policy/src/index.ts:107`](../../packages/sandbox/sandbox-policy/src/index.ts)
 <!-- END GENERATED cordis-surface -->

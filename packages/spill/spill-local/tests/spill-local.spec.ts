@@ -8,11 +8,14 @@
 
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { mkdir, mkdtemp as mkdtempAsync, rm as rmAsync } from 'node:fs/promises'
 import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, normalize } from 'node:path'
 import { CallId } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import { OwnershipService, UserHome } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal, OwnerRoot } from '@deepseek-ai/dsh-ownership'
 import type { SaveTextSpill } from '@deepseek-ai/dsh-spill'
 import LocalSpillStore, { encodeSegment, privateRoot, saveTextFile, sessionDir } from '@deepseek-ai/dsh-spill-local'
 
@@ -141,5 +144,82 @@ describe('LocalSpillStore service', () => {
     const filePath = (await saveTextFile({ root, sessionId: 's', suggestedName: 'f', content: 'x' })).path
     await ctx.plugin(LocalSpillStore, { root: filePath })
     await expect(ctx.spillStore.saveText(request())).rejects.toThrow()
+  })
+})
+
+class TestOwnership extends OwnershipService {
+  principal: OwnerPrincipal | undefined
+
+  constructor(ctx: Context, private readonly usersRoot: string) { super(ctx) }
+  currentPrincipal(): OwnerPrincipal {
+    if (this.principal === undefined) throw new Error('no test owner')
+    return this.principal
+  }
+  currentPrincipalOrUndefined(): OwnerPrincipal | undefined { return this.principal }
+  backgroundPrincipal(userId: OwnerPrincipal['userId']): OwnerPrincipal {
+    return { userId, source: 'background' }
+  }
+  resolveOwnerRoot(): Promise<OwnerRoot> {
+    throw new Error('not used by these tests')
+  }
+
+  async resolveUserHome(principal: OwnerPrincipal): Promise<UserHome> {
+    const homeRoot = join(this.usersRoot, String(principal.userId).replaceAll(':', '-'))
+    await mkdir(homeRoot, { recursive: true })
+    return new UserHome(principal, {
+      schemaVersion: 1,
+      userId: principal.userId,
+      createdAt: '2026-08-19T00:00:00.000Z',
+      updatedAt: '2026-08-19T00:00:00.000Z',
+    }, homeRoot)
+  }
+}
+
+describe('LocalSpillStore ownership', () => {
+  it('persists under the session owner\'s UserHome, never the requester alone', async () => {
+    const usersRoot = await mkdtempAsync(join(tmpdir(), 'dsh-spill-owner-'))
+    try {
+      const ctx = new Context()
+      await ctx.plugin(SessionStore)
+      const ownershipFiber = ctx.plugin(TestOwnership, usersRoot)
+      await ownershipFiber
+      const storeFiber = ctx.plugin(LocalSpillStore, {})
+      await storeFiber
+      const ownership = ctx.ownership as TestOwnership
+      const alice = { userId: 'ldap:test-alice' as OwnerPrincipal['userId'], source: 'request' as const }
+      const bob = { userId: 'ldap:test-bob' as OwnerPrincipal['userId'], source: 'request' as const }
+
+      ownership.principal = alice
+      const aliceSession = ctx.sessions.create()
+
+      const ref = await ctx.spillStore.saveText(request({ owner: { sessionId: aliceSession.id } }))
+      expect(dirname(ref.locator)).toBe(sessionDir(join(usersRoot, 'ldap-test-alice', 'spill'), aliceSession.id))
+
+      // Bob cannot write into Alice's session namespace, even though he
+      // supplies her real sessionId: the write is rooted in the SESSION's
+      // durable owner, not the caller's own identity.
+      ownership.principal = bob
+      await expect(ctx.spillStore.saveText(request({ owner: { sessionId: aliceSession.id } })))
+        .rejects.toThrow(/not found/)
+
+      // A background write (no request principal, e.g. a continuation
+      // outside AsyncLocalStorage scope) still resolves to the session's own
+      // durable owner rather than failing open into an unscoped location.
+      ownership.principal = undefined
+      const backgroundRef = await ctx.spillStore.saveText(request({ owner: { sessionId: aliceSession.id } }))
+      expect(dirname(backgroundRef.locator)).toBe(dirname(ref.locator))
+
+      // Bob's own session lands under his own, separate namespace.
+      ownership.principal = bob
+      const bobSession = ctx.sessions.create()
+      const bobRef = await ctx.spillStore.saveText(request({ owner: { sessionId: bobSession.id } }))
+      expect(dirname(bobRef.locator)).not.toBe(dirname(ref.locator))
+      expect(dirname(bobRef.locator)).toBe(sessionDir(join(usersRoot, 'ldap-test-bob', 'spill'), bobSession.id))
+
+      await storeFiber.dispose()
+      await ownershipFiber.dispose()
+    } finally {
+      await rmAsync(usersRoot, { recursive: true, force: true })
+    }
   })
 })

@@ -79,7 +79,7 @@ describe('dsh-subagent-spawn-in-process', () => {
     const { ctx, parent } = await setup([textResponse('child answer')])
     let childAtStart: ReturnType<typeof ctx.agents.get>
     ctx.on('subagent/start', (info) => {
-      if (info.provider === 'spawn') childAtStart = ctx.agents.get(info.id)
+      if (info.provider === 'spawn') childAtStart = ctx.agents.get(info.id, 'trusted-internal')
     })
 
     const starting = start(ctx, 'spawn', { prompt: [{ type: 'text', text: 'do X' }], parent })
@@ -87,7 +87,7 @@ describe('dsh-subagent-spawn-in-process', () => {
     // still inside its unpublished setup transaction.
     expect(childAtStart).toBeUndefined()
     const run = await starting
-    expect(childAtStart).toBe(ctx.agents.get(run.id))
+    expect(childAtStart).toBe(ctx.agents.get(run.id, 'trusted-internal'))
     expect(childAtStart?.id).toBe(run.id)
 
     await run.result
@@ -98,7 +98,7 @@ describe('dsh-subagent-spawn-in-process', () => {
     const { ctx, parent } = await setup([textResponse('hi')])
     const run = await start(ctx, 'spawn', { prompt: [{ type: 'text', text: 'p' }], parent })
     await run.result
-    const child = ctx.agents.get(run.id)!
+    const child = ctx.agents.get(run.id, 'trusted-internal')!
     expect(child.session.header.id).not.toBe(parent.session.header.id)
     expect(child.session.header.parentSession).toBe(parent.session.header.id)
     await run.dispose()
@@ -114,7 +114,7 @@ describe('dsh-subagent-spawn-in-process', () => {
 
     const run = await start(ctx, 'spawn', { prompt: [{ type: 'text', text: 'child prompt' }], parent })
     await run.result
-    const child = ctx.agents.get(run.id)!
+    const child = ctx.agents.get(run.id, 'trusted-internal')!
     // The child's first user/message is its OWN prompt, not the parent's history.
     const firstUser = child.session.events.find(e => e.type === 'user/message')
     expect(firstUser).toBeDefined()
@@ -125,10 +125,10 @@ describe('dsh-subagent-spawn-in-process', () => {
     const { ctx, parent } = await setup([textResponse('x')])
     const run = await start(ctx, 'spawn', { prompt: [{ type: 'text', text: 'p' }], parent })
     await run.result
-    expect(ctx.agents.get(run.id)).toBeDefined()
+    expect(ctx.agents.get(run.id, 'trusted-internal')).toBeDefined()
     await run.dispose()
     // After dispose, the child is unregistered (the AgentHandle teardown ran).
-    expect(ctx.agents.get(run.id)).toBeUndefined()
+    expect(ctx.agents.get(run.id, 'trusted-internal')).toBeUndefined()
   })
 
   it('stamps child depth = parent depth + 1 (via the merged AgentOptions field)', async () => {
@@ -136,7 +136,7 @@ describe('dsh-subagent-spawn-in-process', () => {
     expect(parent.options.subagentDepth).toBeUndefined()
     const run = await start(ctx, 'spawn', { prompt: [{ type: 'text', text: 'p' }], parent })
     await run.result
-    const child = ctx.agents.get(run.id)!
+    const child = ctx.agents.get(run.id, 'trusted-internal')!
     expect(child.options.subagentDepth).toBe(1)
     await run.dispose()
   })
@@ -181,8 +181,8 @@ describe('dsh-subagent-spawn-in-process', () => {
     // Same-tick cancellation must win before async factory publication: no child may become
     // visible, `started` must not fulfill, and the empty script proves no model turn occurs.
     const { ctx, parent } = await setup([])
-    const beforeAgents = ctx.agents.list().length
-    const beforeSessions = ctx.sessions.list().length
+    const beforeAgents = ctx.agents.list('trusted-internal').length
+    const beforeSessions = ctx.sessions.list('trusted-internal').length
     const published: string[] = []
     ctx.on('session/created', () => void published.push('session/created'))
     ctx.on('agent/created', () => void published.push('agent/created'))
@@ -195,8 +195,8 @@ describe('dsh-subagent-spawn-in-process', () => {
 
     await expect(starting).rejects.toThrow()
     await Promise.resolve()
-    expect(ctx.agents.list()).toHaveLength(beforeAgents)
-    expect(ctx.sessions.list()).toHaveLength(beforeSessions)
+    expect(ctx.agents.list('trusted-internal')).toHaveLength(beforeAgents)
+    expect(ctx.sessions.list('trusted-internal')).toHaveLength(beforeSessions)
     expect(published).toEqual([])
   })
 
@@ -256,7 +256,7 @@ describe('dsh-subagent-spawn-in-process', () => {
     })
     const run = await start(ctx, 'spawn', { prompt: [{ type: 'text', text: 'p' }], parent: parentHandle.agent })
     await run.result
-    const child = ctx.agents.get(run.id)!
+    const child = ctx.agents.get(run.id, 'trusted-internal')!
     expect(child.session.header.cwd).toBe('/tmp/parent-workspace')
     await run.dispose()
     await parentHandle.dispose()
@@ -338,7 +338,7 @@ describe('dsh-subagent-spawn-in-process', () => {
     await new Promise(resolve => setTimeout(resolve, 30))
     await fiber.dispose()
     expect(ctx.subagents.getProvider('spawn')).toBeUndefined()
-    expect(ctx.agents.get(run.id)).toBeDefined()
+    expect(ctx.agents.get(run.id, 'trusted-internal')).toBeDefined()
     controller.abort('test complete')
     const result = await run.result
     expect(result.stopReason).toBe('aborted')
@@ -423,7 +423,7 @@ describe('dsh-subagent-spawn-in-process', () => {
       const childRequest = adapter.requests[0]!
       expect((childRequest.tools ?? []).map(t => t.name)).not.toContain('forbidden_tool')
       // …and the attempted call executed as UNKNOWN_TOOL (visible in the log).
-      const child = ctx.agents.get(run.id)!
+      const child = ctx.agents.get(run.id, 'trusted-internal')!
       const toolResult = child.session.events.find(e => e.type === 'tool/result')!
       expect(JSON.stringify(toolResult.data)).toContain('unknown tool')
       await run.dispose()
@@ -431,13 +431,13 @@ describe('dsh-subagent-spawn-in-process', () => {
 
     it('an unknown toolFilter name fails the spawn loudly with no orphaned child', async () => {
       const { ctx, parent } = await setup([])
-      const before = ctx.agents.list().length
+      const before = ctx.agents.list('trusted-internal').length
       await expect(start(ctx, 'spawn', {
         prompt: [{ type: 'text', text: 'do X' }],
         parent,
         toolFilter: { deny: ['no_such_tool'] },
       })).rejects.toThrow(/unknown global tool "no_such_tool"/)
-      expect(ctx.agents.list().length).toBe(before)
+      expect(ctx.agents.list('trusted-internal').length).toBe(before)
     })
   })
 
@@ -449,8 +449,8 @@ describe('dsh-subagent-spawn-in-process', () => {
       agentOptions: { provider: 'mock', model: 'mock' },
     })
     await parentHandle.dispose()
-    const before = ctx.agents.list().length
-    const sessionsBefore = ctx.sessions.list().length
+    const before = ctx.agents.list('trusted-internal').length
+    const sessionsBefore = ctx.sessions.list('trusted-internal').length
     const published: string[] = []
     ctx.on('session/created', () => void published.push('session/created'))
     ctx.on('agent/created', () => void published.push('agent/created'))
@@ -459,8 +459,8 @@ describe('dsh-subagent-spawn-in-process', () => {
       prompt: [{ type: 'text', text: 'do X' }],
       parent: parentHandle.agent,
     })).rejects.toThrow(/inactive context/)
-    expect(ctx.agents.list().length).toBe(before)
-    expect(ctx.sessions.list()).toHaveLength(sessionsBefore)
+    expect(ctx.agents.list('trusted-internal').length).toBe(before)
+    expect(ctx.sessions.list('trusted-internal')).toHaveLength(sessionsBefore)
     expect(published).toEqual([])
   })
 

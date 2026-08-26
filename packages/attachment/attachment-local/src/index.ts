@@ -6,6 +6,7 @@ import z from '@deepseek-ai/schemastery'
 import { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import type {} from '@deepseek-ai/dsh-ownership'
 import { readImageFile, saveImageFile, validateImageFile } from './store.ts'
 
 export { detectImage } from './image.ts'
@@ -65,11 +66,19 @@ export class LocalAttachmentStore extends AttachmentStore {
   }
 
   async saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef> {
-    return saveImageFile(this.root, input, this.imageLimits)
+    return saveImageFile(await this.ownerRoot(), input, this.imageLimits)
   }
 
   async readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment> {
-    return readImageFile(this.root, ref, signal)
+    return readImageFile(await this.ownerRoot(), ref, signal)
+  }
+
+  /** Resolve the request owner's private attachment namespace when ownership is mounted. */
+  private async ownerRoot(): Promise<string> {
+    const ownership = this.ctx.root.get('ownership')
+    if (ownership === undefined) return this.root
+    const home = await ownership.resolveUserHome(ownership.currentPrincipal())
+    return home.path('attachments', 'v1')
   }
 }
 

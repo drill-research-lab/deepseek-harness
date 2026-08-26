@@ -58,8 +58,22 @@ declare module '@deepseek-ai/cordis' {
  * unconfigured — so a blank never masquerades as a configured secret.
  */
 export abstract class CredentialProvider extends Service {
+  private readonly deploymentRefs = new Set<CredentialRef>()
   constructor(ctx: Context) {
     super(ctx, 'credentials')
+  }
+
+  /**
+   * Reserve a reference for deployment/bootstrap use before authenticated user resolution exists.
+   * @param ref - the reference to forbid from every user-managed credential layer.
+   */
+  reserveDeployment(ref: CredentialRef): void {
+    this.deploymentRefs.add(ref)
+  }
+
+  /** Whether a reference is forbidden from every user-managed credential layer. */
+  protected isDeploymentRef(ref: CredentialRef): boolean {
+    return this.deploymentRefs.has(ref)
   }
 
   /**

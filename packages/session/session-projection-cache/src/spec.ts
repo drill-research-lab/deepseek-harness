@@ -11,6 +11,7 @@
 
 import { z } from 'zod'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { authenticatedUserId } from '@deepseek-ai/dsh-auth'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 
 /**
@@ -37,6 +38,7 @@ export const checkpointRow = z.object({
  * header (cold read) before accepting any row.
  */
 export const checkpointIdentity = z.object({
+  ownerUserId: z.string().transform(authenticatedUserId).optional(),
   createdAt: z.number().int().nonnegative(),
   cwd: z.string().optional(),
 })
@@ -65,6 +67,6 @@ export type CheckpointRecord = z.infer<typeof checkpointRecord>
  */
 export const projectionCacheDomainSpec = defineDomain({
   name: 'session_projcache',
-  version: 3,
+  version: 4,
   tables: { sessions: domainTable<SessionId, CheckpointRecord>(checkpointRecord) },
 })

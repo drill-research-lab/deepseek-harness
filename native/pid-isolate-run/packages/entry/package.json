@@ -1,0 +1,41 @@
+{
+  "name": "@deepseek-ai/node-addon-pid-isolate-run",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "PID and mount namespace self-restrict-then-exec launcher for Linux: prebuilt static binaries plus the JS seam that resolves and probes them",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-harness/deepseek-harness.git",
+    "directory": "native/pid-isolate-run/packages/entry"
+  },
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "README.md",
+    "lib/",
+    "!lib/*.tsbuildinfo",
+    "src/pid-isolate-run.c"
+  ],
+  "scripts": {
+    "build:js": "tsc -b",
+    "prepack": "node ../../scripts/verify-entry-lib.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "BSD-3-Clause",
+  "publishConfig": {
+    "access": "public"
+  },
+  "optionalDependencies": {
+    "@deepseek-ai/node-addon-pid-isolate-run-linux-arm64": "workspace:*",
+    "@deepseek-ai/node-addon-pid-isolate-run-linux-x64": "workspace:*"
+  }
+}

@@ -158,8 +158,8 @@ export class ScheduleRuntime {
 
   /** Whether this exact root lifecycle remains authoritative. */
   private isLive(): boolean {
-    return this.ctx.agents.get(this.agent.id) === this.agent
-      && this.ctx.agents.roots().includes(this.agent)
+    return this.ctx.agents.get(this.agent.id, 'trusted-internal') === this.agent
+      && this.ctx.agents.roots('trusted-internal').includes(this.agent)
   }
 
   /** Whether this runtime may start or continue Schedule work. */

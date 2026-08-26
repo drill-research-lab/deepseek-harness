@@ -15,8 +15,7 @@ Creates and holds event-sourced `Session` instances. Persistence is intentionall
 - `ctx.sessions.create(id?, { seed?, meta? }?)` validates and detaches durable seed/header data, fills the version and id, defaults `createdAt` to now, publishes the session, and binds it to the calling fiber. Persisted reconstruction supplies its original `createdAt`, `seedLength`, and `delegationDepth`.
 - `ctx.sessions.flush(session)` dispatches the awaited parallel durability checkpoint through the session's captured scope. Every listener starts and the call waits for all to settle before reporting failure; unpublished, detached, and stale objects reject.
 - `ctx.sessions.fork(source, boundary?, childSessionId?): Session` — Resolve a live session object or id, select a seed through the inclusive `boundary` event seq (default: current last event), require that prefix to end outside an open turn, and create a live child session with lineage metadata.
-- `ctx.sessions.get(id: SessionId): Session | undefined`
-- `ctx.sessions.list(): Session[]`
+- `ctx.sessions.get(id: SessionId, access: 'trusted-internal'): Session | undefined` and `ctx.sessions.list(access: 'trusted-internal'): Session[]` are unfiltered — every live session in the process regardless of owner. The literal `'trusted-internal'` marker is required at every call site, so a caller resolving a client-supplied id must use `ownedSession(ctx, id)` / `ownedSessions(ctx)` instead, which perform the same lookup and narrow the result to the current request or background principal (fails closed when ownership is mounted but no principal is in scope; passes through unfiltered when no ownership service exists at all).
 
 #### Advanced: ordered-teardown lifecycle primitives
 

@@ -15,7 +15,15 @@ import { dirname, extname, join, resolve } from 'node:path'
 import { Document, parseDocument } from 'yaml'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { canonicalizeWatchPath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { SettingsProvider, deepEqualJson, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import {
+  SettingsProvider,
+  deepEqualJson,
+  type SettingsDescribeOptions,
+  type SettingsDescriptor,
+  type SettingsNamespace,
+  type SettingsPathOp,
+} from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-ownership'
 
 /** Plugin config: file location and hot-reload behavior. */
 export interface Config {
@@ -44,6 +52,13 @@ interface ResolvedSpec {
   format: SettingsFormat
   watch: boolean
   debounceMs: number
+}
+
+interface OwnerSettingsState {
+  document: Record<string, unknown>
+  text: string | undefined
+  readonly revisions: Map<SettingsNamespace, number>
+  operation: Promise<void>
 }
 
 /**
@@ -124,6 +139,7 @@ export class FileSettingsProvider extends SettingsProvider {
    * read a half-committed write.
    */
   private operations: Promise<void> = Promise.resolve()
+  private readonly ownerStates = new Map<string, OwnerSettingsState>()
   /** Set at dispose: refuse new watcher events and let in-flight work no-op. */
   private closed = false
 
@@ -150,7 +166,9 @@ export class FileSettingsProvider extends SettingsProvider {
   }
 
   /** Materialize an absent owner-only document, then return its resolved path. */
-  override prepareDocument(): Promise<string> {
+  override async prepareDocument(): Promise<string> {
+    const owner = await this.ownerDocumentPath()
+    if (owner !== undefined) return this.prepareOwnerDocument(owner)
     return this.enqueue(async () => {
       await mkdir(dirname(this.spec.filename), { recursive: true, mode: 0o700 })
       await withFileLock(this.spec.filename, async () => {
@@ -165,6 +183,148 @@ export class FileSettingsProvider extends SettingsProvider {
       })
       return this.spec.filename
     })
+  }
+
+  override async describeOwned(options?: SettingsDescribeOptions): Promise<SettingsDescriptor[]> {
+    const filename = await this.ownerDocumentPath()
+    if (filename === undefined) return super.describeOwned(options)
+    return this.withOwnerState(filename, async (state) => {
+      await this.reconcileOwner(filename, state)
+      return this.describeDocument(state.document, ns => state.revisions.get(ns) ?? 0, options)
+    })
+  }
+
+  override updateOwned(ns: SettingsNamespace, patch: object, expectedRevision?: number): Promise<void> {
+    return this.writeOwned(ns, patch, 'merge', expectedRevision)
+  }
+
+  override replaceOwned(ns: SettingsNamespace, section: object, expectedRevision?: number): Promise<void> {
+    return this.writeOwned(ns, section, 'replace', expectedRevision)
+  }
+
+  override mutateOwned(ns: SettingsNamespace, ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<void> {
+    return this.writeOwned(ns, ops, 'mutate', expectedRevision)
+  }
+
+  /** Resolve the authenticated user's settings document lazily through UserHome. */
+  private async ownerDocumentPath(): Promise<string | undefined> {
+    const ownership = this.ctx.root.get('ownership')
+    const principal = ownership?.currentPrincipalOrUndefined()
+    if (ownership === undefined || principal === undefined) return undefined
+    return (await ownership.resolveUserHome(principal)).path('settings', 'settings.yaml')
+  }
+
+  /** Materialize one owner document without changing another owner's state. */
+  private prepareOwnerDocument(filename: string): Promise<string> {
+    return this.withOwnerState(filename, async (state) => {
+      await mkdir(dirname(filename), { recursive: true, mode: 0o700 })
+      await withFileLock(filename, async () => {
+        try {
+          await writeFile(filename, '', { flag: 'wx', mode: 0o600 })
+        } catch (error) {
+          if (!isEEXIST(error)) throw error
+        }
+        await this.reconcileOwner(filename, state)
+      })
+      return filename
+    })
+  }
+
+  /** Persist one owner-specific namespace through its independent serialized chain. */
+  private async writeOwned(
+    ns: SettingsNamespace,
+    input: object,
+    mode: 'merge' | 'replace' | 'mutate',
+    expectedRevision?: number,
+  ): Promise<void> {
+    const ownerUserId = this.ctx.root.get('ownership')?.currentPrincipalOrUndefined()?.userId
+    const filename = await this.ownerDocumentPath()
+    if (filename === undefined) {
+      if (mode === 'merge') return super.updateOwned(ns, input, expectedRevision)
+      if (mode === 'replace') return super.replaceOwned(ns, input, expectedRevision)
+      return super.mutateOwned(ns, input as readonly SettingsPathOp[], expectedRevision)
+    }
+    return this.withOwnerState(filename, async (state) => {
+      await mkdir(dirname(filename), { recursive: true, mode: 0o700 })
+      await withFileLock(filename, async () => {
+        await this.reconcileOwner(filename, state)
+        const section = this.prepareOwnedSection(
+          ns,
+          state.document,
+          input,
+          mode,
+          expectedRevision,
+          state.revisions.get(ns) ?? 0,
+        )
+        const output = this.renderOwnerYaml(state.text, ns, section)
+        await writeFileAtomic(filename, output, { mode: 0o600, dirMode: 0o700 })
+        state.text = output
+        state.document = { ...state.document, [ns]: section }
+        const revision = (state.revisions.get(ns) ?? 0) + 1
+        state.revisions.set(ns, revision)
+        if (ownerUserId !== undefined) this.emitOwnedDocumentUpdated(ownerUserId, ns, revision)
+      })
+    })
+  }
+
+  /** Queue one operation for exactly one owner document. */
+  private withOwnerState<T>(
+    filename: string,
+    operation: (state: OwnerSettingsState) => Promise<T>,
+  ): Promise<T> {
+    const state = this.ownerStates.get(filename) ?? {
+      document: {},
+      text: undefined,
+      revisions: new Map<SettingsNamespace, number>(),
+      operation: Promise.resolve(),
+    }
+    this.ownerStates.set(filename, state)
+    const task = state.operation.then(() => operation(state))
+    state.operation = task.then(() => undefined, () => undefined)
+    return task
+  }
+
+  /** Re-read one owner document and advance only its namespace revisions. */
+  private async reconcileOwner(filename: string, state: OwnerSettingsState): Promise<void> {
+    let text: string | undefined
+    try {
+      text = await readFile(filename, 'utf8')
+    } catch (error) {
+      if (!isENOENT(error)) throw error
+    }
+    if (text === state.text) return
+    const next = text === undefined ? {} : this.parseOwnerYaml(text, filename)
+    for (const key of new Set([...Object.keys(state.document), ...Object.keys(next)])) {
+      if (deepEqualJson(state.document[key], next[key])) continue
+      const ns = key as SettingsNamespace
+      state.revisions.set(ns, (state.revisions.get(ns) ?? 0) + 1)
+    }
+    state.text = text
+    state.document = next
+  }
+
+  /** Parse a user settings YAML document without echoing secret-bearing source. */
+  private parseOwnerYaml(text: string, filename: string): Record<string, unknown> {
+    const document = parseDocument(text, { prettyErrors: true })
+    if (document.errors.length > 0) {
+      throw new Error(`settings-file: invalid owner document at ${filename}`)
+    }
+    const root: unknown = document.toJS() ?? {}
+    if (!isMapLike(root)) throw new TypeError(`settings-file: ${filename} must be a map of namespace sections`)
+    return root
+  }
+
+  /** Patch one namespace while retaining comments in the owner's YAML file. */
+  private renderOwnerYaml(
+    text: string | undefined,
+    ns: SettingsNamespace,
+    section: Record<string, unknown>,
+  ): string {
+    if (text === undefined) return new Document({ [ns]: section }).toString()
+    const document = parseDocument(text)
+    const root: unknown = document.toJS()
+    patchNode(document, [ns], isMapLike(root) ? root[ns] : undefined, section)
+    return document.toString()
   }
 
   protected async load(): Promise<Record<string, unknown>> {

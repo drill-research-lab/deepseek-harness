@@ -1116,8 +1116,8 @@ describe('SessionStore', () => {
     expect(events[1]![0]).toBe(session)
     expect(events[1]![1].type).toBe('user/message')
 
-    expect(ctx.sessions.get(session.id)).toBe(session)
-    expect(ctx.sessions.list()).toEqual([session])
+    expect(ctx.sessions.get(session.id, 'trusted-internal')).toBe(session)
+    expect(ctx.sessions.list('trusted-internal')).toEqual([session])
   })
 
   it('rejects duplicate ids and supports seeding', async () => {
@@ -1143,7 +1143,7 @@ describe('SessionStore', () => {
     const live = ctx.sessions.create(SessionId('racy'))
     expect(() => ctx.sessions.enter(stale)).toThrow(/already exists/)
     // The live session is intact and still the store entry.
-    expect(ctx.sessions.get(SessionId('racy'))).toBe(live)
+    expect(ctx.sessions.get(SessionId('racy'), 'trusted-internal')).toBe(live)
   })
 
   it('prepare() + enter() + announce() register a session and emit session/created', async () => {
@@ -1154,9 +1154,9 @@ describe('SessionStore', () => {
 
     const session = ctx.sessions.prepare(SessionId('lifecycle'))
     // prepare alone does NOT enter the store.
-    expect(ctx.sessions.get(SessionId('lifecycle'))).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('lifecycle'), 'trusted-internal')).toBeUndefined()
     const detach = ctx.sessions.enter(session)
-    expect(ctx.sessions.get(SessionId('lifecycle'))).toBe(session)
+    expect(ctx.sessions.get(SessionId('lifecycle'), 'trusted-internal')).toBe(session)
     // enter does NOT announce.
     expect(created).toEqual([])
     ctx.sessions.announce(session)
@@ -1164,7 +1164,7 @@ describe('SessionStore', () => {
     // The detach disposer removes the entry + stops notification.
     detach()
     detach() // idempotent: cannot disturb a later same-id lifecycle
-    expect(ctx.sessions.get(SessionId('lifecycle'))).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('lifecycle'), 'trusted-internal')).toBeUndefined()
   })
 
   it('prevents simultaneous attachment of one session object to two stores', async () => {
@@ -1176,12 +1176,12 @@ describe('SessionStore', () => {
     const detachFirst = firstCtx.sessions.enter(session)
 
     expect(() => secondCtx.sessions.enter(session)).toThrow(/already attached to a store/)
-    expect(firstCtx.sessions.get(SessionId('owned-key'))).toBe(session)
+    expect(firstCtx.sessions.get(SessionId('owned-key'), 'trusted-internal')).toBe(session)
 
     detachFirst()
-    expect(firstCtx.sessions.get(SessionId('owned-key'))).toBeUndefined()
+    expect(firstCtx.sessions.get(SessionId('owned-key'), 'trusted-internal')).toBeUndefined()
     const detachSecond = secondCtx.sessions.enter(session)
-    expect(secondCtx.sessions.get(SessionId('owned-key'))).toBe(session)
+    expect(secondCtx.sessions.get(SessionId('owned-key'), 'trusted-internal')).toBe(session)
     detachSecond()
 
   })
@@ -1221,21 +1221,21 @@ describe('SessionStore', () => {
     ctx.on('session/created', (created) => {
       order.push('created:first')
       detach()
-      expect(ctx.sessions.get(created.id)).toBe(created)
+      expect(ctx.sessions.get(created.id, 'trusted-internal')).toBe(created)
     })
     ctx.on('session/created', (created) => {
       order.push('created:second')
-      expect(ctx.sessions.get(created.id)).toBe(created)
+      expect(ctx.sessions.get(created.id, 'trusted-internal')).toBe(created)
     })
     ctx.on('session/disposed', (disposed) => {
       order.push('disposed')
-      expect(ctx.sessions.get(disposed.id)).toBeUndefined()
+      expect(ctx.sessions.get(disposed.id, 'trusted-internal')).toBeUndefined()
     })
 
     ctx.sessions.announce(session)
 
     expect(order).toEqual(['created:first', 'created:second', 'disposed'])
-    expect(ctx.sessions.get(session.id)).toBeUndefined()
+    expect(ctx.sessions.get(session.id, 'trusted-internal')).toBeUndefined()
     detach()
   })
 
@@ -1251,7 +1251,7 @@ describe('SessionStore', () => {
 
     ownerCtx.sessions.create(id)
     await owner.dispose()
-    expect(ctx.sessions.get(id)).toBeUndefined()
+    expect(ctx.sessions.get(id, 'trusted-internal')).toBeUndefined()
   })
 
   it('synthesizes a minimal current-version header for a bare-created session', async () => {
@@ -1326,7 +1326,7 @@ describe('SessionStore', () => {
     expect(() => ctx.sessions.create(SessionId('rel'), { meta: { cwd: 'relative/path' } }))
       .toThrow(/cwd must be an absolute path/)
     // the rejected session was not registered
-    expect(ctx.sessions.get(SessionId('rel'))).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('rel'), 'trusted-internal')).toBeUndefined()
   })
 
   it('a bare Session() constructed without the store still exposes a current-version header', () => {
@@ -1343,13 +1343,13 @@ describe('SessionStore', () => {
     const fiber = await ctx.plugin(Object.assign((inner: Context) => {
       session = inner.sessions.create(SessionId('scoped'))
     }, { inject: ['sessions'] }))
-    expect(ctx.sessions.get(SessionId('scoped'))).toBe(session)
+    expect(ctx.sessions.get(SessionId('scoped'), 'trusted-internal')).toBe(session)
 
     let observed = 0
     ctx.on('session/event', () => void observed++)
 
     await fiber.dispose()
-    expect(ctx.sessions.get(SessionId('scoped'))).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('scoped'), 'trusted-internal')).toBeUndefined()
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'late' }], source: { kind: 'user' },
     }), { surfaceOp: 'append' })
@@ -1369,7 +1369,7 @@ describe('SessionStore', () => {
 
     // The throwing emit must roll the store entry back, not leak it.
     expect(() => ctx.sessions.create(SessionId('fixed'))).toThrow('boom created listener')
-    expect(ctx.sessions.get(SessionId('fixed'))).toBeUndefined() // rolled back, not leaked
+    expect(ctx.sessions.get(SessionId('fixed'), 'trusted-internal')).toBeUndefined() // rolled back, not leaked
     expect(disposed.map(session => session.id)).toEqual(['fixed'])
 
     // A subsequent create of the SAME id succeeds (the already-exists check is
@@ -1377,7 +1377,7 @@ describe('SessionStore', () => {
     const events: SessionEvent[] = []
     ctx.on('session/event', (_session, event) => void events.push(event))
     const session = ctx.sessions.create(SessionId('fixed'))
-    expect(ctx.sessions.get(SessionId('fixed'))).toBe(session)
+    expect(ctx.sessions.get(SessionId('fixed'), 'trusted-internal')).toBe(session)
     session.append('turn/start', { turn: 1 })
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' },
@@ -1554,14 +1554,14 @@ describe('SessionStore', () => {
     ctx.on('internal/dispatch', (_mode, name, args) => {
       if (name !== 'session/event') return
       const session = args[0] as Session
-      order.push(`resolve:${ctx.sessions.get(session.id) === session ? 'live' : 'detached'}`)
+      order.push(`resolve:${ctx.sessions.get(session.id, 'trusted-internal') === session ? 'live' : 'detached'}`)
       detach()
     })
     ctx.on('session/event', (session) => {
-      order.push(`observe:${ctx.sessions.get(session.id) === session ? 'live' : 'detached'}`)
+      order.push(`observe:${ctx.sessions.get(session.id, 'trusted-internal') === session ? 'live' : 'detached'}`)
     })
     ctx.on('session/disposed', (session) => {
-      order.push(`dispose:${ctx.sessions.get(session.id) === session ? 'live' : 'detached'}`)
+      order.push(`dispose:${ctx.sessions.get(session.id, 'trusted-internal') === session ? 'live' : 'detached'}`)
     })
     ctx.sessions.announce(session)
 
@@ -1571,7 +1571,7 @@ describe('SessionStore', () => {
 
     expect(session.events).toEqual([appended])
     expect(order).toEqual(['resolve:live', 'observe:live', 'dispose:detached'])
-    expect(ctx.sessions.get(session.id)).toBeUndefined()
+    expect(ctx.sessions.get(session.id, 'trusted-internal')).toBeUndefined()
   })
 
   it('observes async session/created rejection without rolling back or starving peers', async () => {
@@ -1587,7 +1587,7 @@ describe('SessionStore', () => {
     await Promise.resolve()
     await Promise.resolve()
 
-    expect(ctx.sessions.get(session.id)).toBe(session)
+    expect(ctx.sessions.get(session.id, 'trusted-internal')).toBe(session)
     expect(heard).toEqual(['async-created'])
     expect(warnings).toEqual([
       'session "async-created": session/created listener rejected: Error: late creation failure',
@@ -1638,7 +1638,7 @@ describe('SessionStore', () => {
     ctx.sessions.announce(session)
 
     expect(() => { detach() }).not.toThrow()
-    expect(ctx.sessions.get(session.id)).toBeUndefined()
+    expect(ctx.sessions.get(session.id, 'trusted-internal')).toBeUndefined()
     expect(heard).toEqual([])
     expect(warnings).toEqual([
       'session "disposed-dispatch": session/disposed dispatch threw: Error: disposed dispatch instrumentation',

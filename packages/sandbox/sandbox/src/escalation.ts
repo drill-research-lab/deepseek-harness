@@ -31,14 +31,15 @@ export const WIDER_MODES: Record<string, readonly SandboxMode[]> = {
 }
 
 /**
- * The closed escalation-target vocabulary — every mode a call could ever
- * escalate TO (`read-only` is the floor; nothing escalates to it). Advertised
- * whenever the mounted capability confines: cutting the enum down to the modes
- * wider than the composition's DEFAULT would strand a session whose effective
- * mode sits below it (a `danger-full-access` default would advertise nothing
- * while a narrower-switched session stays confined with no lever).
+ * Every mode a deployment may allow a call to escalate TO (`read-only` is the
+ * floor; nothing escalates to it). `ctx.sandboxPolicy.escalationTargets`
+ * filters this vocabulary by the deployment's configured maximum mode before
+ * tools advertise or execute an escalation.
  */
-export const ESCALATION_TARGETS: readonly SandboxMode[] = ['workspace-write', 'danger-full-access']
+export const ESCALATION_TARGETS = ['workspace-write', 'danger-full-access'] as const satisfies readonly SandboxMode[]
+
+/** A sandbox mode that may be the target of a one-call escalation. */
+export type SandboxEscalationTarget = typeof ESCALATION_TARGETS[number]
 
 /**
  * Validate the escalation argument pairing a tool schema cannot express:
@@ -130,8 +131,10 @@ export interface EscalationApproval<A = object, C = string> {
 
 /** One escalation request, as {@link approveEscalation} judges it. */
 export interface EscalationRequest {
-  /** The requested target mode (schema-pinned to {@link ESCALATION_TARGETS} when advertised). */
+  /** The requested target mode (schema-pinned to the deployment-filtered target set when advertised). */
   requestedMode: string
+  /** Targets this deployment permits tools to advertise and execute. */
+  allowedModes: readonly SandboxEscalationTarget[]
   /** The model's one-sentence reason, shown verbatim to the user inside the audit reason. */
   justification: string
   /** The call's effective mode (session override ?? composition default) the request must strictly widen. */
@@ -142,9 +145,10 @@ export interface EscalationRequest {
 
 /**
  * Resolve a sandbox-escalation request BEFORE anything executes: check strict
- * widening against the call's effective mode, then resolve the approval
- * channel, then map every outcome — the ordered fail-closed sequence both
- * enforcing families share. Returns the granted mode to stamp onto exactly
+ * availability in the deployment, check strict widening against the call's
+ * effective mode, then resolve the approval channel, then map every outcome —
+ * the ordered fail-closed sequence both enforcing families share. Returns the
+ * granted mode to stamp onto exactly
  * this call; throws the distinct verbatim text for every other path (a
  * non-widening request, a missing approval service, an agent-less execution,
  * a rejection, a cancellation, an unanswerable ask) — the tool registry turns
@@ -155,7 +159,10 @@ export interface EscalationRequest {
  * @returns the granted mode, consumed by the one call that asked.
  */
 export async function approveEscalation<A, C>(request: EscalationRequest, approval: EscalationApproval<A, C>): Promise<SandboxMode> {
-  const { requestedMode: mode, effectiveMode, justification, subject } = request
+  const { requestedMode: mode, allowedModes, effectiveMode, justification, subject } = request
+  if (!allowedModes.includes(mode as SandboxEscalationTarget)) {
+    throw new Error(`sandbox escalation to "${mode}" is not available in this composition`)
+  }
   // Strict widening is an EXECUTION check against the call's effective mode —
   // deliberately not a schema constraint (the enum is the closed target
   // vocabulary; the effective mode is per-call truth).

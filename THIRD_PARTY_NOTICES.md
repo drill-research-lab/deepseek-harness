@@ -192,4 +192,4 @@ Direct dependencies of the `pyproject.toml` manifests, plus `uv` as the developm
 
 ## First-party native packages
 
-`@deepseek-ai/node-addon-landlock-run` (and its platform packages) is built and released from this repository under BSD 3-Clause. It is listed here for completeness; it is first-party, not third-party.
+`@deepseek-ai/node-addon-landlock-run` and `@deepseek-ai/node-addon-pid-isolate-run` (and their platform packages) are built and released from this repository under BSD 3-Clause. They are listed here for completeness; they are first-party, not third-party.

@@ -24,6 +24,15 @@
       "path": "../../storage/storage-domain"
     },
     {
+      "path": "../../identity/auth"
+    },
+    {
+      "path": "../../identity/ownership"
+    },
+    {
+      "path": "../../util/path-containment"
+    },
+    {
       "path": "../../core/session"
     },
     {

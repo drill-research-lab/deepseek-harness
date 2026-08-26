@@ -57,14 +57,14 @@ describe('startInProcessRun', () => {
   it('returns only after publication, drives a fresh child, and disposes it', async () => {
     const { ctx, parent } = await setup([textResponse('driver answer')])
     const run = await startInProcessRun(request(parent), {})
-    expect(ctx.agents.get(run.id)).toBeDefined()
+    expect(ctx.agents.get(run.id, 'trusted-internal')).toBeDefined()
     const result = await run.result
     expect(result.stopReason).toBe('completed')
     expect(text(result.output)).toBe('driver answer')
-    expect(ctx.agents.get(run.id)!.options.subagentDepth).toBe(1)
+    expect(ctx.agents.get(run.id, 'trusted-internal')!.options.subagentDepth).toBe(1)
     await run.dispose()
     await run.dispose()
-    expect(ctx.agents.get(run.id)).toBeUndefined()
+    expect(ctx.agents.get(run.id, 'trusted-internal')).toBeUndefined()
   })
 
   it('uses explicit child model selectors when the parent has none and preserves its cwd', async () => {
@@ -75,7 +75,7 @@ describe('startInProcessRun', () => {
       agentOptions: { provider: 'mock', model: 'mock' },
     }, {})
 
-    const child = ctx.agents.get(run.id)!
+    const child = ctx.agents.get(run.id, 'trusted-internal')!
     expect(child.options).toMatchObject({ provider: 'mock', model: 'mock' })
     expect(child.session.header.cwd).toBe('/workspace')
     await expect(run.result).resolves.toMatchObject({ stopReason: 'completed' })
@@ -115,8 +115,8 @@ describe('startInProcessRun', () => {
     const { ctx, parent } = await setup([])
     const runError = new Error('published run failed')
     const disposalError = new Error('published handle disposal failed')
-    const beforeAgents = ctx.agents.list().length
-    const beforeSessions = ctx.sessions.list().length
+    const beforeAgents = ctx.agents.list('trusted-internal').length
+    const beforeSessions = ctx.sessions.list('trusted-internal').length
     const parentWithFailedDisposal = {
       options: parent.options,
       session: parent.session,
@@ -139,11 +139,11 @@ describe('startInProcessRun', () => {
     } as unknown as Agent
 
     const run = await startInProcessRun(request(parentWithFailedDisposal), {})
-    expect(ctx.agents.get(run.id)).toBeDefined()
+    expect(ctx.agents.get(run.id, 'trusted-internal')).toBeDefined()
     await expect(run.result).rejects.toBe(runError)
     await expect(run.dispose()).rejects.toBe(disposalError)
-    expect(ctx.agents.list()).toHaveLength(beforeAgents)
-    expect(ctx.sessions.list()).toHaveLength(beforeSessions)
+    expect(ctx.agents.list('trusted-internal')).toHaveLength(beforeAgents)
+    expect(ctx.sessions.list('trusted-internal')).toHaveLength(beforeSessions)
   })
   it('reports the turn outcome when later metadata is appended during flush', async () => {
     const { ctx, parent } = await setup([maxTokensResponse('partial answer')])
@@ -161,7 +161,7 @@ describe('startInProcessRun', () => {
 
     const run = await startInProcessRun(request(parent), {})
     const result = await run.result
-    const child = ctx.agents.get(run.id)!
+    const child = ctx.agents.get(run.id, 'trusted-internal')!
 
     expect(injected).toBe(false)
     expect(child.session.events.findLast(event => event.type === 'turn/end'))
@@ -203,7 +203,7 @@ describe('startInProcessRun', () => {
     const run = await startInProcessRun(request(parent), { seed })
     const result = await run.result
     expect(text(result.output)).toBe('child answer')
-    const child = ctx.agents.get(run.id)!
+    const child = ctx.agents.get(run.id, 'trusted-internal')!
     expect(child.session.header.seedLength).toBe(seed.length)
     expect(child.session.events.slice(0, seed.length)).toEqual(seed)
     await run.dispose()
@@ -215,7 +215,7 @@ describe('startInProcessRun', () => {
     await run.result
     // The recursion budget is durable session data, not only runtime options —
     // a depth that lived only in AgentOptions would reset to 0 on resume.
-    expect(ctx.agents.get(run.id)!.session.header).toMatchObject({
+    expect(ctx.agents.get(run.id, 'trusted-internal')!.session.header).toMatchObject({
       origin: 'subagent',
       delegationDepth: 1,
     })
@@ -230,7 +230,7 @@ describe('startInProcessRun', () => {
     const inherited = await startInProcessRun(request(parent), {})
     await inherited.result
     expect(adapter.requests[0]?.maxTokens).toBe(111)
-    expect(ctx.agents.get(inherited.id)?.options.maxTokens).toBe(111)
+    expect(ctx.agents.get(inherited.id, 'trusted-internal')?.options.maxTokens).toBe(111)
     await inherited.dispose()
 
     const overridden = await startInProcessRun({
@@ -239,7 +239,7 @@ describe('startInProcessRun', () => {
     }, {})
     await overridden.result
     expect(adapter.requests[1]?.maxTokens).toBe(222)
-    expect(ctx.agents.get(overridden.id)?.options.maxTokens).toBe(222)
+    expect(ctx.agents.get(overridden.id, 'trusted-internal')?.options.maxTokens).toBe(222)
     await overridden.dispose()
   })
 
@@ -287,14 +287,14 @@ describe('startInProcessRun', () => {
 
   it('rejects an already-aborted request without publishing a child', async () => {
     const { ctx, parent } = await setup([])
-    const beforeAgents = ctx.agents.list().length
-    const beforeSessions = ctx.sessions.list().length
+    const beforeAgents = ctx.agents.list('trusted-internal').length
+    const beforeSessions = ctx.sessions.list('trusted-internal').length
     const controller = new AbortController()
     controller.abort('too late')
     await expect(startInProcessRun(request(parent, controller.signal), {}))
       .rejects.toThrow('aborted before child publication')
-    expect(ctx.agents.list()).toHaveLength(beforeAgents)
-    expect(ctx.sessions.list()).toHaveLength(beforeSessions)
+    expect(ctx.agents.list('trusted-internal')).toHaveLength(beforeAgents)
+    expect(ctx.sessions.list('trusted-internal')).toHaveLength(beforeSessions)
   })
 
   it('stamps only the resolved depth when neither parent nor request declares a model route', async () => {
@@ -306,7 +306,7 @@ describe('startInProcessRun', () => {
     const { ctx } = await setup([])
     const parent = ctx.agentLoop.create(SessionId('routeless-parent'), {})
     const run = await startInProcessRun(request(parent), {})
-    const child = ctx.agents.get(run.id)!
+    const child = ctx.agents.get(run.id, 'trusted-internal')!
     expect(child.options).toEqual({ subagentDepth: 1 })
     await expect(run.result).resolves.toMatchObject({ stopReason: 'error' })
     await run.dispose()
@@ -325,7 +325,7 @@ describe('startInProcessRun', () => {
       stopReason: 'aborted',
     })
     expect(adapter.requests[0]?.signal?.reason).toEqual({ kind: 'parent' })
-    const child = parent.ctx.agents.get(signalled.id)
+    const child = parent.ctx.agents.get(signalled.id, 'trusted-internal')
     const turnEnd = child?.session.events.findLast(event => event.type === 'turn/end')
     expect(turnEnd?.type === 'turn/end' && turnEnd.data.reason).toEqual({ kind: 'aborted', reason: { kind: 'parent' } })
     await signalled.dispose()
@@ -338,21 +338,21 @@ describe('startInProcessRun', () => {
 
   it('cleans a failed unpublished setup before rejecting', async () => {
     const { ctx, parent } = await setup([])
-    const beforeAgents = ctx.agents.list().length
-    const beforeSessions = ctx.sessions.list().length
+    const beforeAgents = ctx.agents.list('trusted-internal').length
+    const beforeSessions = ctx.sessions.list('trusted-internal').length
     await expect(startInProcessRun({
       ...request(parent),
       toolFilter: { deny: ['unknown-tool'] },
     }, {})).rejects.toThrow('unknown global tool')
-    expect(ctx.agents.list()).toHaveLength(beforeAgents)
-    expect(ctx.sessions.list()).toHaveLength(beforeSessions)
+    expect(ctx.agents.list('trusted-internal')).toHaveLength(beforeAgents)
+    expect(ctx.sessions.list('trusted-internal')).toHaveLength(beforeSessions)
   })
 
   it('treats abort after factory publication as a cancelled run with an id', async () => {
     const { ctx, parent } = await setup([])
     const controller = new AbortController()
-    const beforeAgents = ctx.agents.list().length
-    const beforeSessions = ctx.sessions.list().length
+    const beforeAgents = ctx.agents.list('trusted-internal').length
+    const beforeSessions = ctx.sessions.list('trusted-internal').length
     const parentWithAbortAtHandoff = {
       options: parent.options,
       session: parent.session,
@@ -372,10 +372,10 @@ describe('startInProcessRun', () => {
       },
     } as unknown as Agent
     const run = await startInProcessRun(request(parentWithAbortAtHandoff, controller.signal), {})
-    expect(ctx.agents.get(run.id)).toBeDefined()
+    expect(ctx.agents.get(run.id, 'trusted-internal')).toBeDefined()
     await expect(run.result).resolves.toEqual({ output: [], stopReason: 'aborted' })
     await run.dispose()
-    expect(ctx.agents.list()).toHaveLength(beforeAgents)
-    expect(ctx.sessions.list()).toHaveLength(beforeSessions)
+    expect(ctx.agents.list('trusted-internal')).toHaveLength(beforeAgents)
+    expect(ctx.sessions.list('trusted-internal')).toHaveLength(beforeSessions)
   })
 })

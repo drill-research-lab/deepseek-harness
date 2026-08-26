@@ -38,7 +38,7 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
       if (event.type !== 'turn/end' || session.header.origin === 'subagent') return
       dispose()
       void (async () => {
-        await scaffold.ctx.agents.get(session.id)?.whenIdle()
+        await scaffold.ctx.agents.get(session.id, 'trusted-internal')?.whenIdle()
         await scaffold.ctx.sessions.flush(session)
         resolve(session.id)
       })().catch(reject)

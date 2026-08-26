@@ -3,8 +3,8 @@
 # .agents/notes/implemented/process/2026-07-21-serial-cross-platform-ci-reference.md.
 # A separate workflow from ci.yml because the axis is different — these jobs
 # fan out over OS×runner (kernel capabilities), not node versions. The Landlock
-# launcher is built from native/landlock-run on each Landlock leg and installed
-# from the same tarballs the main-repository release workflow publishes.
+# launchers are built from native/landlock-run and native/pid-isolate-run on
+# each Landlock leg and installed from the same sources used for publication.
 name: Sandbox
 
 on:
@@ -79,13 +79,16 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 \
             || echo "apparmor userns knob absent — the functional probe decides"
 
-      - name: Build Landlock launcher for this architecture
+      - name: Build Linux launchers for this architecture
         if: matrix.runner == 'landlock'
         run: |
           sudo apt-get update -q
-          sudo apt-get install -yq musl-tools
+          sudo apt-get install -yq musl-tools libcap2-bin
           pnpm --dir native/landlock-run run build:ts
           pnpm --dir native/landlock-run run build:native
+          pnpm --dir native/pid-isolate-run run build:ts
+          pnpm --dir native/pid-isolate-run run build:native
+          sudo setcap cap_sys_admin,cap_setpcap+ep native/pid-isolate-run/packages/linux-${{ runner.arch == 'X64' && 'x64' || 'arm64' }}/bin/pid-isolate-run
 
       # The unit suite runs on ubuntu in `checks`; this is the one darwin leg
       # in the workflow, so run it here too — the platform-dependent unit
@@ -123,6 +126,7 @@ jobs:
         if: matrix.runner == 'landlock'
         env:
           NO_COLOR: 1
+          DSH_REQUIRE_PID_ISOLATION: 1
         run: |
           set -u +e -o pipefail
           out=$(pnpm exec vitest run --config vitest.e2e.config.ts \

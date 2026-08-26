@@ -51,4 +51,9 @@ export class MemorySettings extends SettingsProvider {
     this.doc = structuredClone(doc)
     this.publish(structuredClone(doc))
   }
+
+  /** Replace the active document without refreshing registered-value snapshots. */
+  replaceDocumentOnly(doc: Record<string, unknown>): void {
+    Reflect.set(this, 'document', structuredClone(doc))
+  }
 }

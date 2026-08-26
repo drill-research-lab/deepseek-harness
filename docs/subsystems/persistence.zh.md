@@ -59,6 +59,8 @@ interface SessionHeader {
   readonly id: SessionId
   /** Non-negative safe-integer Unix epoch milliseconds when the session was created. */
   readonly createdAt: number
+  /** Immutable authenticated owner; absent only on unsupported legacy or non-product detached sessions. */
+  readonly ownerUserId?: AuthenticatedUserId
   /** Absolute working directory the session was created in (if any). */
   readonly cwd?: string
   /** The session this one was forked from (seed lineage), if any. */
@@ -104,6 +106,8 @@ interface SessionHeader {
  * store folds into a {@link SessionHeader}.
  */
 interface CreateSessionOptions {
+  /** Server-trusted owner used by background creation after request scope ends. */
+  readonly owner?: OwnerPrincipal
   /** Initial replay or fork history supplied at construction. */
   readonly seed?: readonly SessionEvent[]
   /**
@@ -303,9 +307,10 @@ abstract append(id: SessionId, events: readonly SessionEvent[]): Promise<void>
  * for one read/check round trip; continuous external writers may delay completion.
  * @param id - persisted session to prepare.
  * @param signal - optional cancellation for preparation work.
+ * @param _ownerHint - trusted durable owner for selecting a scoped backend namespace.
  * @returns one owned unpublished Session preparation.
  */
-async prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation>
+async prepare( id: SessionId, signal?: AbortSignal, _ownerHint?: SessionHeader['ownerUserId'], ): Promise<SessionPreparation>
 
 /**
  * Load an immutable balanced logical view and commit any required cold
@@ -335,9 +340,10 @@ abstract load(id: SessionId): Promise<SessionInspection>
  * log. Continuous external writers may delay revision convergence.
  * @param id - the persisted session to inspect.
  * @param signal - optional cancellation for queued and backend read work.
+ * @param ownerHint - trusted durable owner for selecting a scoped backend namespace.
  * @returns the validated header and current logical event log.
  */
-abstract inspect(id: SessionId, signal?: AbortSignal): Promise<SessionInspection>
+abstract inspect( id: SessionId, signal?: AbortSignal, ownerHint?: SessionHeader['ownerUserId'], ): Promise<SessionInspection>
 
 /**
  * Read the stored events from `fromSeq` onward — the read-from-seq
@@ -355,9 +361,10 @@ abstract inspect(id: SessionId, signal?: AbortSignal): Promise<SessionInspection
  * @param id - the persisted session to read.
  * @param fromSeq - first event seq to include; a non-negative safe integer.
  * @param signal - optional cancellation for queued and backend read work.
+ * @param ownerHint - trusted durable owner for selecting a scoped backend namespace.
  * @returns the header and the stored events with `seq >= fromSeq`.
  */
-abstract readFrom(id: SessionId, fromSeq: number, signal?: AbortSignal): Promise<{ meta: SessionHeader; events: SessionEvent[] }>
+abstract readFrom( id: SessionId, fromSeq: number, signal?: AbortSignal, ownerHint?: SessionHeader['ownerUserId'], ): Promise<{ meta: SessionHeader; events: SessionEvent[] }>
 
 /**
  * Lightweight listing from metadata, without a full-log parse.

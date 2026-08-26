@@ -927,7 +927,7 @@ describe('same-session goal driving', () => {
 
     agentEvents(test.ctx, handle.agent).emit('agent/error', { turn: closed.data.turn, step: 1, error: new Error('late flush failure') })
 
-    expect(test.ctx.agents.get(handle.agent.id)).toBeUndefined()
+    expect(test.ctx.agents.get(handle.agent.id, 'trusted-internal')).toBeUndefined()
     expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('goal-round-driver'))
   })
 
@@ -1042,6 +1042,6 @@ describe('same-session goal driving', () => {
     })
     await handle.dispose()
 
-    expect(test.ctx.agents.get(handle.agent.id)).toBeUndefined()
+    expect(test.ctx.agents.get(handle.agent.id, 'trusted-internal')).toBeUndefined()
   })
 })

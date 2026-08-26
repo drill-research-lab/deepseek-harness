@@ -15,6 +15,12 @@
       "path": "../directory-picker"
     },
     {
+      "path": "../../identity/ownership"
+    },
+    {
+      "path": "../../util/path-containment"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     }
   ]

@@ -63,7 +63,7 @@ function abortedBeforeDispatchResult(): ToolExecutionResult {
 export function apply(ctx: Context): void {
   ctx.on('llm/stream', (options, next): AsyncIterable<StreamChunk> => {
     if (options.sessionId === undefined) return next()
-    const session = ctx.sessions.get(options.sessionId)
+    const session = ctx.sessions.get(options.sessionId, 'trusted-internal')
     return session === undefined ? next() : afterCheckpoint(ctx, session, next)
   })
 

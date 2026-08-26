@@ -499,6 +499,21 @@ describe('tool-str-replace-editor', () => {
     expect(ownerless.error).toMatchObject({ info: { code: 'FS_SANDBOX_DENIED' } })
   })
 
+  it('passes the session sandbox policy to views', async () => {
+    const { ctx, root, owner } = await setup({}, { sandboxMode: 'workspace-write' })
+    const inside = join(root, 'inside.txt')
+    await writeFile(inside, 'inside\n')
+    expect((await call(ctx, owner, { command: 'view', path: inside })).isError).toBe(false)
+
+    const bobRoot = await mkdtemp(join(tmpdir(), 'dsh-tool-str-replace-editor-bob-'))
+    roots.push(bobRoot)
+    const outside = join(bobRoot, 'outside.txt')
+    await writeFile(outside, 'outside\n')
+    const denied = await call(ctx, owner, { command: 'view', path: outside })
+    expect(denied.error).toMatchObject({ info: { code: 'FS_SANDBOX_DENIED' } })
+    expect(text(denied)).toContain('file access denied under workspace-write mode')
+  })
+
   it('preserves tabs outside the edited region', async () => {
     const { ctx, root, owner } = await setup()
     const path = join(root, 'Makefile')

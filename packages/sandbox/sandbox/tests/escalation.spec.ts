@@ -57,6 +57,7 @@ describe('the model-facing markers', () => {
 describe('approveEscalation', () => {
   const req = (over: Partial<Parameters<typeof approveEscalation>[0]> = {}) => ({
     requestedMode: 'workspace-write',
+    allowedModes: ESCALATION_TARGETS,
     justification: 'the user asked to write in the workspace',
     effectiveMode: 'read-only' as const,
     subject: 'command',
@@ -85,9 +86,19 @@ describe('approveEscalation', () => {
     const seen: unknown[] = []
     const spy = ingredients({ approver: approver('allowed-once', r => seen.push(r)) })
     await expect(approveEscalation(req({ requestedMode: 'read-only' }), spy))
-      .rejects.toThrow(/not strictly wider than this call's current "read-only" mode/)
+      .rejects.toThrow(/not available in this composition/)
     await expect(approveEscalation(req({ requestedMode: 'workspace-write', effectiveMode: 'danger-full-access' as never }), spy))
       .rejects.toThrow(/not strictly wider/)
+    expect(seen).toEqual([])
+  })
+
+  it('a target excluded by the composition fails closed before approval', async () => {
+    const seen: unknown[] = []
+    const spy = ingredients({ approver: approver('allowed-once', request => seen.push(request)) })
+    await expect(approveEscalation(req({
+      requestedMode: 'danger-full-access',
+      allowedModes: ['workspace-write'],
+    }), spy)).rejects.toThrow('sandbox escalation to "danger-full-access" is not available in this composition')
     expect(seen).toEqual([])
   })
 

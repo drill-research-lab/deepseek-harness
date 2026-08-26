@@ -10,7 +10,8 @@
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { loadLayeredEnv } from '@deepseek-ai/dsh-app-boot'
+import { acquireDeploymentWriterLease, loadLayeredEnv } from '@deepseek-ai/dsh-app-boot'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { parseDshArgs } from './args.ts'
 
 // Both the source tree (apps/cli/src) and the bundled bin (apps/cli/lib) sit
@@ -38,13 +39,23 @@ switch (invocation.mode) {
     break
   }
   case 'plugin': {
-    const { runPlugin } = await import('./plugin.ts')
-    process.exit(runPlugin(invocation.profile, invocation.args))
+    const deploymentLease = await acquireDeploymentWriterLease(resolveDshHome())
+    try {
+      const { runPlugin } = await import('./plugin.ts')
+      process.exitCode = runPlugin(invocation.profile, invocation.args)
+    } finally {
+      await deploymentLease.release()
+    }
     break
   }
   case 'dump-config': {
-    const { runDumpConfig } = await import('./dump-config.ts')
-    runDumpConfig(invocation.profile, invocation.defaultOnly, invocation.patches)
+    const deploymentLease = await acquireDeploymentWriterLease(resolveDshHome())
+    try {
+      const { runDumpConfig } = await import('./dump-config.ts')
+      runDumpConfig(invocation.profile, invocation.defaultOnly, invocation.patches)
+    } finally {
+      await deploymentLease.release()
+    }
     break
   }
   default:

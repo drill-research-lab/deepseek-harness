@@ -38,7 +38,7 @@ try {
   await runFixtureTurn(ctx, { task: 'prove telemetry with key sk-e2efixture1234567890' })
   const mode = process.env.DSH_TELEMETRY_E2E_MODE ?? 'FULL'
   if (mode !== 'FULL') {
-    const [agent] = ctx.get('agents')?.roots() ?? []
+    const [agent] = ctx.get('agents')?.roots('trusted-internal') ?? []
     if (agent === undefined) throw new Error('session-telemetry-otel driver requires one root agent')
     recordFeedback(agent.session, 'fixture feedback')
     if (mode === 'FEEDBACK_ONLY') {

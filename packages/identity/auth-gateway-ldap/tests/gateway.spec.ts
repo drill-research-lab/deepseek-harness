@@ -13,7 +13,7 @@ import type { LocalAccountStore } from '@deepseek-ai/dsh-auth-local'
 import type { CredentialProvider, CredentialRef } from '@deepseek-ai/dsh-credentials'
 import type { WebRoute, WebServer } from '@deepseek-ai/dsh-host-webserver'
 import ExternalCookieAuthService from '@deepseek-ai/dsh-host-authentication'
-import LdapAuthGateway from '../src/index.ts'
+import LdapAuthGateway, { Config as GatewayConfig } from '../src/index.ts'
 
 const USER = { userId: authenticatedUserId('ldap:uuid-alice'), username: 'alice' }
 const LOCAL_USER = { userId: authenticatedUserId('local:uuid-bob'), username: 'bob' }
@@ -58,7 +58,7 @@ function response(): { value: ServerResponse; state: { status?: number; body: st
   return { value, state }
 }
 
-async function mounted() {
+async function mounted(config: { cookieExpireSeconds?: number } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-gateway-session-'))
   const pair = generateKeyPairSync('ed25519')
   const routes = new Map<string, WebRoute>()
@@ -78,6 +78,7 @@ async function mounted() {
       const value = values[String(ref)]
       return value === undefined ? undefined : { value, source: 'test' }
     },
+    reserveDeployment: () => {},
   } as unknown as CredentialProvider)
   ctx.provide('ldapDirectory', { authenticate } as unknown as LdapDirectory)
   ctx.provide('localAccounts', { authenticate: authenticateLocal, create: createLocal } as unknown as LocalAccountStore)
@@ -87,6 +88,7 @@ async function mounted() {
   const fiber = ctx.plugin(LdapAuthGateway, {
     cookieSecure: false, registrationEnabled: true, appUrl: 'http://dsh.islab.local:3080/',
     sessionDirectory: join(root, 'sessions'),
+    ...config,
   })
   await fiber.await()
   return {
@@ -115,6 +117,7 @@ async function verifier(publicKey: string, sessionDirectory: string) {
       const value = values[String(ref)]
       return value === undefined ? undefined : { value, source: 'test' }
     },
+    reserveDeployment: () => {},
   } as unknown as CredentialProvider)
   const fiber = ctx.plugin(ExternalCookieAuthService, { sessionDirectory })
   await fiber.await()
@@ -122,6 +125,20 @@ async function verifier(publicKey: string, sessionDirectory: string) {
 }
 
 describe('LDAP authentication gateway', () => {
+  it('accepts an identity-cookie lifetime up to one hour', async () => {
+    expect(GatewayConfig({ cookieExpireSeconds: 3600 }).cookieExpireSeconds).toBe(3600)
+    expect(() => GatewayConfig({ cookieExpireSeconds: 3601 })).toThrow()
+    const app = await mounted({ cookieExpireSeconds: 3600 })
+    const result = response()
+    await app.routes.get('/auth/login')!.handler(request('/auth/login', {
+      username: 'alice', password: 'correct',
+    }), result.value)
+    const payload = JSON.parse(Buffer.from(identityCookie(result.state.cookie).split('.')[1]!, 'base64url').toString('utf8')) as Record<string, unknown>
+    expect(payload['exp']).toBe((payload['iat'] as number) + 3600)
+    expect(result.state.cookie).toContain('Max-Age=3600')
+    await app.dispose()
+  })
+
   it('authenticates against LDAP and issues a browser identity cookie', async () => {
     const app = await mounted()
     const result = response()

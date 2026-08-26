@@ -176,8 +176,8 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
       resumeSessionId: sessionId,
     })).rejects.toBe(failure)
 
-    expect(ctx.agents.get(SessionId('unknown-resume-failure'))).toBeUndefined()
-    expect(ctx.sessions.get(sessionId)).toBeUndefined()
+    expect(ctx.agents.get(SessionId('unknown-resume-failure'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(sessionId, 'trusted-internal')).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
@@ -196,7 +196,7 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
     const sessionId = SessionId('sess-a')
     await ctx.agents.create({ sessionId })
     await expect(ctx.agents.create({ sessionId })).rejects.toThrow(/already exists/)
-    expect(ctx.sessions.list()).toHaveLength(1)
+    expect(ctx.sessions.list('trusted-internal')).toHaveLength(1)
     await ctx.fiber.dispose()
   })
 
@@ -294,8 +294,8 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
     const order: string[] = []
 
     ctx.on('session/created', (session) => {
-      expect(ctx.sessions.get(session.id)).toBe(session)
-      expect(ctx.agents.get(sessionId)?.session).toBe(session)
+      expect(ctx.sessions.get(session.id, 'trusted-internal')).toBe(session)
+      expect(ctx.agents.get(sessionId, 'trusted-internal')?.session).toBe(session)
       order.push('session/created')
     })
     ctx.on('agent/created', ({ agent }) => {
@@ -322,8 +322,8 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
         order.push('setup:end')
         return {
           commit: () => {
-            expect(ctx.agents.get(sessionId)).toBeUndefined()
-            expect(ctx.sessions.get(sessionId)).toBeUndefined()
+            expect(ctx.agents.get(sessionId, 'trusted-internal')).toBeUndefined()
+            expect(ctx.sessions.get(sessionId, 'trusted-internal')).toBeUndefined()
             order.push('setup:commit')
           },
         }
@@ -331,8 +331,8 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
     })
 
     await setupStarted.promise
-    expect(ctx.agents.get(sessionId)).toBeUndefined()
-    expect(ctx.sessions.get(sessionId)).toBeUndefined()
+    expect(ctx.agents.get(sessionId, 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(sessionId, 'trusted-internal')).toBeUndefined()
     expect(order).toEqual(['setup:start'])
 
     gate.resolve(undefined)
@@ -386,8 +386,8 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
     })).rejects.toThrow('resume setup failed')
 
     expect(published).toEqual([])
-    expect(ctx.agents.get(sessionId)).toBeUndefined()
-    expect(ctx.sessions.get(sessionId)).toBeUndefined()
+    expect(ctx.agents.get(sessionId, 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(sessionId, 'trusted-internal')).toBeUndefined()
     const retry = await ctx.agents.resume({
       resumeSessionId: sessionId,
       agentOptions: { provider: 'mock', model: 'mock' },
@@ -413,8 +413,8 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
     })).rejects.toThrow('resume setup commit failed')
 
     expect(published).toEqual([])
-    expect(ctx.agents.get(sessionId)).toBeUndefined()
-    expect(ctx.sessions.get(sessionId)).toBeUndefined()
+    expect(ctx.agents.get(sessionId, 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(sessionId, 'trusted-internal')).toBeUndefined()
     const retry = await ctx.agents.resume({
       resumeSessionId: sessionId,
       agentOptions: { provider: 'mock', model: 'mock' },
@@ -449,8 +449,8 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
     await owner.dispose()
     await expect(resuming).rejects.toThrow(/owner disposed during setup/)
     expect(published).toEqual([])
-    expect(ctx.agents.get(sessionId)).toBeUndefined()
-    expect(ctx.sessions.get(sessionId)).toBeUndefined()
+    expect(ctx.agents.get(sessionId, 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(sessionId, 'trusted-internal')).toBeUndefined()
 
     gate.resolve(undefined)
     await Promise.resolve()
@@ -492,8 +492,8 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
     const rejection = expect(promptly(resuming)).rejects.toThrow(/owner disposed during setup/)
     await promptly(owner.dispose())
     expect(published).toEqual([])
-    expect(ctx.agents.get(sessionId)).toBeUndefined()
-    expect(ctx.sessions.get(sessionId)).toBeUndefined()
+    expect(ctx.agents.get(sessionId, 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(sessionId, 'trusted-internal')).toBeUndefined()
 
     // owner.dispose() awaited transaction settlement, so the same identities
     // can be reused before awaiting the public rejection.
@@ -507,8 +507,8 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
     latePreparation.resolve(abandoned)
     await Promise.resolve()
     await Promise.resolve()
-    expect(ctx.agents.get(sessionId)).toBe(retry.agent)
-    expect(ctx.sessions.get(sessionId)).toBe(retry.agent.session)
+    expect(ctx.agents.get(sessionId, 'trusted-internal')).toBe(retry.agent)
+    expect(ctx.sessions.get(sessionId, 'trusted-internal')).toBe(retry.agent.session)
     expect(published).toEqual(['session/created', 'agent/created', 'agent/session-start'])
 
     abandoned[Symbol.dispose]()
@@ -549,8 +549,8 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
     await rejection
 
     expect(published).toEqual([])
-    expect(ctx.agents.get(sessionId)).toBeUndefined()
-    expect(ctx.sessions.get(sessionId)).toBeUndefined()
+    expect(ctx.agents.get(sessionId, 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(sessionId, 'trusted-internal')).toBeUndefined()
     latePreparation.resolve(abandoned)
     await Promise.resolve()
     await Promise.resolve()
@@ -718,8 +718,8 @@ describe('creation and resume cancellation edges', () => {
       signal: stringReason.signal,
     }))).rejects.toThrow(/creation aborted/)
 
-    expect(ctx.agents.get(SessionId('pre-aborted-error'))).toBeUndefined()
-    expect(ctx.agents.get(SessionId('pre-aborted-string'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('pre-aborted-error'), 'trusted-internal')).toBeUndefined()
+    expect(ctx.agents.get(SessionId('pre-aborted-string'), 'trusted-internal')).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
@@ -743,7 +743,7 @@ describe('creation and resume cancellation edges', () => {
     setupGate.resolve(undefined)
 
     await expect(promptly(creating)).rejects.toThrow(/creation aborted/)
-    expect(ctx.agents.get(SessionId('setup-string-abort'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('setup-string-abort'), 'trusted-internal')).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
@@ -761,7 +761,7 @@ describe('creation and resume cancellation edges', () => {
     })
 
     await expect(promptly(creating)).rejects.toThrow('setup synchronously cancelled')
-    expect(ctx.agents.get(SessionId('setup-synchronous-abort'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('setup-synchronous-abort'), 'trusted-internal')).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
@@ -786,7 +786,7 @@ describe('creation and resume cancellation edges', () => {
       signal: stringReason.signal,
     }))).rejects.toThrow(/creation aborted/)
 
-    expect(ctx.agents.get(sessionId)).toBeUndefined()
+    expect(ctx.agents.get(sessionId, 'trusted-internal')).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
@@ -803,7 +803,7 @@ describe('creation and resume cancellation edges', () => {
       resumeSessionId: sessionId,
       agentOptions: { provider: 'mock', model: 'mock' },
     })).rejects.toThrow('agent loop is not active')
-    expect(ctx.agents.get(sessionId)).toBeUndefined()
+    expect(ctx.agents.get(sessionId, 'trusted-internal')).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
@@ -859,7 +859,7 @@ describe('configured-start failure edges', () => {
     controller.abort('operator string reason')
 
     await expect(promptly(resuming)).rejects.toThrow(/creation aborted/)
-    expect(ctx.agents.get(sessionId)).toBeUndefined()
+    expect(ctx.agents.get(sessionId, 'trusted-internal')).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
@@ -896,7 +896,7 @@ describe('configured-start failure edges', () => {
     expect(configFailures[0]).toBeInstanceOf(Error)
     expect((configFailures[0] as Error).message).toBe('artifact corrupt')
     expect(configWarnings.some(w => w.includes('config-driven restore'))).toBe(true)
-    expect(configured.agents.get(sessionId)).toBeUndefined()
+    expect(configured.agents.get(sessionId, 'trusted-internal')).toBeUndefined()
 
     await loop.dispose()
     await configured.fiber.dispose()

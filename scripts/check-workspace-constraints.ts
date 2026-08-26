@@ -18,6 +18,7 @@ const workspaceGlobs = [
   { dir: 'packages', depth: 2 },
   { dir: 'native', depth: 1 },
   { dir: 'native/landlock-run/packages', depth: 1 },
+  { dir: 'native/pid-isolate-run/packages', depth: 1 },
   { dir: 'apps', depth: 1 },
 ] as const
 const vendoredPackages = new Set([
@@ -31,19 +32,23 @@ const vendoredPackages = new Set([
   '@deepseek-ai/cordis-plugin-hmr',
   '@deepseek-ai/cordis-plugin-logger-console',
 ])
-const publicLandlockPackages = new Set([
+const publicNativePackages = new Set([
   '@deepseek-ai/node-addon-landlock-run',
   '@deepseek-ai/node-addon-landlock-run-linux-arm64',
   '@deepseek-ai/node-addon-landlock-run-linux-x64',
+  '@deepseek-ai/node-addon-pid-isolate-run',
+  '@deepseek-ai/node-addon-pid-isolate-run-linux-arm64',
+  '@deepseek-ai/node-addon-pid-isolate-run-linux-x64',
 ])
 /** Deliberate source payloads whose exact bytes are part of the package's audit surface. */
 const publicationSourceAllowlist: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/node-addon-landlock-run': ['src/main.c'],
+  '@deepseek-ai/node-addon-pid-isolate-run': ['src/pid-isolate-run.c'],
 }
 const repositoryUrl = 'git+https://github.com/deepseek-harness/deepseek-harness.git'
 /**
  * Source home the published packages point consumers at. It differs from
- * {@link repositoryUrl}, which the Landlock packages keep because npm resolves
+ * {@link repositoryUrl}, which the native packages keep because npm resolves
  * their trusted publishing against the repository that runs the workflow.
  */
 const publishedRepositoryUrl = 'git+https://github.com/deepseek-ai/deepseek-harness.git'
@@ -100,6 +105,8 @@ const rootManifest = readJson(join(root, 'package.json'))
 const repositoryVersion = rootManifest.version
 const landlockWorkspaceManifest = readJson(join(root, 'native/landlock-run/package.json'))
 const landlockVersion = landlockWorkspaceManifest.version
+const pidIsolateWorkspaceManifest = readJson(join(root, 'native/pid-isolate-run/package.json'))
+const pidIsolateVersion = pidIsolateWorkspaceManifest.version
 
 /** Repo-relative dirs holding a package.json, walked to the configured depth. */
 function packageDirs(base: string, depth: number): string[] {
@@ -222,23 +229,27 @@ function usesEmittedTreeDefaults(manifest: PackageManifest): boolean {
 function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
   const errors: string[] = []
   const label = manifest.name ?? dir
-  const isLandlockPackageDir = dir.startsWith('native/landlock-run/packages/')
-  const isPublicLandlockPackage = isLandlockPackageDir
+  const nativeFamily = dir.startsWith('native/landlock-run/packages/')
+    ? { label: 'Landlock', version: landlockVersion }
+    : dir.startsWith('native/pid-isolate-run/packages/')
+      ? { label: 'PID isolate', version: pidIsolateVersion }
+      : undefined
+  const isPublicNativePackage = nativeFamily !== undefined
     && manifest.name !== undefined
-    && publicLandlockPackages.has(manifest.name)
+    && publicNativePackages.has(manifest.name)
 
-  if (isPublicLandlockPackage) {
+  if (isPublicNativePackage) {
     if (manifest.private === true) {
-      errors.push(`${label}: published Landlock package must not set "private": true`)
+      errors.push(`${label}: published native package must not set "private": true`)
     }
     if (manifest.publishConfig?.access !== 'public') {
-      errors.push(`${label}: published Landlock package must set publishConfig.access to "public"`)
+      errors.push(`${label}: published native package must set publishConfig.access to "public"`)
     }
     const expectedDirectory = dir
     if (manifest.repository?.type !== 'git'
       || manifest.repository.url !== repositoryUrl
       || manifest.repository.directory !== expectedDirectory) {
-      errors.push(`${label}: published Landlock package repository must use ${repositoryUrl} with directory ${expectedDirectory} for trusted publishing`)
+      errors.push(`${label}: published native package repository must use ${repositoryUrl} with directory ${expectedDirectory} for trusted publishing`)
     }
   } else if (releaseMemberDirectory.test(dir)) {
     // Release members state that they are publishable: npm refuses a private
@@ -288,12 +299,12 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
     }
   }
 
-  if (isLandlockPackageDir) {
-    if (!isPublicLandlockPackage) {
-      errors.push(`${label}: unexpected package in the public Landlock package family`)
+  if (nativeFamily !== undefined) {
+    if (!isPublicNativePackage) {
+      errors.push(`${label}: unexpected package in the public ${nativeFamily.label} package family`)
     }
-    if (manifest.version !== landlockVersion) {
-      errors.push(`${label}: package.json version must match Landlock workspace version ${landlockVersion ?? '(missing)'}`)
+    if (manifest.version !== nativeFamily.version) {
+      errors.push(`${label}: package.json version must match ${nativeFamily.label} workspace version ${nativeFamily.version ?? '(missing)'}`)
     }
   }
 

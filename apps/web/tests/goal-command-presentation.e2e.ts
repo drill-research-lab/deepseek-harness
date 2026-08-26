@@ -107,7 +107,7 @@ describe('web e2e: /goal human transcript presentation', () => {
     await expect.poll(() => resultRow.count(), { timeout: 10_000 }).toBe(1)
     await expect.poll(() => page.locator('[data-phase="active"]').count()).toBe(1)
 
-    const sessions = scaffold.ctx.sessions.list()
+    const sessions = scaffold.ctx.sessions.list('trusted-internal')
     expect(sessions).toHaveLength(1)
     const persisted = sessions[0]?.events ?? []
     expect(persisted.filter(event => event.type === 'command/run' || event.type === 'command/done')

@@ -1,7 +1,9 @@
 /** Live/persisted logical-corpus resolution for session-query. */
 
 import type { Context, Fiber } from '@deepseek-ai/cordis'
+import { ownedSession, ownedSessions } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-ownership'
 import SessionPersistence, { SessionPersistenceCorruptionError } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionRecord } from './types.ts'
 import { SessionQueryError } from './config.ts'
@@ -58,13 +60,16 @@ export class SessionCorpus {
   async listSessions(signal?: AbortSignal): Promise<SessionRecord[]> {
     signal?.throwIfAborted()
     const persistence = this._persistence
-    const persisted = persistence === undefined ? [] : await listPersisted(persistence, signal)
+    const persisted = persistence === undefined ? [] : this.owned(await listPersisted(persistence, signal))
     signal?.throwIfAborted()
     const records = new Map<SessionId, SessionRecord>()
     for (const header of persisted) {
       records.set(header.id, { header: structuredClone(header), live: false, persisted: true })
     }
-    for (const session of this._ctx.sessions.list()) {
+    // `ctx.sessions.list()` is unfiltered; narrowed through `ownedSessions`
+    // to match `this.owned()`'s narrowing of the persisted merge above —
+    // otherwise a live session merges in regardless of owner.
+    for (const session of ownedSessions(this._ctx)) {
       const durable = records.get(session.id)
       if (durable !== undefined) assertSessionHeadersCompatible(session.header, durable.header)
       records.set(session.id, {
@@ -87,7 +92,11 @@ export class SessionCorpus {
    */
   async load(sessionId: SessionId, signal?: AbortSignal): Promise<LogicalSession> {
     signal?.throwIfAborted()
-    const live = this._ctx.sessions.get(sessionId)
+    // `ctx.sessions.get()` is unfiltered; `sessionId` is a caller-supplied id
+    // (see `SessionQueryEngine.readSession`), so it is narrowed through
+    // `ownedSession` exactly like the persisted branch below narrows through
+    // `this.owned()`.
+    const live = ownedSession(this._ctx, sessionId)
     if (live !== undefined) {
       const snapshot = snapshotLive(live)
       signal?.throwIfAborted()
@@ -95,12 +104,12 @@ export class SessionCorpus {
     }
     const persistence = this._persistence
     if (persistence === undefined) throw notFound(sessionId)
-    const listed = (await listPersisted(persistence, signal)).find(header => header.id === sessionId)
+    const listed = this.owned(await listPersisted(persistence, signal)).find(header => header.id === sessionId)
     signal?.throwIfAborted()
     if (listed === undefined) throw notFound(sessionId)
     const loaded = await inspectPersisted(persistence, sessionId, signal)
     signal?.throwIfAborted()
-    const attached = this._ctx.sessions.get(sessionId)
+    const attached = ownedSession(this._ctx, sessionId)
     if (attached !== undefined) {
       const snapshot = snapshotLive(attached)
       signal?.throwIfAborted()
@@ -135,7 +144,9 @@ export class SessionCorpus {
     const resolved = new Map<SessionId, LogicalProjectionResult<Value>>()
     const unresolved: SessionId[] = []
     for (const id of ids) {
-      const session = this._ctx.sessions.get(id)
+      // `sessionIds` is caller-supplied; unfiltered `ctx.sessions.get()`
+      // narrowed through `ownedSession`, matching `load()` above.
+      const session = ownedSession(this._ctx, id)
       if (session === undefined) {
         unresolved.push(id)
       } else {
@@ -154,7 +165,7 @@ export class SessionCorpus {
 
     let persisted: SessionHeader[]
     try {
-      persisted = await listPersisted(persistence, signal)
+      persisted = this.owned(await listPersisted(persistence, signal))
       signal?.throwIfAborted()
     } catch (error: unknown) {
       if (signal?.aborted) signal.throwIfAborted()
@@ -167,7 +178,7 @@ export class SessionCorpus {
     const resolvePersisted = async (sessionId: SessionId): Promise<void> => {
       const listed = persistedById.get(sessionId)
       if (listed === undefined) {
-        const attached = this._ctx.sessions.get(sessionId)
+        const attached = ownedSession(this._ctx, sessionId)
         resolved.set(sessionId, attached === undefined
           ? { sessionId, status: 'rejected', reason: notFound(sessionId) }
           : projectSource(sessionId, sourceLive(attached), project, signal))
@@ -177,7 +188,7 @@ export class SessionCorpus {
         signal?.throwIfAborted()
         const loaded = await inspectPersisted(persistence, sessionId, signal)
         signal?.throwIfAborted()
-        const attached = this._ctx.sessions.get(sessionId)
+        const attached = ownedSession(this._ctx, sessionId)
         if (attached !== undefined) {
           resolved.set(sessionId, projectSource(sessionId, sourceLive(attached), project, signal))
           return
@@ -217,6 +228,13 @@ export class SessionCorpus {
     /* v8 ignore stop */
     signal?.throwIfAborted()
     return orderedResults(ids, resolved)
+  }
+
+  /** Remove foreign and ownerless durable headers before any full-log inspection. */
+  private owned(headers: readonly SessionHeader[]): SessionHeader[] {
+    const ownerUserId = this._ctx.root.get('ownership')?.currentPrincipalOrUndefined()?.userId
+    if (ownerUserId === undefined) return [...headers]
+    return headers.filter(header => header.ownerUserId === ownerUserId)
   }
 }
 

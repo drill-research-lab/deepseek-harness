@@ -99,12 +99,12 @@ export class UserQuestionService extends Service {
     const agent = request.agent
     if (agent !== undefined) {
       const agents = this.ctx.get('agents')
-      if (agents === undefined || agents.get(agent.id) !== agent) {
+      if (agents === undefined || agents.get(agent.id, 'trusted-internal') !== agent) {
         throw new UserQuestionError(
           'human interaction requires the exact live calling agent when an agent is supplied',
           'CALLER_NOT_LIVE')
       }
-      if (!agents.roots().includes(agent)) {
+      if (!agents.roots('trusted-internal').includes(agent)) {
         throw new UserQuestionError(
           'human interaction is unavailable while the calling agent is owned by another live agent; '
           + "include the unresolved question or decision in the child agent's final result",

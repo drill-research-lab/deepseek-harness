@@ -77,7 +77,7 @@ describe('dsh-tool-ralph over the real spawn and worker-thread stack', () => {
     const phases: string[] = []
     ctx.on('workflow/phase', (_run, title) => { phases.push(title) })
     ctx.on('workflow/agent-start', (_run, child) => {
-      const agent = ctx.agents.get(child.childId)
+      const agent = ctx.agents.get(child.childId, 'trusted-internal')
       expect(agent).toBeDefined()
       children.push(agent!)
     })
@@ -99,7 +99,7 @@ describe('dsh-tool-ralph over the real spawn and worker-thread stack', () => {
       expect(child.session.header.cwd).toBe('/tmp/ralph-shared-workspace')
       expect(child.session.header.parentSession).toBe(parent.session.header.id)
       expect(child.session.header.seedLength).toBeUndefined()
-      expect(ctx.agents.get(child.id)).toBeUndefined()
+      expect(ctx.agents.get(child.id, 'trusted-internal')).toBeUndefined()
     }
 
     expect(adapter.requests).toHaveLength(3)
@@ -129,7 +129,7 @@ describe('dsh-tool-ralph over the real spawn and worker-thread stack', () => {
     ], { maxRounds: 2 })
     const children: Agent[] = []
     ctx.on('workflow/agent-start', (_run, child) => {
-      const agent = ctx.agents.get(child.childId)
+      const agent = ctx.agents.get(child.childId, 'trusted-internal')
       if (agent !== undefined) children.push(agent)
     })
 
@@ -147,7 +147,7 @@ describe('dsh-tool-ralph over the real spawn and worker-thread stack', () => {
     expect(text).toContain('Last successful handoff:')
     expect(text).toContain('ROUND_ONE_HANDOFF')
     expect(children).toHaveLength(2)
-    for (const child of children) expect(ctx.agents.get(child.id)).toBeUndefined()
+    for (const child of children) expect(ctx.agents.get(child.id, 'trusted-internal')).toBeUndefined()
     await parentHandle.dispose()
   })
 
@@ -242,7 +242,7 @@ describe('dsh-tool-ralph over the real spawn and worker-thread stack', () => {
     let resolveChildStarted!: (child: Agent) => void
     const childStarted = new Promise<Agent>((resolve) => { resolveChildStarted = resolve })
     ctx.on('workflow/agent-start', (_run, child) => {
-      const agent = ctx.agents.get(child.childId)
+      const agent = ctx.agents.get(child.childId, 'trusted-internal')
       if (agent !== undefined) {
         children.push(agent)
         resolveChildStarted(agent)
@@ -265,7 +265,7 @@ describe('dsh-tool-ralph over the real spawn and worker-thread stack', () => {
     expect(result.isError).toBe(true)
     expect((result.content[0] as { text: string }).text).toContain('Ralph workflow was cancelled')
     expect(outcomes).toEqual(['cancelled'])
-    expect(ctx.agents.get(children[0]!.id)).toBeUndefined()
+    expect(ctx.agents.get(children[0]!.id, 'trusted-internal')).toBeUndefined()
     await parentHandle.dispose()
   })
 })

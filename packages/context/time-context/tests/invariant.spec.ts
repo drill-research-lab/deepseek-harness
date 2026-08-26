@@ -328,7 +328,7 @@ describe('time-context invariants', () => {
         ],
       })
     }).toThrow(/expected turn 1\/step 1/)
-    expect(ctx.sessions.get(SessionId('time-invariant-created-invalid'))).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('time-invariant-created-invalid'), 'trusted-internal')).toBeUndefined()
   })
 
   it('ignores context messages owned by another package', async () => {

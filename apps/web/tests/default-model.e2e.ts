@@ -99,7 +99,7 @@ describe('web e2e: the composer model switch is the default for later sessions',
     // A session that has already run a turn, spelled as the fact a turn
     // leaves behind: its own logged route.
     const loggedId = await createSession('default-model-logged')
-    scaffold.ctx.sessions.get(SessionId(loggedId))?.append('request/header', {
+    scaffold.ctx.sessions.get(SessionId(loggedId), 'trusted-internal')?.append('request/header', {
       header: { config: { provider: START_ROUTE, model: START_MODEL } },
       reason: 'initial',
     })

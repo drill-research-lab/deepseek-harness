@@ -11,6 +11,8 @@ import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
+import { OwnershipService } from '@deepseek-ai/dsh-ownership'
+import type { OwnerPrincipal, OwnerRoot, UserHome } from '@deepseek-ai/dsh-ownership'
 import type { RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import { createApiProxy } from '@deepseek-ai/dsh-host-apiproxy'
@@ -22,13 +24,43 @@ function request<P>(payload: P): RpcRequest<P> {
   return { rpcId: RpcId(`fork-${String(nextRpc++)}`), payload }
 }
 
-async function composed(workspaces: readonly Workspace[] = []): Promise<Context> {
+class TestOwnership extends OwnershipService {
+  principal: OwnerPrincipal | undefined
+
+  currentPrincipal(): OwnerPrincipal {
+    if (this.principal === undefined) throw new Error('no test owner')
+    return this.principal
+  }
+
+  currentPrincipalOrUndefined(): OwnerPrincipal | undefined { return this.principal }
+
+  backgroundPrincipal(userId: OwnerPrincipal['userId']): OwnerPrincipal {
+    return { userId, source: 'background' }
+  }
+
+  resolveUserHome(): Promise<UserHome> {
+    throw new Error('not used by these tests')
+  }
+
+  resolveOwnerRoot(): Promise<OwnerRoot> {
+    throw new Error('not used by these tests')
+  }
+}
+
+const alice = { userId: 'ldap:test-alice' as OwnerPrincipal['userId'], source: 'request' as const }
+const bob = { userId: 'ldap:test-bob' as OwnerPrincipal['userId'], source: 'request' as const }
+
+async function composed(
+  workspaces: readonly Workspace[] = [],
+  options: { ownership?: boolean } = {},
+): Promise<Context> {
   const ctx = new Context()
+  if (options.ownership === true) await ctx.plugin(TestOwnership)
   await ctx.plugin(SessionStore)
   await ctx.plugin(SystemPrompt, { persona: '' })
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(UserQuestionService)
-  ctx.provide('workspaceRegistry', { list: () => workspaces } as never)
+  ctx.provide('workspaceRegistry', { list: () => workspaces, prepareOwner: () => Promise.resolve() } as never)
   ctx.agents.setFactory({
     createAgent: async (ownerCtx: Context, options: CreateAgentOptions): Promise<AgentHandle> => {
       const session = ctx.sessions.create(options.sessionId, {
@@ -93,7 +125,7 @@ describe('sessions.fork', () => {
     const response = await api(ctx).sessions.fork(request({ sessionId: source.id, atSeq: 1 }))
     expect(response.result.ok).toBe(true)
     if (!response.result.ok) return
-    const child = ctx.sessions.get(response.result.value.sessionId)
+    const child = ctx.sessions.get(response.result.value.sessionId, 'trusted-internal')
     expect(child?.events.map(event => event.type)).toEqual([
       'turn/start', 'user/message', 'turn/end', 'session/end-seed',
     ])
@@ -139,11 +171,11 @@ describe('sessions.fork', () => {
     expect(response.result.ok).toBe(true)
     if (!response.result.ok) return
     expect(attachSession).toHaveBeenCalledWith(response.result.value.sessionId)
-    expect(ctx.sessions.get(response.result.value.sessionId)?.header).toMatchObject({
+    expect(ctx.sessions.get(response.result.value.sessionId, 'trusted-internal')?.header).toMatchObject({
       parentSession: grandchild.id,
       cwd: '/proj',
     })
-    expect(ctx.sessions.get(response.result.value.sessionId)?.header.origin).toBeUndefined()
+    expect(ctx.sessions.get(response.result.value.sessionId, 'trusted-internal')?.header.origin).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
@@ -190,12 +222,44 @@ describe('sessions.fork', () => {
     expect(response.result.ok).toBe(true)
     if (!response.result.ok) return
     expect(resume).not.toHaveBeenCalled()
-    expect(ctx.agents.get(sourceId)).toBeUndefined()
-    expect(ctx.sessions.get(response.result.value.sessionId)?.header).toMatchObject({
+    expect(ctx.agents.get(sourceId, 'trusted-internal')).toBeUndefined()
+    expect(ctx.sessions.get(response.result.value.sessionId, 'trusted-internal')?.header).toMatchObject({
       parentSession: sourceId,
       cwd: '/proj',
     })
-    expect(ctx.sessions.get(response.result.value.sessionId)?.header.origin).toBeUndefined()
+    expect(ctx.sessions.get(response.result.value.sessionId, 'trusted-internal')?.header.origin).toBeUndefined()
+    await ctx.fiber.dispose()
+  })
+
+  it('never resolves or forks a cold session a foreign owner supplies, even by its real id', async () => {
+    const ctx = await composed([], { ownership: true })
+    const ownership = ctx.get('ownership') as TestOwnership
+    const sourceId = sid('session-cold-owned')
+    const header: SessionHeader = {
+      version: 0, id: sourceId, createdAt: 1, cwd: '/proj', ownerUserId: alice.userId,
+    }
+    const events = [
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 1, trigger: { kind: 'message', source: { kind: 'user' } } } },
+      {
+        type: 'user/message', seq: 1, time: 2,
+        data: createUserMessage({ content: [{ type: 'text', text: 'work' }], source: { kind: 'user' } }),
+        surfaceOp: 'append',
+      },
+      { type: 'turn/end', seq: 2, time: 3, data: { turn: 1, reason: { kind: 'completed' } } },
+    ] as SessionEvent[]
+    ctx.provide('sessionPersistence', {
+      list: () => Promise.resolve([header]),
+      inspect: () => Promise.resolve({ meta: header, events }),
+    } as never)
+
+    const proxy = api(ctx)
+    ownership.principal = bob
+    const denied = await proxy.sessions.fork(request({ sessionId: sourceId }))
+    expect(denied.result).toMatchObject({ ok: false, error: { code: 'session-not-found' } })
+
+    ownership.principal = alice
+    const allowed = await proxy.sessions.fork(request({ sessionId: sourceId }))
+    expect(allowed.result.ok).toBe(true)
     await ctx.fiber.dispose()
   })
 
@@ -211,13 +275,13 @@ describe('sessions.fork', () => {
     const omitted = await proxy.sessions.fork(request({ sessionId: source.id }))
     expect(omitted.result.ok).toBe(true)
     if (omitted.result.ok) {
-      expect(ctx.sessions.get(omitted.result.value.sessionId)?.events.map(event => event.type))
+      expect(ctx.sessions.get(omitted.result.value.sessionId, 'trusted-internal')?.events.map(event => event.type))
         .toEqual(expectedTypes)
     }
     const pastEnd = await proxy.sessions.fork(request({ sessionId: source.id, atSeq: 999 }))
     expect(pastEnd.result.ok).toBe(true)
     if (pastEnd.result.ok) {
-      expect(ctx.sessions.get(pastEnd.result.value.sessionId)?.events.map(event => event.type))
+      expect(ctx.sessions.get(pastEnd.result.value.sessionId, 'trusted-internal')?.events.map(event => event.type))
         .toEqual(expectedTypes)
     }
     await ctx.fiber.dispose()
@@ -232,7 +296,7 @@ describe('sessions.fork', () => {
     const response = await api(ctx).sessions.fork(request({ sessionId: source.id, atSeq: anchor }))
     expect(response.result.ok).toBe(true)
     if (!response.result.ok) return
-    expect(ctx.sessions.get(response.result.value.sessionId)?.events.map(event => event.type)).toEqual([
+    expect(ctx.sessions.get(response.result.value.sessionId, 'trusted-internal')?.events.map(event => event.type)).toEqual([
       'turn/start', 'user/message', 'turn/end',
       'turn/start', 'user/message', 'turn/end',
       'session/end-seed',
@@ -269,7 +333,7 @@ describe('sessions.fork', () => {
     const response = await api(ctx).sessions.fork(request({ sessionId: source.id }))
     expect(response.result.ok).toBe(true)
     if (!response.result.ok) return
-    const child = ctx.agents.get(response.result.value.sessionId)
+    const child = ctx.agents.get(response.result.value.sessionId, 'trusted-internal')
     if (child === undefined) throw new Error('fork did not publish the child agent')
     const assembly = await child.ctx.systemPrompt.assemble()
     expect(assembly.variables).toMatchObject({

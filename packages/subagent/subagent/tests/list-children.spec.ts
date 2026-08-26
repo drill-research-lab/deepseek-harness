@@ -74,7 +74,7 @@ async function startChild(
     signal: testSignal,
   })
   await vi.waitFor(() => {
-    expect(ctx.agents.get(started.childId)).toBeUndefined()
+    expect(ctx.agents.get(started.childId, 'trusted-internal')).toBeUndefined()
   }, { timeout: 5_000 })
   return started.childId
 }

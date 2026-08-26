@@ -46,7 +46,7 @@ function validateEvent(event: SessionEvent, fail: InvariantFailure): void {
 
 /** Install validation for loaded and newly appended whole-list todo snapshots. */
 const install: InvariantInstaller = Object.assign((ctx: Context, fail: InvariantFailure) => {
-  for (const session of ctx.sessions.list()) {
+  for (const session of ctx.sessions.list('trusted-internal')) {
     for (const event of session.events) validateEvent(event, fail)
   }
   ctx.on('internal/dispatch', (_mode, eventName, args) => {

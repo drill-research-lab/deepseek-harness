@@ -632,7 +632,7 @@ describe('session reference discovery and preparation', () => {
     )
     detachSource()
 
-    expect(ctx.sessions.get(source.id)).toBeUndefined()
+    expect(ctx.sessions.get(source.id, 'trusted-internal')).toBeUndefined()
     expect(target.deriveMessages()).toEqual(before)
     expect(JSON.stringify(before)).toContain('durable referenced fact')
     expect(JSON.stringify(before)).toContain('use @source')

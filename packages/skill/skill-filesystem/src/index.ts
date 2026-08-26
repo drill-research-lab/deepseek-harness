@@ -18,7 +18,7 @@ import chokidar from 'chokidar'
 import z from '@deepseek-ai/schemastery'
 import type Schema from '@deepseek-ai/schemastery'
 import { parse as parseYaml } from 'yaml'
-import type { FileSystem, FsDirEntry, FsTarget } from '@deepseek-ai/dsh-fs'
+import { readPolicyForTarget, type FileSystem, type FsDirEntry, type FsTarget } from '@deepseek-ai/dsh-fs'
 import { canonicalizeWatchPath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import {
   BUNDLED_SKILL_RANK,
@@ -115,6 +115,7 @@ interface ParsedSkill {
 interface LocalLocator {
   path: string
   directory: string
+  readRoot: string
 }
 
 interface ResolvedWatchConfig {
@@ -205,7 +206,7 @@ export class FileSystemSkillProvider implements SkillProvider {
    */
   async get(candidate: SkillCandidate, options: SkillLookupOptions): Promise<SkillDefinition | undefined> {
     const locator = candidate.locator as LocalLocator
-    const parsed = await parseSkillFile(locator.path, this.ctx, options.signal, candidate.source === 'bundled')
+    const parsed = await parseSkillFile(locator.path, locator.readRoot, this.ctx, options.signal, candidate.source === 'bundled')
     if (parsed === undefined) return undefined
     return {
       name: parsed.name,
@@ -722,12 +723,12 @@ async function discoverRoot(root: SkillRoot, ctx: Context, provider: string): Pr
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     if (root.skipSystem && entry.name === '.system') continue
     const locator = entry.type === 'directory'
-      ? { path: join(entry.path, 'SKILL.md'), directory: entry.path }
+      ? { path: join(entry.path, 'SKILL.md'), directory: entry.path, readRoot: root.path }
       : entry.type === 'file' && entry.name.endsWith('.md')
-        ? { path: entry.path, directory: root.path }
+        ? { path: entry.path, directory: root.path, readRoot: root.path }
         : undefined
     if (locator === undefined) continue
-    const parsed = await parseSkillFile(locator.path, ctx, undefined, root.trustedHost === true)
+    const parsed = await parseSkillFile(locator.path, locator.readRoot, ctx, undefined, root.trustedHost === true)
     if (parsed === undefined) continue
     skills.push({
       name: parsed.name,
@@ -763,7 +764,7 @@ async function listSkillRootEntriesFromFileSystem(root: SkillRoot, fs: FileSyste
 
 async function fsListDir(fs: FileSystem, path: string): Promise<FsDirEntry[]> {
   const target = await fs.resolve(path)
-  return await fs.listDir(target)
+  return await fs.listDir(target, undefined, readPolicyForTarget(fs, target))
 }
 
 function entryFromFs(entry: FsDirEntry): SkillRootEntry {
@@ -790,8 +791,14 @@ async function listSkillRootEntriesFromNode(root: SkillRoot, ctx: Context): Prom
   return result
 }
 
-async function parseSkillFile(path: string, ctx: Context, signal?: AbortSignal, trustedHost = false): Promise<ParsedSkill | undefined> {
-  const raw = await readSkillText(ctx, path, signal, trustedHost)
+async function parseSkillFile(
+  path: string,
+  readRoot: string,
+  ctx: Context,
+  signal?: AbortSignal,
+  trustedHost = false,
+): Promise<ParsedSkill | undefined> {
+  const raw = await readSkillText(ctx, path, readRoot, signal, trustedHost)
   signal?.throwIfAborted()
   if (raw === undefined) {
     return undefined
@@ -838,11 +845,17 @@ function optionalFileSystem(ctx: Context): FileSystem | undefined {
   return ctx.get('fs')
 }
 
-async function readSkillText(ctx: Context, path: string, signal?: AbortSignal, trustedHost = false): Promise<string | undefined> {
+async function readSkillText(
+  ctx: Context,
+  path: string,
+  readRoot: string,
+  signal?: AbortSignal,
+  trustedHost = false,
+): Promise<string | undefined> {
   signal?.throwIfAborted()
   const fs = optionalFileSystem(ctx)
   if (fs !== undefined && !trustedHost) {
-    return await readSkillTextFromFileSystem(ctx, fs, path, signal)
+    return await readSkillTextFromFileSystem(ctx, fs, path, readRoot, signal)
   }
   try {
     return await readFile(path, { encoding: 'utf8', signal })
@@ -853,7 +866,13 @@ async function readSkillText(ctx: Context, path: string, signal?: AbortSignal, t
   }
 }
 
-async function readSkillTextFromFileSystem(ctx: Context, fs: FileSystem, path: string, signal?: AbortSignal): Promise<string | undefined> {
+async function readSkillTextFromFileSystem(
+  ctx: Context,
+  fs: FileSystem,
+  path: string,
+  readRoot: string,
+  signal?: AbortSignal,
+): Promise<string | undefined> {
   // A missing or temporarily inaccessible skill file is not fatal to discovery.
   signal?.throwIfAborted()
   let target
@@ -863,10 +882,12 @@ async function readSkillTextFromFileSystem(ctx: Context, fs: FileSystem, path: s
     if (isAbsentSkillPathError(error)) return undefined
     throw error
   }
+  const policyRoot = await fs.resolve(readRoot)
+  const sandboxPolicy = readPolicyForTarget(fs, policyRoot)
   signal?.throwIfAborted()
   let info
   try {
-    info = await fs.stat(target, signal)
+    info = await fs.stat(target, signal, sandboxPolicy)
   } catch (error) {
     signal?.throwIfAborted()
     if (isAbsentSkillPathError(error)) return undefined
@@ -874,7 +895,7 @@ async function readSkillTextFromFileSystem(ctx: Context, fs: FileSystem, path: s
   }
   if (info === undefined || info.type !== 'file') return undefined
   try {
-    return await fs.readText(target, signal)
+    return await fs.readText(target, signal, sandboxPolicy)
   } catch (error) {
     signal?.throwIfAborted()
     if (isAbsentSkillPathError(error)) return undefined
@@ -962,7 +983,8 @@ async function pathExistsInFileSystem(path: string, fs: FileSystem): Promise<boo
     return false
   }
   try {
-    return await fs.stat(target) !== undefined
+    const parent = await fs.resolve(dirname(path))
+    return await fs.stat(target, undefined, readPolicyForTarget(fs, parent)) !== undefined
   } catch {
     // Transient stat failures make only this git-root candidate unusable.
     return false

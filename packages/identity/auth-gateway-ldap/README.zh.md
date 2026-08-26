@@ -10,7 +10,7 @@
 
 运行 `dsh-auth-ldap-gateway` 时必须设置不同于 `DSH_HOME` 的 `DSH_AUTH_HOME`。其中仅所有者可读的 `.credentials.yaml` 保存 LDAP 绑定密码和 `AUTH_COOKIE_PRIVATE_KEY`，`accounts.json` 则保存经 scrypt 派生的本机密码哈希。`sessions/` 目录权限为 `0700`；每次登录建立一个权限为 `0600`、以随机会话 id 哈希命名的记录。DSH 应将 `DSH_AUTH_SESSION_DIRECTORY` 指向此目录。DSH 自己的凭证存储只保存 `AUTH_COOKIE_PUBLIC_KEY` 以及匹配的签发者和受众。严格部署只向 Host 身份验证边界授予会话读取权限，同时不让下游 DSH 接触网关凭证与本机账户。
 
-该可执行程序默认监听回环端口 `3081`。设置 `DSH_AUTH_PUBLIC=true` 可绑定所有接口，`DSH_AUTH_PORT` 可选择其他端口，`DSH_LOCAL_REGISTRATION_ENABLED=true` 可允许本机账户创建，`DSH_APP_URL` 指定成功后跳转的 DSH 浏览器 URL；只有可信 HTTP 开发路径可以设置 `AUTH_COOKIE_SECURE=false`。`GET /auth/login` 显示 LDAP 与本机账户表单，`GET /auth/register` 在启用时显示本机注册表单。每个表单都携带一个与 HttpOnly、SameSite=Strict 网关 Cookie 比对的 token，因此表单 POST 使用不透明 `Origin` 的浏览器仍能防止跨站提交。成功的 POST 会设置身份 Cookie，并跳转至相同 hostname 上配置的 DSH 端口。
+该可执行程序默认监听回环端口 `3081`。设置 `DSH_AUTH_PUBLIC=true` 可绑定所有接口，`DSH_AUTH_PORT` 可选择其他端口，`DSH_LOCAL_REGISTRATION_ENABLED=true` 可允许本机账户创建，`DSH_APP_URL` 指定成功后跳转的 DSH 浏览器 URL；只有可信 HTTP 开发路径可以设置 `AUTH_COOKIE_SECURE=false`。`AUTH_COOKIE_EXPIRE_SECONDS` 控制身份 Cookie 与可撤销会话的有效期，范围为 60 至 3600 秒，默认值为 300。`GET /auth/login` 显示 LDAP 与本机账户表单，`GET /auth/register` 在启用时显示本机注册表单。每个表单都携带一个与 HttpOnly、SameSite=Strict 网关 Cookie 比对的 token，因此表单 POST 使用不透明 `Origin` 的浏览器仍能防止跨站提交。成功的 POST 会设置身份 Cookie，并跳转至相同 hostname 上配置的 DSH 端口。
 
 JSON 客户端使用相同的凭证路由：`/auth/login` 接受 `{ provider?, username, password }`，省略 provider 表示 `ldap`；`/auth/register` 从 `{ username, password, displayName, email }` 建立 DSH 本机账户。`GET /auth/me` 同时验证签章 Cookie 与仍然有效的文件会话。`POST /auth/logout` 会先删除该会话，再使浏览器 Cookie 过期，因此重放登出前保存的 Cookie 会立即收到 `401`。
 

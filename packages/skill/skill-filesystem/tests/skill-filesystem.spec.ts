@@ -24,6 +24,8 @@ async function writeFlatSkill(root: string, name: string, description: string, b
 
 class TestFileSystem extends FileSystem {
   listDirCalls = 0
+  /** Report every `.git` probe as absent, so project-root fallback is tested independent of the temp directory's git ancestry. */
+  hideGit = false
   failResolvePaths = new Set<string>()
   failStatPaths = new Set<string>()
   failListDirPaths = new Set<string>()
@@ -52,6 +54,7 @@ class TestFileSystem extends FileSystem {
 
   override async stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
     this.statSignals.push(signal)
+    if (this.hideGit && target.displayPath.endsWith('/.git')) return undefined
     if (this.failStatPaths.has(target.displayPath)) throw new FsError('stat failed', 'FS_NOT_FOUND')
     if (this.errorStatPaths.has(target.displayPath)) throw new Error('stat temporarily failed')
     if (this.statOverrides.has(target.displayPath)) return this.statOverrides.get(target.displayPath)
@@ -202,6 +205,11 @@ describe('FileSystemSkillProvider', () => {
 
     const noGit = await tempDir('skill-no-git')
     await writeSkill(join(noGit, '.dsh/skills'), 'fallback-root', 'Fallback root')
+    // The no-git fallback walks the host filesystem looking for `.git`, so it
+    // would depend on the temp directory's ancestry. A filesystem mock that
+    // reports every `.git` probe as absent makes the cwd fallback deterministic.
+    await ctx.plugin(TestFileSystem)
+    ;(ctx.fs as TestFileSystem).hideGit = true
     expect((await ctx.skills.list({ cwd: noGit })).map(skill => skill.name)).toContain('fallback-root')
   })
 

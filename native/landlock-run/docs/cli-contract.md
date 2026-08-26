@@ -12,7 +12,7 @@ landlock-run --probe
 - `--ro <path>`: grant read + execute beneath `<path>`.
 - `--rw <path>`: grant full filesystem access beneath `<path>` (every access the negotiated kernel ABI can govern).
 - Everything not granted is denied — Landlock rulesets are allow-lists.
-- A grant on a non-directory keeps only its file-compatible access bits (this is how a `--rw /dev/null` grant works).
+- A grant on a non-directory keeps only its file-compatible access bits and applies to that file alone, never its parent directory tree (this is how a `--rw /dev/null` grant works). `dsh-sandbox-local` relies on this invariant when granting one packaged executable; changes to non-directory masks or path-beneath handling must audit that consumer before release.
 - `--`: mandatory separator; everything after it is the command argv, exec'd via `execvp` with the launcher's environment unchanged.
 - `--probe`: mutually exclusive with grants and a command.
 - No other flags, no environment-variable inputs.

@@ -290,7 +290,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
         // agent-loop-only reload disposes the loop's agents while the bridge
         // record survives, so validate the record against the live registry
         // before sending — a disposed machine would accept the item silently.
-        if (ctx.agents.get(record.agent.id) !== record.agent) {
+        if (ctx.agents.get(record.agent.id, 'trusted-internal') !== record.agent) {
           throw internalError('prompt was not queued: the agent was disposed outside the bridge')
         }
         const message = createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } })

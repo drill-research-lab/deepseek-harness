@@ -21,6 +21,9 @@
       "path": "../fs-local"
     },
     {
+      "path": "../../util/path-containment"
+    },
+    {
       "path": "../../sandbox/sandbox"
     },
     {
