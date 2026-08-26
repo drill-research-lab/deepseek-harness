@@ -37,6 +37,7 @@ import { approvalRequestIdSchema, approvalResponsePayloadSchema } from '../src/a
 import { askUserQuestionAnswerSchema, questionResponsePayloadSchema } from '../src/api/questions.schema.ts'
 import { goalEditRequestSchema } from '../src/api/goals.schema.ts'
 import { subagentPromptRequestSchema } from '../src/api/subagents.schema.ts'
+import { authMeRequestSchema, authMeValueSchema } from '../src/api/auth.schema.ts'
 
 describe('RpcId', () => {
   it('brands a raw string at zero runtime cost', () => {
@@ -45,6 +46,15 @@ describe('RpcId', () => {
     // No min-length: the id is an opaque echo token (see rpcIdSchema's contract).
     expect(rpcIdSchema.parse('')).toBe('')
     expect(() => rpcIdSchema.parse(42)).toThrow()
+  })
+})
+
+describe('auth domain schemas', () => {
+  it('accepts the empty request and complete current-user view', () => {
+    expect(authMeRequestSchema.parse({})).toEqual({})
+    expect(authMeValueSchema.parse({ userId: 'ldap:alice', username: 'Alice' }))
+      .toEqual({ userId: 'ldap:alice', username: 'Alice' })
+    expect(() => authMeValueSchema.parse({ userId: 'ldap:alice' })).toThrow()
   })
 })
 

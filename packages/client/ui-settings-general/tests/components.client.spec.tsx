@@ -42,11 +42,23 @@ describe('chrome content', () => {
 })
 
 describe('GeneralSection', () => {
-  function mount() {
+  function mount(
+    loadCurrentUser: GeneralSectionComponentProps['loadCurrentUser'] = () => Promise.resolve({
+      userId: 'ldap:alice', username: 'Alice',
+    }),
+    logout: GeneralSectionComponentProps['logout'] = () => Promise.resolve(),
+  ) {
     const renderSlot = vi.fn(
       ((key: string) => <div data-testid={`slot-${key}`} />) as GeneralSectionComponentProps['renderSlot'],
     )
-    const props: GeneralSectionComponentProps = { ...kit, renderSlot, close: vi.fn() }
+    const props: GeneralSectionComponentProps = {
+      ...kit,
+      renderSlot,
+      close: vi.fn(),
+      t,
+      loadCurrentUser,
+      logout,
+    }
     const view = render(<GeneralSection {...props} />)
     return { view, renderSlot }
   }
@@ -55,6 +67,39 @@ describe('GeneralSection', () => {
     const { renderSlot } = mount()
     expect(renderSlot).toHaveBeenCalledWith('settings.general.item', {})
     expect(screen.getByTestId('slot-settings.general.item')).toBeTruthy()
+  })
+
+  it('shows the authenticated user above the General settings rows', async () => {
+    mount()
+    expect(screen.getByRole('status').textContent).toBe('Loading account information…')
+    expect(await screen.findByText('Alice')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Log out' })).toBeTruthy()
+    expect(screen.queryByText('ldap:alice')).toBeNull()
+  })
+
+  it('offers a logout action that invokes the injected callback', async () => {
+    const logout = vi.fn(() => Promise.resolve())
+    mount(() => Promise.resolve({ userId: 'ldap:alice', username: 'Alice' }), logout)
+    fireEvent.click(await screen.findByRole('button', { name: 'Log out' }))
+    expect(logout).toHaveBeenCalledTimes(1)
+  })
+
+  it('distinguishes a successful empty account response', async () => {
+    mount(() => Promise.resolve(undefined))
+    expect(await screen.findByText('No account information is available')).toBeTruthy()
+  })
+
+  it('shows a failed load and retries successfully', async () => {
+    const loadCurrentUser = vi.fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({ userId: 'ldap:alice', username: 'Alice' })
+    mount(loadCurrentUser)
+
+    expect((await screen.findByRole('alert')).textContent).toContain('Could not load account information')
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+
+    expect(await screen.findByText('Alice')).toBeTruthy()
+    expect(loadCurrentUser).toHaveBeenCalledTimes(2)
   })
 })
 

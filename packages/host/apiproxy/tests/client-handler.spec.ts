@@ -18,6 +18,7 @@ function ok<T>(request: RpcRequest<unknown>, value: T): Promise<RpcResponse<T>> 
 
 /** Scripted impl: every method resolves an empty-ish OK unless a case overrides it. */
 function scriptedApi(overrides: {
+  auth?: Partial<ApiProxy['auth']>
   sessions?: Partial<ApiProxy['sessions']>
   subagents?: Partial<ApiProxy['subagents']>
   host?: Partial<ApiProxy['host']>
@@ -34,6 +35,7 @@ function scriptedApi(overrides: {
   const err = <T>(r: RpcRequest<unknown>): Promise<RpcResponse<T>> =>
     Promise.resolve({ rpcId: r.rpcId, result: { ok: false, error: { code: 'internal' as const, message: 'stub', details: {} } } })
   return {
+    auth: { me: r => ok(r, { userId: 'ldap:alice', username: 'Alice' }), ...overrides.auth },
     sessions: {
       list: r => ok(r, { items: [] }),
       search: r => ok(r, { items: [], hasMore: false }),

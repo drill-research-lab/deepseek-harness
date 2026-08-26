@@ -14,6 +14,7 @@ import type { SettingsApi } from './settings.ts'
 import type { CredentialsApi } from './credentials.ts'
 import type { LlmApi } from './llm.ts'
 import type { SubagentsApi } from './subagents.ts'
+import type { AuthApi } from './auth.ts'
 import type { RpcResponse } from './rpc.ts'
 
 /**
@@ -22,6 +23,7 @@ import type { RpcResponse } from './rpc.ts'
  * request (command.execute): the carrier passes its request signal, never a wire field.
  */
 export interface RpcMethodMap {
+  'auth.me': AuthApi['me']
   'session.list': SessionsApi['list']
   'session.search': SessionsApi['search']
   'session.create': SessionsApi['create']

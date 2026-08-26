@@ -70,6 +70,7 @@ import {
   subagentListRequestSchema,
   subagentPromptRequestSchema,
 } from '../api/subagents.schema.ts'
+import { authMeRequestSchema } from '../api/auth.schema.ts'
 
 /**
  * Unary dispatch table, keyed by (and compiler-locked to) RpcMethodMap: a map row without a
@@ -88,6 +89,7 @@ type UnaryRoutes = {
 }
 
 const UNARY_ROUTES: UnaryRoutes = {
+  'auth.me': { schema: authMeRequestSchema, invoke: (api, r) => api.auth.me(r) },
   'session.list': { schema: sessionListRequestSchema, invoke: (api, r) => api.sessions.list(r) },
   'session.search': { schema: sessionSearchRequestSchema, invoke: (api, r, signal) => api.sessions.search(r, signal) },
   'session.create': { schema: sessionCreateRequestSchema, invoke: (api, r) => api.sessions.create(r) },
@@ -172,9 +174,6 @@ function fullResponse(narrow: RpcResponse<unknown>): Response {
  * Wire<> widening back to the exact payload (undefined-valued properties and
  * absent ones are indistinguishable after JSON transport).
  */
-// K appears once in the signature but ties the UNARY_ROUTES[K] row lookup to its own
-// schema/invoke pairing; a union parameter degrades the row to an uninvokable intersection.
-// oxlint-disable-next-line typescript/no-unnecessary-type-parameters
 async function handleUnary<K extends keyof RpcMethodMap>(
   api: ApiProxy, method: K, message: ClientRequest, signal: AbortSignal,
 ): Promise<Response> {

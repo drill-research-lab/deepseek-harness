@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import HttpServer from '@deepseek-ai/dsh-host-webserver'
@@ -19,6 +19,13 @@ import * as FrontendStatic from '../src/index.ts'
 
 let root: string | undefined
 let context: Context | undefined
+
+/** Auth stub registered as `ctx.auth`; always unauthenticated. */
+class FakeAuth extends Service {
+  constructor(ctx: Context) { super(ctx, 'auth') }
+
+  authenticateRequest(): Promise<undefined> { return Promise.resolve(undefined) }
+}
 
 afterEach(async () => {
   await context?.fiber.dispose()
@@ -28,7 +35,7 @@ afterEach(async () => {
 })
 
 /** Write a dist fixture and a two-row cordis.yml, then boot it through the real Loader. */
-async function loadComposition(): Promise<Context> {
+async function loadComposition(options: { loginUrl?: string; auth?: boolean } = {}): Promise<Context> {
   root = await mkdtemp(join(tmpdir(), 'dsh-frontend-static-'))
   const dist = join(root, 'dist')
   await mkdir(dist)
@@ -38,17 +45,20 @@ async function loadComposition(): Promise<Context> {
   await writeFile(join(dist, 'blob.bin'), 'BLOB')
   await writeFile(join(dist, 'manifest.webmanifest'), '{}')
   const configPath = join(root, 'cordis.yml')
-  await writeFile(configPath, [
+  const rows = [
     "- name: '@deepseek-ai/dsh-host-webserver'",
     '  config:',
     "    host: '127.0.0.1'",
     '    port: 0',
+    ...options.auth === true ? ["- name: 'auth-test'"] : [],
     '- id: frontend',
     "  name: '@deepseek-ai/dsh-host-frontend-static'",
     '  config:',
     `    distIndex: '${distIndex}'`,
+    ...options.loginUrl === undefined ? [] : [`    loginUrl: '${options.loginUrl}'`],
     '',
-  ].join('\n'))
+  ]
+  await writeFile(configPath, rows.join('\n'))
 
   context = new Context()
   context.baseUrl = pathToFileURL(root).href + '/'
@@ -57,6 +67,7 @@ async function loadComposition(): Promise<Context> {
   const modules = new Map<string, unknown>([
     ['@deepseek-ai/dsh-host-webserver', HttpServer],
     ['@deepseek-ai/dsh-host-frontend-static', FrontendStatic],
+    ['auth-test', FakeAuth],
   ])
   context.loader.internal = {
     version: 'v2',
@@ -129,5 +140,18 @@ describe('real Loader composition', () => {
     await frontendEntry!.fiber?.dispose()
     expect((await request(port, '/no/such/route')).status).toBe(404)
     expect(() => server.registerFallback(() => {})).not.toThrow()
+  })
+
+  it('redirects an unauthenticated browser to the login URL when one is configured', { timeout: 60_000 }, async () => {
+    const loaded = await loadComposition({ loginUrl: 'http://auth.islab.local:3081/auth/login', auth: true })
+    const port = loaded.webServer.port
+
+    const shell = await fetch(`http://127.0.0.1:${String(port)}/`, { redirect: 'manual' })
+    expect(shell.status).toBe(302)
+    expect(shell.headers.get('location')).toBe('http://auth.islab.local:3081/auth/login')
+
+    // A static asset is fenced the same way; without auth it is never requested.
+    const asset = await fetch(`http://127.0.0.1:${String(port)}/app.js`, { redirect: 'manual' })
+    expect(asset.status).toBe(302)
   })
 })

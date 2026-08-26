@@ -2179,6 +2179,9 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   }
 
   const api: ApiProxy = {
+    auth: {
+      me: request => ok(request, { userId: 'fixture:user', username: 'Fixture User' }),
+    },
     sessions: {
       list: request => ok(request, { items: [...sessions].sort((a, b) => b.updatedAt - a.updatedAt) }),
       search: (request, signal) => {
@@ -3079,6 +3082,7 @@ export class FixtureApiClient extends AbstractApiClient {
     signal: AbortSignal,
   ): Promise<RpcResponse<unknown>> {
     switch (method) {
+      case 'auth.me': return this.api.auth.me(request)
       case 'session.list': return this.api.sessions.list(request)
       case 'session.search': return this.api.sessions.search(request, signal)
       case 'session.create': return this.api.sessions.create(request)

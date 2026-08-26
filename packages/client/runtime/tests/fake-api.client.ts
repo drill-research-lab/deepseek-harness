@@ -73,6 +73,10 @@ export class FakeApiClient implements IApiClient {
   /** Chronological call record: [method, payload]. */
   readonly calls: { method: string; payload: unknown }[] = []
 
+  readonly auth: IApiClient['auth'] = {
+    me: () => Promise.resolve(ok({ userId: 'test:user', username: 'Test User' })),
+  }
+
   // Programmable slots (defaults answer OK-empty); reassign per case.
   onList: (payload: unknown) => Promise<RpcResponse<{ items: never[] }>> = () => Promise.resolve(ok({ items: [] }))
   onSearch: (payload: unknown) => Promise<RpcResponse<{ items: SessionSearchItem[]; hasMore: boolean }>> =

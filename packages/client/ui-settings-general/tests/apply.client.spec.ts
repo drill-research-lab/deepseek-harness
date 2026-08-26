@@ -40,15 +40,19 @@ async function bench(isLoopback = true) {
       },
     },
   }))
+  const authMe = vi.fn(() => Promise.resolve({
+    rpcId: 'auth-me' as never,
+    result: { ok: true as const, value: { userId: 'ldap:alice', username: 'Alice' } },
+  }))
   const settingsOpenDocument = vi.fn(() => Promise.resolve({
     rpcId: 'settings-open' as never,
     result: { ok: true as const, value: { opened: true as const } },
   }))
   ctx.provide('connection', {
-    api: { settings: { describe: settingsDescribe, openDocument: settingsOpenDocument } },
+    api: { auth: { me: authMe }, settings: { describe: settingsDescribe, openDocument: settingsOpenDocument } },
     isLoopback,
   } as never)
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, settingsDescribe, settingsOpenDocument }
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, authMe, settingsDescribe, settingsOpenDocument }
 }
 
 /** Declare the shell's six child slots the way ui-settings' entry does. */
@@ -91,6 +95,9 @@ describe('ui-settings-general apply', () => {
     expect(resolveSlotLabel(entry.options.label)).toBe('通用设置')
     expect(before.slots.spec('settings.general.item')).toEqual({ kind: 'list', scope: 'root' })
     expect(before.slots.entries('settings.general.item')).toEqual([])
+    const sectionInjected = (entry.inject as unknown as () => { loadCurrentUser(): Promise<unknown> })()
+    await expect(sectionInjected.loadCurrentUser()).resolves.toEqual({ userId: 'ldap:alice', username: 'Alice' })
+    expect(before.authMe).toHaveBeenCalledWith({})
     // The onboarding hole stays declared for feature-owned steps; this plugin
     // no longer seats one.
     expect(before.slots.entries('settings.onboarding')).toEqual([])
@@ -115,6 +122,25 @@ describe('ui-settings-general apply', () => {
     await vi.waitFor(() => {
       expect(after.slots.spec('settings.general.item')).toEqual({ kind: 'list', scope: 'root' })
     })
+  })
+
+  it('exposes a logout callback that revokes the cookie and reloads', async () => {
+    const b = await bench()
+    declare(b.slots)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = generalEntry(b.slots)!
+    const sectionInjected = (entry.inject as unknown as () => { logout(): Promise<void> })()
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true }))
+    const reload = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('location', { reload })
+    try {
+      await sectionInjected.logout()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+    expect(fetchMock).toHaveBeenCalledWith('/auth/logout', { method: 'POST', credentials: 'include' })
+    expect(reload).toHaveBeenCalledOnce()
   })
 
   it('registers the zh/en settings dictionaries and frees the seats on teardown', async () => {

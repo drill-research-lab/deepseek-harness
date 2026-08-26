@@ -17,6 +17,7 @@ import {
   hostCreateDirectoryValueSchema, hostDescribeValueSchema,
   hostListDirectoryValueSchema, hostOpenPathValueSchema, hostPickDirectoryValueSchema,
 } from '../api/host.schema.ts'
+import { authMeValueSchema } from '../api/auth.schema.ts'
 import {
   sessionCancelValueSchema,
   sessionAttachmentValueSchema,
@@ -85,6 +86,9 @@ import {
  * Derived per method key from RpcMethodMap so a map row addition updates this mechanically.
  */
 export interface IApiClient {
+  auth: {
+    me(payload: RequestPayload<'auth.me'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'auth.me'>>>
+  }
   sessions: {
     list(payload: RequestPayload<'session.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.list'>>>
     search(payload: RequestPayload<'session.search'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.search'>>>
@@ -170,6 +174,7 @@ export interface IApiClient {
  * mirror of the handler's request table; key coverage compiler-enforced against RpcMethodMap).
  */
 const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseValue<K>>> } = {
+  'auth.me': authMeValueSchema,
   'session.list': sessionListValueSchema,
   'session.search': sessionSearchValueSchema,
   'session.create': sessionCreateValueSchema,
@@ -408,6 +413,10 @@ export abstract class AbstractApiClient implements IApiClient {
   }
 
   // ---- IApiClient API (arrow properties so destructured/passed references stay bound) ----
+
+  readonly auth: IApiClient['auth'] = {
+    me: (payload, signal) => this.callUnary('auth.me', payload, signal),
+  }
 
   readonly sessions: IApiClient['sessions'] = {
     list: (payload, signal) => this.callUnary('session.list', payload, signal),

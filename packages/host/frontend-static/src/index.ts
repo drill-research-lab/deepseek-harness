@@ -11,7 +11,7 @@
  * @module @deepseek-ai/dsh-host-frontend-static
  */
 
-import type { ServerResponse } from 'node:http'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -28,11 +28,23 @@ export const inject = ['webServer']
 export interface Config {
   /** Absolute path of index.html inside the dist root. */
   distIndex: string
+  /**
+   * Absolute login URL an unauthenticated browser is redirected to before the
+   * shell loads. Absent (or empty) disables the redirect, preserving the
+   * auth-optional deployment where the shell is served without a guard.
+   */
+  loginUrl?: string
 }
 
 export const Config: z<Config> = z.object({
   distIndex: z.string().required(),
+  loginUrl: z.string(),
 })
+
+/** Minimal view of the authentication boundary the fallback consults. */
+interface AuthGuard {
+  authenticateRequest(request: IncomingMessage): Promise<unknown>
+}
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -102,6 +114,18 @@ export function apply(ctx: Context, config: Config): void {
       res.writeHead(405)
       res.end()
       return
+    }
+    // The shell is the app entry: an unauthenticated browser is redirected to
+    // the deployment login page before the SPA loads. `/api` is a named route
+    // and never reaches this fallback, so this guard only fences the shell and
+    // its static assets.
+    if (config.loginUrl !== undefined && config.loginUrl.length > 0) {
+      const auth = ctx.root.get('auth') as AuthGuard | undefined
+      if (auth !== undefined && await auth.authenticateRequest(req) === undefined) {
+        res.writeHead(302, { location: config.loginUrl, 'cache-control': 'no-store' })
+        res.end()
+        return
+      }
     }
     /* v8 ignore next -- node:http always sets url on server requests */
     const rawPath = new URL(req.url ?? '/', 'http://x').pathname

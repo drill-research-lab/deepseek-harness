@@ -80,6 +80,7 @@ export class ApiProxyService extends Service implements ApiProxy {
   })
 
   readonly sessions: ApiProxy['sessions']
+  readonly auth: ApiProxy['auth']
   readonly subagents: ApiProxy['subagents']
   readonly workspace: ApiProxy['workspace']
   readonly host: ApiProxy['host']
@@ -108,6 +109,7 @@ export class ApiProxyService extends Service implements ApiProxy {
         : { coldBlankProbeMaxBytes: config.coldBlankProbeMaxBytes }),
     })
     this.sessions = api.sessions
+    this.auth = api.auth
     this.subagents = api.subagents
     this.workspace = api.workspace
     this.host = api.host

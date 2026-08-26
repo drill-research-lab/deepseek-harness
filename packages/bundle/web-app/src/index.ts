@@ -47,12 +47,15 @@ export interface Config {
   surfaceContext: boolean
   /** Explicit `--trusted-host` authorities from this invocation. */
   trustedHosts: string[]
+  /** Absolute login URL an unauthenticated browser is redirected to; absent disables the redirect. */
+  loginUrl?: string
 }
 
 export const Config: z<Config> = z.object({
   printUrl: z.boolean().default(true),
   surfaceContext: z.boolean().default(true),
   trustedHosts: z.array(String).default([]),
+  loginUrl: z.string(),
 })
 
 /** Bind-dependent Web values shared by the trust fence and URL display. */
@@ -136,7 +139,10 @@ export function apply(ctx: Context, config: Config): void {
   const runtime = resolveLanTrust(ctx.webServer.host, config.trustedHosts)
   // Release dependent rows only after bind-dependent trust has been sampled once.
   ctx.provide(WEB_RUNTIME_SERVICE, runtime)
-  ctx.plugin(FrontendStatic, { distIndex: internals.resolveDistIndex() })
+  ctx.plugin(FrontendStatic, {
+    distIndex: internals.resolveDistIndex(),
+    ...config.loginUrl === undefined ? {} : { loginUrl: config.loginUrl },
+  })
   if (config.surfaceContext) {
     ctx.inject(['systemPrompt'], (promptCtx) => {
       addHarnessSourceSection(promptCtx, SOURCE_ROOT)

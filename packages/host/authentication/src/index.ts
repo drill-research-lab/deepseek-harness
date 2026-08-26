@@ -1,10 +1,11 @@
 import { createPublicKey, verify, type KeyObject } from 'node:crypto'
-import type { IncomingMessage } from 'node:http'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { AuthService, authenticatedUserId, type AuthenticatedUser } from '@deepseek-ai/dsh-auth'
 import { FileSessionStore } from '@deepseek-ai/dsh-auth/file-session-store'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import type {} from '@deepseek-ai/dsh-host-webserver'
 
 /** External identity-cookie verification configuration. */
 export interface Config {
@@ -27,7 +28,7 @@ export const Config: z<Config> = z.object({
   cookieName: z.string().default('dsh_identity'),
   sessionDirectory: z.string().default('.dsh-auth/sessions'),
 })
-export const inject = ['credentials']
+export const inject = ['credentials', 'webServer']
 export const name = 'host-authentication'
 
 interface IdentityPayload {
@@ -51,13 +52,21 @@ function cookieValue(request: Pick<IncomingMessage, 'headers'>, name: string): s
   return undefined
 }
 
+function hasTrustedOrigin(request: Pick<IncomingMessage, 'headers'>): boolean {
+  const origin = request.headers.origin
+  const host = request.headers.host
+  if (origin === undefined) return true
+  if (host === undefined) return false
+  try { return new URL(origin).host === host } catch { return false }
+}
+
 function decodeJson(encoded: string): unknown {
   return JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'))
 }
 
 /** Verifies identity cookies issued by the separately deployed authentication gateway. */
 export class ExternalCookieAuthService extends AuthService {
-  static inject = ['credentials']
+  static inject = ['credentials', 'webServer']
   private publicKey!: KeyObject
   private issuer!: string
   private audience!: string
@@ -97,15 +106,46 @@ export class ExternalCookieAuthService extends AuthService {
       this.audience = audience.value
       return () => {}
     }, 'host-authentication: load identity verification material')
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact',
+      path: '/auth/logout',
+      handler: async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+        if (req.method !== 'POST') { res.writeHead(405, { allow: 'POST' }); res.end(); return }
+        if (!hasTrustedOrigin(req)) { res.writeHead(403); res.end(); return }
+        await this.logout(req)
+        res.writeHead(200, {
+          'content-type': 'application/json; charset=utf-8',
+          'set-cookie': this.clearIdentityCookie(),
+          'cache-control': 'no-store',
+        })
+        res.end(JSON.stringify({ authenticated: false }))
+      },
+    }), 'host-authentication: logout route')
   }
 
   authenticateRequest(request: Pick<IncomingMessage, 'headers'>): Promise<AuthenticatedUser | undefined> {
     return this.verifyRequest(request)
   }
 
-  private async verifyRequest(request: Pick<IncomingMessage, 'headers'>): Promise<AuthenticatedUser | undefined> {
+  /**
+   * Revoke the session carried by a request's identity cookie. The token is
+   * verified first so a forged cookie cannot revoke another session; a missing
+   * or invalid cookie revokes nothing.
+   * @param request - request headers carrying the session cookie.
+   */
+  async logout(request: Pick<IncomingMessage, 'headers'>): Promise<void> {
     const token = cookieValue(request, this.cookieName)
-    if (token === undefined) return undefined
+    if (token === undefined) return
+    const identity = this.verifiedIdentity(token)
+    if (identity !== undefined) await this.sessions.delete(identity.sessionId)
+  }
+
+  /** The Set-Cookie value that deletes the identity cookie in the browser. */
+  private clearIdentityCookie(): string {
+    return `${this.cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
+  }
+
+  private verifiedIdentity(token: string): { user: AuthenticatedUser; sessionId: string } | undefined {
     const parts = token.split('.')
     if (parts.length !== 3) return undefined
     const [encodedHeader, encodedPayload, encodedSignature] = parts
@@ -125,13 +165,20 @@ export class ExternalCookieAuthService extends AuthService {
         || typeof payload.sid !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(payload.sid)
         || typeof payload.iat !== 'number' || !Number.isInteger(payload.iat) || payload.iat > now
         || typeof payload.exp !== 'number' || !Number.isInteger(payload.exp) || payload.exp <= now) return undefined
-      const user = { userId: authenticatedUserId(payload.sub), username: payload.username }
-      const stored = await this.sessions.find(payload.sid, now)
-      if (stored?.userId !== user.userId || stored.username !== user.username) return undefined
-      return user
+      return { user: { userId: authenticatedUserId(payload.sub), username: payload.username }, sessionId: payload.sid }
     } catch {
       return undefined
     }
+  }
+
+  private async verifyRequest(request: Pick<IncomingMessage, 'headers'>): Promise<AuthenticatedUser | undefined> {
+    const token = cookieValue(request, this.cookieName)
+    if (token === undefined) return undefined
+    const identity = this.verifiedIdentity(token)
+    if (identity === undefined) return undefined
+    const stored = await this.sessions.find(identity.sessionId)
+    if (stored?.userId !== identity.user.userId || stored.username !== identity.user.username) return undefined
+    return identity.user
   }
 }
 
