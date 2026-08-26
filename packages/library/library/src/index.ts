@@ -13,6 +13,7 @@ import { copyFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises
 import { join, resolve } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import { createConverter } from 'zhtw-js'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -71,6 +72,14 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/** Default grounded-answer instructions; deployments override via `persona`. */
+export const LIBRARIAN_PROMPT =
+  'You are the Librarian of a research knowledge base. Answer the question using ONLY the '
+  + 'provided excerpts. Cite the excerpts you used inline as [name] after each claim. When the '
+  + 'excerpts do not contain the answer, say so plainly instead of guessing. Answer in the same '
+  + 'language as the question; when answering in Chinese, ALWAYS use Traditional Chinese '
+  + '(繁體中文，台灣用語), never Simplified Chinese.'
+
 /** Deployment configuration of the librarian service. */
 export interface Config {
   /** Explicit harness home; omitted follows `DSH_HOME`, then `~/.dsh`. */
@@ -85,6 +94,10 @@ export interface Config {
   readonly provider?: string
   /** Ask-time model; omitted follows the agent default selection. */
   readonly model?: string
+  /** Grounded-answer instructions (the librarian's system prompt). */
+  readonly persona: string
+  /** Deterministically convert Chinese answers to Traditional Chinese (Taiwan vocabulary). */
+  readonly traditionalChinese: boolean
   /** Maximum grounding excerpts retrieved for one question. */
   readonly searchLimit: number
   /** Output token bound of one grounded answer. */
@@ -101,16 +114,12 @@ export const Config: z<Config> = z.object({
   convertTimeoutMs: z.number().step(1).min(1000).default(120_000),
   provider: z.string(),
   model: z.string(),
+  persona: z.string().default(LIBRARIAN_PROMPT),
+  traditionalChinese: z.boolean().default(true),
   searchLimit: z.number().step(1).min(1).default(8),
   maxAnswerTokens: z.number().step(1).min(64).default(2048),
   askTimeoutMs: z.number().step(1).min(1000).default(60_000),
 })
-
-const LIBRARIAN_SYSTEM_PROMPT =
-  'You are the Librarian of a research knowledge base. Answer the question using ONLY the '
-  + 'provided excerpts. Cite the excerpts you used inline as [name] after each claim. When the '
-  + 'excerpts do not contain the answer, say so plainly instead of guessing. Answer in the same '
-  + 'language as the question.'
 
 const byCreatedDesc = <T extends { readonly createdAt: string; readonly id: string }>(
   left: T,
@@ -465,7 +474,7 @@ export class LibrarianService extends Service {
       provider: route.provider,
       model: route.model,
       messages,
-      system: LIBRARIAN_SYSTEM_PROMPT,
+      system: this.config.persona,
       maxTokens: this.config.maxAnswerTokens,
       signal: askSignal,
     }
@@ -478,11 +487,15 @@ export class LibrarianService extends Service {
     if (finish.kind !== 'stop' && finish.kind !== 'max-tokens') {
       throw new Error(`librarian ask ended with '${finish.kind}' instead of an answer`)
     }
-    const answer = assembler.blocks()
+    const raw = assembler.blocks()
       .filter(block => block.type === 'text')
       .map(block => block.text)
       .join('\n')
       .trim()
+    // Chat-tuned models drift into Simplified Chinese even when instructed;
+    // the deterministic converter (the repo's own zh-TW pipeline library)
+    // guarantees the configured Traditional default.
+    const answer = this.config.traditionalChinese ? createConverter().convert(raw) : raw
     const sources: AskSource[] = []
     for (const excerpt of excerpts) {
       if (sources.some(source => String(source.resourceId) === excerpt.resourceId && source.heading === excerpt.heading)) continue

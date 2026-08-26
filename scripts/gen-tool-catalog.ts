@@ -21,7 +21,7 @@ import GoalService from '@deepseek-ai/dsh-goal'
 import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
-import LibrarianService from '@deepseek-ai/dsh-library'
+import LibrarianService, { LIBRARIAN_PROMPT } from '@deepseek-ai/dsh-library'
 import * as ToolLibrary from '@deepseek-ai/dsh-tool-library'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { type Config as ToolsConfig } from '@deepseek-ai/dsh-tools'
@@ -387,6 +387,8 @@ const TOOL_PACKAGES: ToolPackage[] = [
         markitdown: false,
         python: 'python',
         convertTimeoutMs: 120_000,
+        persona: LIBRARIAN_PROMPT,
+        traditionalChinese: true,
         searchLimit: 8,
         maxAnswerTokens: 2048,
         askTimeoutMs: 60_000,

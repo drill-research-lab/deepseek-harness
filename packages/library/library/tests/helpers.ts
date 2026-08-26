@@ -5,7 +5,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
-import LibrarianService from '../src/index.ts'
+import LibrarianService, { LIBRARIAN_PROMPT } from '../src/index.ts'
 
 export interface TestHarness {
   readonly ctx: Context
@@ -27,6 +27,8 @@ export async function setupHarness(): Promise<TestHarness> {
       markitdown: false,
       python: 'python',
       convertTimeoutMs: 120_000,
+      persona: LIBRARIAN_PROMPT,
+      traditionalChinese: true,
       searchLimit: 8,
       maxAnswerTokens: 2048,
       askTimeoutMs: 60_000,

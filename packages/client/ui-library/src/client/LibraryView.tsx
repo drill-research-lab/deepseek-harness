@@ -216,9 +216,14 @@ function LibraryPage({
                 </button>
               </span>
             </div>
-            {tab === 'preview'
-              ? <ResourcePreview resource={selected} readMarkdown={readMarkdown} fileUrl={fileUrl} t={t} />
-              : <AskPanel notebookId={notebookId} ask={ask} t={t} />}
+            {/* Both panes stay mounted so the ask exchange survives tab
+                switches; the notebook key resets the ask thread on switch. */}
+            <div className={tab === 'preview' ? css.paneActive : css.paneHidden}>
+              <ResourcePreview resource={selected} readMarkdown={readMarkdown} fileUrl={fileUrl} t={t} />
+            </div>
+            <div className={tab === 'ask' ? css.paneActive : css.paneHidden}>
+              <AskPanel key={notebookId ?? ''} notebookId={notebookId} ask={ask} t={t} />
+            </div>
           </div>
 
         </div>
@@ -290,7 +295,17 @@ function ResourcePreview({ resource, readMarkdown, fileUrl, t }: {
   return <pre className={css.markdown}>{markdown ?? ''}</pre>
 }
 
-/** The grounded question panel. */
+/** One asked-and-answered exchange kept in the panel's thread. */
+interface AskExchange {
+  readonly question: string
+  readonly result: AskView
+}
+
+/**
+ * The grounded question panel. Exchanges accumulate newest-first for the
+ * session of one notebook; the mount key on the panel resets the thread when
+ * the notebook changes, and the always-mounted pane keeps it across tabs.
+ */
 function AskPanel({ notebookId, ask, t }: {
   notebookId: string | undefined
   ask: LibraryViewFace['ask']
@@ -298,16 +313,19 @@ function AskPanel({ notebookId, ask, t }: {
 }) {
   const [question, setQuestion] = useState('')
   const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<AskView | undefined>(undefined)
+  const [entries, setEntries] = useState<readonly AskExchange[]>([])
   const [failure, setFailure] = useState<string | undefined>(undefined)
 
   const submit = () => {
-    if (notebookId === undefined || question.trim() === '' || busy) return
+    const asked = question.trim()
+    if (notebookId === undefined || asked === '' || busy) return
     setBusy(true)
     setFailure(undefined)
-    setResult(undefined)
-    void ask(notebookId, question.trim())
-      .then(setResult)
+    void ask(notebookId, asked)
+      .then((result) => {
+        setEntries(current => [{ question: asked, result }, ...current])
+        setQuestion('')
+      })
       .catch((cause: unknown) => { setFailure(cause instanceof Error ? cause.message : String(cause)) })
       .finally(() => { setBusy(false) })
   }
@@ -331,25 +349,26 @@ function AskPanel({ notebookId, ask, t }: {
       </div>
       <div className={css.askAnswer}>
         {failure !== undefined && <div className={css.statusError}>{failure}</div>}
-        {result === undefined && failure === undefined && !busy && (
+        {busy && <div className={css.columnEmpty}>{t('view.ask.thinking')}</div>}
+        {entries.length === 0 && failure === undefined && !busy && (
           <div className={css.columnEmpty}>{t('view.ask.empty')}</div>
         )}
-        {busy && <div className={css.columnEmpty}>{t('view.ask.thinking')}</div>}
-        {result !== undefined && (
-          <>
-            <pre className={css.markdown}>{result.answer}</pre>
-            {result.sources.length > 0 && (
+        {entries.map((entry, entryIndex) => (
+          <div key={`${String(entries.length - entryIndex)}-${entry.question}`} className={css.askEntry}>
+            <div className={css.askQuestion}>{entry.question}</div>
+            <pre className={css.markdown}>{entry.result.answer}</pre>
+            {entry.result.sources.length > 0 && (
               <div className={css.askSources}>
                 <span className={css.askSourcesTitle}>{t('view.ask.sources')}</span>
-                {result.sources.map((source, index) => (
+                {entry.result.sources.map((source, index) => (
                   <span key={`${source.resourceId}-${String(index)}`} className={css.kindTag}>
                     {source.name}{source.heading === '' ? '' : ` · ${source.heading}`}
                   </span>
                 ))}
               </div>
             )}
-          </>
-        )}
+          </div>
+        ))}
       </div>
     </div>
   )

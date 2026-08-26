@@ -380,12 +380,42 @@
   color: var(--dsw-alias-label-primary);
 }
 
+.paneActive {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.paneHidden {
+  display: none;
+}
+
 .askPanel {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
   gap: 8px;
+}
+
+.askEntry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-bottom: 1px solid var(--dsw-alias-border-l);
+  padding-bottom: 10px;
+}
+
+.askEntry .markdown {
+  flex: none;
+  min-height: auto;
+}
+
+.askQuestion {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
 }
 
 .askInputRow {
