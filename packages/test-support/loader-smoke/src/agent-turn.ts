@@ -39,7 +39,7 @@ function assistantText(event: Extract<SessionEvent, { type: 'assistant/message' 
 }
 
 function onlyRootAgent(ctx: Context): Agent {
-  const agents = ctx.get('agents')?.roots() ?? []
+  const agents = ctx.get('agents')?.roots('trusted-internal') ?? []
   const [agent] = agents
   if (agent === undefined || agents.length !== 1) {
     throw new Error(`fixture turn requires exactly one top-level agent, found ${agents.length}`)

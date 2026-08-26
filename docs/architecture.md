@@ -18,6 +18,8 @@ A running `dsh` is a plugin tree composed at boot from ordered layers.
 
 A **profile** is a named composition stored in the Harness home. It lists the bundles it stacks, holds any out-of-tree plugins it installs, and keeps the user's own `cordis.patch.yml`. `web` and `headless` ship as templates.
 
+The product launcher acquires one Linux writer lease keyed by resolved `DSH_HOME` before it initializes or heals a profile. The lease remains attached to the root Cordis context through application shutdown, so a competing process fails before shared deployment mutation; ownership-service injection is a later service-availability requirement for mutable web providers.
+
 A **bundle** is a distribution format for Cordis config rows and the code they mount, so whatever it inserts stays patchable by the layers above it.
 
 Each declares itself in its own `package.json` under a `dsh` field: `dsh.profile` lists a profile's bundles, and `dsh.bundle` points at a bundle's patch file.

@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh.md) | [繁體中文](README.zh-tw.md)
 
-Local implementation of the [`dsh-sandbox`](../sandbox/) seam. It selects and caches one platform runner: Linux prefers a working `bwrap` then Landlock; macOS uses Seatbelt; Windows uses the ACL restricted-token runner. Multiple candidates are probed in order, while a sole candidate is selected directly.
+Local implementation of the [`dsh-sandbox`](../sandbox/) seam. It selects and caches one platform runner: Linux prefers a working `bwrap`, then a compound PID-isolation-plus-Landlock runner; macOS uses Seatbelt; Windows uses the ACL restricted-token runner. Multiple candidates are probed in order, while a sole candidate is selected directly.
 
 The package root exports the default and named `LocalSandboxProvider` plugin and `Config`; platform profile builders stay internal.
 
@@ -16,9 +16,20 @@ The Windows rung keeps one deterministic write SID and standing ACE per workspac
 
 [`@deepseek-ai/node-addon-landlock-run`](https://www.npmjs.com/package/@deepseek-ai/node-addon-landlock-run) supplies the platform launcher, functional probe, and CLI argument vocabulary. This provider owns only mode-to-grant mapping and runner selection. Keeping path resolution and probe parsing with the versioned binary prevents contract drift.
 
+The Linux Landlock profile permits reads from the session workspace plus `/usr`, `/etc/ld.so.cache`, and `/etc/alternatives`; writes remain mode-specific. An absolute outer executable supplied by a trusted consumer receives a read grant for that exact file, allowing packaged static tools such as ripgrep to reach `execve` without granting their parent runtime tree. The system roots support ordinary executables and merged-usr loader symlinks. The outer [`@deepseek-ai/node-addon-pid-isolate-run`](../../../native/pid-isolate-run/) launcher supplies a private PID namespace and procfs before the inner Landlock launcher applies filesystem rules. Deployments must apply `setcap cap_sys_admin,cap_setpcap+ep` to its installed binary and verify `--probe`; otherwise the compound rung is unavailable and selection fails closed when no earlier runner works. Bubblewrap does not use this privileged helper.
+
+Optional Linux resource limits add `systemd-run --user --scope` outside the selected runner chain. `cpuQuotaPercent` maps to `CPUQuota`; `maxTasks` maps to `TasksMax`; `walltimeSeconds` maps to `RuntimeMaxSec`, with `timeoutStopSeconds` controlling the SIGTERM-to-SIGKILL grace and defaulting to 2 seconds. `memoryMaxBytes` always carries `MemorySwapMax`: omitting `memorySwapMaxBytes` safely resolves it to zero, while configuring swap without memory is rejected. The first limited call functionally proves that the user manager can create a scope and that cgroup v2 records the expected CPU, memory, zero-swap, and task limits. Missing user systemd or D-Bus support fails closed with `SANDBOX_UNAVAILABLE`; leaving every limit unset explicitly omits this rung.
+
+`walltimeSeconds` is a deployment-wide ceiling, not a replacement for the bash and PowerShell executors' request-specific foreground timeout. The executor deadline retains per-call overrides and model-visible `timedOut` classification while already terminating its detached process tree; background shell runs omit that deadline. The systemd ceiling additionally covers background runs and the launcher chain. Whichever expires first stops the tree; a systemd-first termination is reported as a signal outcome rather than an executor timeout.
+
 ```yaml
 - id: sandbox
   name: '@deepseek-ai/dsh-sandbox-local'
+  config:
+    cpuQuotaPercent: 50
+    memoryMaxBytes: 1073741824
+    maxTasks: 256
+    walltimeSeconds: 300
 ```
 
 Consumers: [`@deepseek-ai/dsh-bash-sandbox`](../../shell/bash-sandbox/); see [the acp-agent example](../../../examples/acp-agent/) for the runnable default composition.
@@ -38,3 +49,4 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 - **Seatbelt depends on deprecated `sandbox-exec`** — macOS still ships it, but this provider cannot replace or probe that private policy engine if Apple removes it.
 - **Runner selection is cached for the provider lifetime** — installing, removing, or repairing a runner requires reloading the plugin before selection changes.
 - **`runnerCommand` is an operator assertion** — a configured custom runner skips functional probes and is assumed to implement the bwrap-compatible profile honestly; if it is itself a Bash script, its interpreter startup runs before that script applies confinement.
+- **Resource limits require a user systemd manager and delegated cgroup v2 controllers** — configured limits fail closed when the functional probe cannot reach the user D-Bus or observe the required `cpu`, `memory`, and `pids` controller values.

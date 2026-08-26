@@ -12,6 +12,7 @@ import { deepFreeze } from '@deepseek-ai/dsh-llm'
 import { scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
 import type { Message } from '@deepseek-ai/dsh-llm'
+import type {} from '@deepseek-ai/dsh-ownership'
 import { SESSION_FORMAT_VERSION, SessionId } from './types.ts'
 import type { TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
 import type { CreateSessionOptions, EpochHeader, PrepareSessionOptions, RequestContext, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SurfaceIntent, SurfaceEventType } from './types.ts'
@@ -108,6 +109,10 @@ function validateSessionHeader(id: SessionId, input: unknown): SessionHeader {
     || !Number.isSafeInteger(record.createdAt)
     || record.createdAt < 0) {
     throw new Error('session header createdAt must be a non-negative safe integer')
+  }
+  if (record.ownerUserId !== undefined
+    && (typeof record.ownerUserId !== 'string' || record.ownerUserId.trim().length === 0)) {
+    throw new Error('session header ownerUserId must be a non-empty string')
   }
   if (record.cwd !== undefined) {
     if (typeof record.cwd !== 'string') throw new Error('session header cwd must be a string')
@@ -801,7 +806,12 @@ export class SessionStore extends Service {
         wire: 'sessionId',
         hostTypeSymbol: '@deepseek-ai/dsh-session#Session',
         wireTypeSymbol: '@deepseek-ai/dsh-session/types#SessionId',
-        resolve: sessionId => this.get(sessionId),
+        // A Typert Remote gateway deserialization boundary: any future
+        // `@remote` method taking a `session` parameter has its wire id
+        // resolved here from caller-supplied input, so this MUST narrow
+        // through the owner-aware seam rather than the trusted-internal
+        // primitive, exactly like every other request-facing id resolution.
+        resolve: sessionId => ownedSession(ctx, sessionId),
       })
     })
   }
@@ -874,10 +884,17 @@ export class SessionStore extends Service {
     }
     const seed = options?.seed
     const meta = options?.meta
+    const requestOwner = this.ctx.root.get('ownership')?.currentPrincipalOrUndefined()
+    if (requestOwner !== undefined && options?.owner !== undefined
+      && requestOwner.userId !== options.owner.userId) {
+      throw new Error('session owner does not match the authenticated request')
+    }
+    const ownerUserId = (requestOwner ?? options?.owner)?.userId
     const header: SessionHeader = {
       version: SESSION_FORMAT_VERSION,
       id: sessionId,
       createdAt: meta?.createdAt ?? Date.now(),
+      ...ownerUserId === undefined ? {} : { ownerUserId },
       ...meta?.cwd === undefined ? {} : { cwd: meta.cwd },
       ...meta?.parentSession === undefined ? {} : { parentSession: meta.parentSession },
       ...meta?.seedLength === undefined ? {} : { seedLength: meta.seedLength },
@@ -1048,19 +1065,34 @@ export class SessionStore extends Service {
   }
 
   /**
-   * Look up a live session.
+   * Look up a live session. Unfiltered: trusted internal machinery (the
+   * persistence coordinator, title/checkpoint/projection identity checks,
+   * autonomous goal/schedule continuation, and lineage checks on a session
+   * the caller already holds) relies on this seeing every live session in
+   * the process regardless of the current request's owner. The caller MUST
+   * pass the literal `'trusted-internal'` marker, declaring — at every call
+   * site, checked by the compiler — that it is one of those trusted
+   * internal callers. A caller resolving a client-supplied id for an
+   * authenticated request MUST narrow the result through {@link ownedSession}
+   * instead, which performs this trusted lookup and the owner check together.
    * @param id - the session id to look up.
+   * @param access - must be the literal `'trusted-internal'`, naming this
+   *   call site as trusted internal machinery rather than a request-facing
+   *   caller resolving a client-supplied id.
    * @returns the session, or undefined when no live session has that id.
    */
-  get(id: SessionId): Session | undefined {
+  get(id: SessionId, access: 'trusted-internal'): Session | undefined {
+    void access
     return this.store.get(id)?.session
   }
 
   /**
-   * All live sessions, in creation order.
+   * All live sessions, in creation order. Unfiltered — see {@link get}.
+   * @param access - must be the literal `'trusted-internal'` — see {@link get}.
    * @returns a fresh array; mutating it does not affect the store.
    */
-  list(): Session[] {
+  list(access: 'trusted-internal'): Session[] {
+    void access
     return [...this.store.values()].map(entry => entry.session)
   }
 
@@ -1079,12 +1111,16 @@ export class SessionStore extends Service {
    * @returns The created live child session.
    */
   fork(source: SessionForkSource, boundary?: number, childSessionId?: SessionId): Session {
-    if (childSessionId !== undefined && this.get(childSessionId) !== undefined) {
+    if (childSessionId !== undefined && this.get(childSessionId, 'trusted-internal') !== undefined) {
       throw new SessionForkError(`session "${childSessionId}" already exists`, 'SESSION_ALREADY_EXISTS')
     }
     const liveSource = this._resolveForkSource(source)
     const seed = this._forkSeed(liveSource, boundary)
+    const ownership = this.ctx.root.get('ownership')
     return this.create(childSessionId, {
+      ...liveSource.header.ownerUserId === undefined || ownership === undefined
+        ? {}
+        : { owner: ownership.backgroundPrincipal(liveSource.header.ownerUserId) },
       seed,
       meta: {
         ...liveSource.header.cwd !== undefined ? { cwd: liveSource.header.cwd } : {},
@@ -1139,12 +1175,12 @@ export class SessionStore extends Service {
 
   private _resolveForkSource(source: SessionForkSource): Session {
     if (typeof source === 'string') {
-      const session = this.get(source)
+      const session = this.get(source, 'trusted-internal')
       if (session === undefined) throw new SessionForkError(`session "${source}" not found`, 'SESSION_NOT_FOUND')
       return session
     }
 
-    const live = this.get(source.id)
+    const live = this.get(source.id, 'trusted-internal')
     if (live === undefined) {
       throw new SessionForkError(`session "${source.id}" not found`, 'SESSION_NOT_FOUND')
     }
@@ -1152,6 +1188,43 @@ export class SessionStore extends Service {
     return source
   }
 
+}
+
+/**
+ * Resolve a client-supplied id and narrow it to the current request or
+ * background principal. THE one seam for resolving a client-supplied session
+ * id for an authenticated caller — {@link SessionStore.get}'s
+ * `'trusted-internal'` marker keeps its unfiltered result out of reach at
+ * every other call site. Fails closed when ownership is mounted but no
+ * principal is in scope; a deployment without an ownership service has no
+ * owner concept, so every session stays visible, matching behavior before
+ * ownership existed.
+ * @param ctx - Context carrying the session store and the optional ownership service.
+ * @param id - a caller-supplied session id.
+ * @returns the session when it is live and the current principal owns it, otherwise `undefined`.
+ */
+export function ownedSession(ctx: Context, id: SessionId): Session | undefined {
+  const session = ctx.get('sessions')?.get(id, 'trusted-internal')
+  if (session === undefined) return undefined
+  const ownership = ctx.root.get('ownership')
+  if (ownership === undefined) return session
+  const ownerUserId = ownership.currentPrincipalOrUndefined()?.userId
+  return ownerUserId !== undefined && session.header.ownerUserId === ownerUserId ? session : undefined
+}
+
+/**
+ * List every live session the current request or background principal owns.
+ * Fails closed — see {@link ownedSession}.
+ * @param ctx - Context carrying the session store and the optional ownership service.
+ * @returns a fresh array containing only the sessions the current principal owns.
+ */
+export function ownedSessions(ctx: Context): Session[] {
+  const sessions = ctx.get('sessions')?.list('trusted-internal') ?? []
+  const ownership = ctx.root.get('ownership')
+  if (ownership === undefined) return [...sessions]
+  const ownerUserId = ownership.currentPrincipalOrUndefined()?.userId
+  if (ownerUserId === undefined) return []
+  return sessions.filter(session => session.header.ownerUserId === ownerUserId)
 }
 
 export default SessionStore

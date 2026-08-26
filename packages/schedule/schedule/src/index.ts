@@ -43,7 +43,7 @@ export function apply(ctx: Context): void {
 
   ctx.effect(() => {
     const stopCreated = ctx.on('agent/created', ({ agent }) => {
-      if (stopping || runtimes.has(agent) || !ctx.agents.roots().includes(agent)) return
+      if (stopping || runtimes.has(agent) || !ctx.agents.roots('trusted-internal').includes(agent)) return
       const runtime = new ScheduleRuntime(ctx, agent)
       const cleanup: OwnerCleanup = agent.ctx.effect(() => {
         const disposeTools = registerScheduleTools(ctx, agent.ctx, agent, () => { runtime.requestDrive() })

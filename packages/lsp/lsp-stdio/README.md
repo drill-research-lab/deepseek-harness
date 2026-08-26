@@ -42,7 +42,7 @@ Initialization advertises `general.positionEncodings: ['utf-16']`, `workspace: {
 
 ## Security boundary
 
-The provider trusts its configured server and claims no sandbox confinement. It delegates canonical identity, containment, regular-file streaming, UTF-8 validation, and file-URI encoding to `ctx.fs`; it rejects missing, non-regular, non-UTF-8, oversized, or canonically out-of-workspace query sources before server startup. Containment is evaluated before the stream opens and does not promise stable-handle identity across concurrent path replacement. Result locations may be external, but an external path cannot become a query source. A deployment must mount filesystem and subprocess providers for the same execution world; split-world composition is invalid.
+The provider trusts its configured server and does not confine that server process. Workspace metadata and source reads carry a `read-only` per-call filesystem policy rooted at the canonical workspace, so they remain available through `fs-sandbox` while model-supplied sources stay confined to that workspace. It delegates canonical identity, containment, regular-file streaming, UTF-8 validation, and file-URI encoding to `ctx.fs`; it rejects missing, non-regular, non-UTF-8, oversized, or canonically out-of-workspace query sources before server startup. Containment is evaluated before the stream opens and does not promise stable-handle identity across concurrent path replacement. Result locations may be external, but an external path cannot become a query source. A deployment must mount filesystem and subprocess providers for the same execution world; split-world composition is invalid.
 
 ## Model Experience
 
@@ -54,7 +54,7 @@ No direct invalidation; `dsh-tool-lsp` owns request-prefix changes.
 
 ## Known Limitations and Deferred Work
 
-- **No confinement policy** — this package trusts the configured server and does not sandbox its process; a restricted deployment must supply appropriate process/filesystem providers or a same-world sandbox wrapper.
+- **No process confinement policy** — source reads are workspace-scoped, but this package trusts the configured server and does not sandbox its process; a restricted deployment must supply an appropriate subprocess provider or same-world sandbox wrapper.
 - **Transient-open compatibility floor** — servers whose synchronization omits open/close (or advertise `None`) are unsupported even if closed-document queries would work; the pinned TypeScript e2e establishes one compatibility floor, not a cross-language claim.
 - **Per-server/workspace serialization latency** — parallel agents sharing one server and workspace queue behind one process; long-lived workspace processes consume memory until disposal.
 - **A hard-killed harness orphans language servers** — `initialize.processId: null` removes server-side client-PID monitoring, so servers are cleaned only by graceful service disposal; a SIGKILL'd harness leaves them running until they exit on their own.

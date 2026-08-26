@@ -17,6 +17,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { ownedSessions } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
@@ -225,9 +226,13 @@ async function prepareListing(
   }
   // Live-preferred merge without header reconciliation: a live record wins
   // its id wholesale, exactly as a live-preferred corpus would serve it.
+  // `sessions.list()` is unfiltered (every live session in the process,
+  // regardless of owner), so it is narrowed through `ownedSessions` before
+  // entering the corpus — persisted headers are already owner-partitioned by
+  // the backend (see `persistence.list()` above), but the live merge is not.
   const corpus = new Map<SessionId, CorpusRecord>()
   for (const header of persistedHeaders) corpus.set(header.id, { header, live: undefined })
-  for (const session of sessions.list()) {
+  for (const session of ownedSessions(ctx)) {
     corpus.set(session.header.id, { header: session.header, live: session })
   }
   const subagentParents = new Set<SessionId>()
@@ -379,7 +384,7 @@ async function resolveColdIdentity(
   assertListingNotCancelled(signal)
   let inspected: { meta: SessionHeader; events: readonly SessionEvent[] }
   try {
-    inspected = await persistence.inspect(childId, signal)
+    inspected = await persistence.inspect(childId, signal, header.ownerUserId)
   } catch {
     // Per-child isolation: the child vanished or its backend read failed —
     // one diagnostic row, and the listing itself still succeeds.

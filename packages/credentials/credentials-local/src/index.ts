@@ -47,6 +47,7 @@ import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import { CredentialProvider, credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialInfo, CredentialRef, ResolvedCredential } from '@deepseek-ai/dsh-credentials'
 import type { LaunchEnvironmentEntry } from '@deepseek-ai/dsh-launch-environment'
+import type {} from '@deepseek-ai/dsh-ownership'
 
 /** Basename of the credentials document inside the harness home. */
 export const CREDENTIALS_FILENAME = '.credentials.yaml'
@@ -306,22 +307,33 @@ export class LocalCredentialProvider extends CredentialProvider {
     /* jscpd:ignore-end */
   }
 
-  override resolve(ref: CredentialRef): Promise<ResolvedCredential | undefined> {
+  override async resolve(ref: CredentialRef): Promise<ResolvedCredential | undefined> {
     const inherited = this.inherited(ref)
-    if (inherited !== undefined) return Promise.resolve({ value: inherited, source: 'env' })
+    if (inherited !== undefined) return { value: inherited, source: 'env' }
+    const userFile = await this.userCredentialPath()
+    if (userFile !== undefined && !this.isDeploymentRef(ref)) {
+      const userValue = (await this.readUserValues(userFile)).get(ref)
+      if (userValue !== undefined) return { value: userValue, source: 'user-file' }
+    }
     const stored = this.values.get(ref)
-    if (stored !== undefined) return Promise.resolve({ value: stored, source: 'file' })
+    if (stored !== undefined) return { value: stored, source: 'file' }
     const fallback = this.dotenvFallback(ref)
-    if (fallback !== undefined) return Promise.resolve({ value: fallback.value, source: fallback.source })
-    return Promise.resolve(undefined)
+    if (fallback !== undefined) return { value: fallback.value, source: fallback.source }
+    return undefined
   }
 
-  override describe(ref: CredentialRef): Promise<CredentialInfo> {
+  override async describe(ref: CredentialRef): Promise<CredentialInfo> {
     // Only the inherited environment is unwritable: it is the one layer this
     // process cannot edit. A user `.env` value is writable in the sense that
     // matters — storing a key replaces it as the effective one.
     if (this.inherited(ref) !== undefined) {
       return Promise.resolve({ configured: true, source: 'env', writable: false })
+    }
+    const userFile = await this.userCredentialPath()
+    if (userFile !== undefined && !this.isDeploymentRef(ref)) {
+      if ((await this.readUserValues(userFile)).has(ref)) {
+        return { configured: true, source: 'user-file', writable: true }
+      }
     }
     const stored = this.values.get(ref)
     if (stored !== undefined) return Promise.resolve({ configured: true, source: 'file', writable: true })
@@ -334,11 +346,62 @@ export class LocalCredentialProvider extends CredentialProvider {
     if (value.length === 0) {
       throw new Error(`credentials-local: an empty value cannot be stored for "${ref}"; use unset`)
     }
+    if (this.isDeploymentRef(ref) && this.ctx.root.get('ownership')?.currentPrincipalOrUndefined() !== undefined) {
+      throw new Error(`credentials-local: deployment credential "${ref}" cannot be managed by a user`)
+    }
+    const userFile = await this.userCredentialPath()
+    if (userFile !== undefined) return this.writeUser(userFile, ref, value)
     await this.write(ref, value)
   }
 
   override async unset(ref: CredentialRef): Promise<void> {
+    if (this.isDeploymentRef(ref) && this.ctx.root.get('ownership')?.currentPrincipalOrUndefined() !== undefined) {
+      throw new Error(`credentials-local: deployment credential "${ref}" cannot be managed by a user`)
+    }
+    const userFile = await this.userCredentialPath()
+    if (userFile !== undefined) return this.writeUser(userFile, ref, undefined)
     await this.write(ref, undefined)
+  }
+
+  /** Resolve the current authenticated user's application-credential document. */
+  private async userCredentialPath(): Promise<string | undefined> {
+    const ownership = this.ctx.root.get('ownership')
+    const principal = ownership?.currentPrincipalOrUndefined()
+    if (ownership === undefined || principal === undefined) return undefined
+    return (await ownership.resolveUserHome(principal)).path('credentials', 'application.yaml')
+  }
+
+  /** Read one user credential document without consulting another user's state. */
+  private async readUserValues(filename: string): Promise<Map<string, string>> {
+    await assertOwnerOnly(filename)
+    try {
+      return parseCredentialsDocument(await readFile(filename, 'utf8'), filename)
+    } catch (error) {
+      if (isENOENT(error)) return new Map()
+      throw error
+    }
+  }
+
+  /** Atomically edit one authenticated user's application credential. */
+  private async writeUser(filename: string, ref: CredentialRef, value: string | undefined): Promise<void> {
+    const verb = value === undefined ? 'unset' : 'set'
+    this.assertUnshadowed(ref, verb)
+    await mkdir(dirname(filename), { recursive: true, mode: 0o700 })
+    await withFileLock(filename, async () => {
+      // Re-judged under the lock: the environment may have changed while it waited.
+      this.assertUnshadowed(ref, verb)
+      let text: string | undefined
+      try {
+        await assertOwnerOnly(filename)
+        text = await readFile(filename, 'utf8')
+        parseCredentialsDocument(text, filename)
+      } catch (error) {
+        if (!isENOENT(error)) throw error
+      }
+      const output = renderDocument(text, ref, value)
+      await writeFileAtomic(filename, output, { mode: 0o600, dirMode: 0o700 })
+      this.notifyUpdated(ref)
+    })
   }
 
   /* jscpd:ignore-start -- the operation-chain and reload lifecycle is the same

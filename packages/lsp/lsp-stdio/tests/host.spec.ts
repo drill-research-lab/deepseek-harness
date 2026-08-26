@@ -8,6 +8,8 @@ import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
+import SandboxedFileSystem from '@deepseek-ai/dsh-fs-sandbox'
+import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
 import { deadline } from '@deepseek-ai/dsh-timeout'
 import { canonicalizeWorkspace, readHostSource } from '@deepseek-ai/dsh-lsp-stdio'
 
@@ -85,6 +87,30 @@ describe('canonicalizeWorkspace', () => {
 })
 
 describe('readHostSource', () => {
+  it('reads only the trusted workspace when fs-sandbox has an unrelated fallback root', async () => {
+    const fallback = join(root, 'fallback')
+    const outside = join(root, 'outside.ts')
+    await mkdir(fallback)
+    await writeFile(join(ws, 'trusted.ts'), 'trusted')
+    await writeFile(outside, 'outside')
+    const confinedCtx = new Context()
+    try {
+      await confinedCtx.plugin(SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: fallback })
+      await confinedCtx.plugin(SandboxedFileSystem, { cwd: fallback })
+      const confinedFs = confinedCtx.fs as SandboxedFileSystem
+      const confinedWorkspace = await canonicalizeWorkspace(confinedFs, ws)
+
+      await expect(readHostSource(confinedFs, 'trusted.ts', confinedWorkspace, BIG))
+        .resolves.toMatchObject({ text: 'trusted' })
+      await expect(readHostSource(confinedFs, outside, confinedWorkspace, BIG))
+        .rejects.toThrow(/outside the workspace/)
+      await expect(confinedFs.readText(await confinedFs.resolve(join(ws, 'trusted.ts'))))
+        .rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+    } finally {
+      await confinedCtx.fiber.dispose()
+    }
+  })
+
   it('reads a relative path against the workspace', async () => {
     await writeFile(join(ws, 'a.ts'), 'const x = 1\n')
     const source = await readSource('a.ts')

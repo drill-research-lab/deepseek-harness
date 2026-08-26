@@ -150,7 +150,7 @@ describe('session.create with an agent preset', () => {
     const created = await api.sessions.create(request({ sessionId: SessionId('s1'), agentPreset: 'minimal' }))
 
     expect(created.result.ok).toBe(true)
-    expect(ctx.sessions.get(SessionId('s1'))?.header.agentPreset).toBe('minimal')
+    expect(ctx.sessions.get(SessionId('s1'), 'trusted-internal')?.header.agentPreset).toBe('minimal')
   })
 
   it('records the default when the caller names none', async () => {
@@ -158,7 +158,7 @@ describe('session.create with an agent preset', () => {
 
     await api.sessions.create(request({ sessionId: SessionId('s2') }))
 
-    expect(ctx.sessions.get(SessionId('s2'))?.header.agentPreset).toBe('standard')
+    expect(ctx.sessions.get(SessionId('s2'), 'trusted-internal')?.header.agentPreset).toBe('standard')
   })
 
   it('rejects an unknown preset and names the ones that exist', async () => {
@@ -192,7 +192,7 @@ describe('session.create with an agent preset', () => {
     await api.sessions.create(request({ sessionId: SessionId('s4b'), agentPreset: 'standard' }))
     // Exactly what `agentPreset.select` leaves behind on a blank session: the
     // header keeps the creation fact, the log states what the agent runs.
-    ctx.sessions.get(SessionId('s4b'))?.append('agent-preset/selected', { agentPreset: 'minimal' })
+    ctx.sessions.get(SessionId('s4b'), 'trusted-internal')?.append('agent-preset/selected', { agentPreset: 'minimal' })
 
     const adopted = await api.sessions.create(request({ sessionId: SessionId('s4b'), agentPreset: 'minimal' }))
     const stale = await api.sessions.create(request({ sessionId: SessionId('s4b'), agentPreset: 'standard' }))
@@ -225,7 +225,7 @@ describe('session.create with an agent preset', () => {
 
     await api.sessions.create(request({ sessionId: SessionId('s6') }))
 
-    expect(ctx.sessions.get(SessionId('s6'))?.header.agentPreset).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('s6'), 'trusted-internal')?.header.agentPreset).toBeUndefined()
   })
 
   it('says why a preset-less session cannot be adopted under one', async () => {
@@ -364,7 +364,7 @@ describe('agentPreset.select', () => {
     // The header is written once at creation, so the switch lives in the log —
     // this is what a restart replays and what every projection resolves from.
     // Asserting only the RPC's echo would miss a switch that never persisted.
-    const session = ctx.sessions.get(SessionId('sel-log'))
+    const session = ctx.sessions.get(SessionId('sel-log'), 'trusted-internal')
     if (session === undefined) throw new Error('unreachable')
     expect(session.header.agentPreset).toBe('standard')
     expect(resolveSessionPreset(session)).toBe('minimal')
@@ -421,7 +421,7 @@ describe('agentPreset.select', () => {
 
     expect(first.result.ok).toBe(true)
     expect(second.result.ok).toBe(true)
-    const session = ctx.sessions.get(SessionId('sel-race'))
+    const session = ctx.sessions.get(SessionId('sel-race'), 'trusted-internal')
     if (session === undefined) throw new Error('unreachable')
     // One winner, and the log agrees with it: the last committed switch.
     expect(resolveSessionPreset(session)).toBe('standard')
@@ -432,7 +432,7 @@ describe('agentPreset.select', () => {
     await api.sessions.create(request({ sessionId: SessionId('sel-2'), agentPreset: 'standard' }))
     // One turn is enough: the history from here on was produced under
     // `standard`'s tools, and a swap would strand those tool calls.
-    ctx.sessions.get(SessionId('sel-2'))?.append('turn/start', { turn: 0 })
+    ctx.sessions.get(SessionId('sel-2'), 'trusted-internal')?.append('turn/start', { turn: 0 })
 
     const response = await api.agentPresets.select(
       request({ sessionId: SessionId('sel-2'), agentPreset: 'minimal' }))
@@ -634,7 +634,7 @@ describe('skills over the layered host registry', () => {
     const response = await api.skills.list(request({ sessionId: SessionId('h1') }))
 
     expect(response.result).toMatchObject({ ok: true, value: { skills: [] } })
-    expect(seen).toEqual([ctx.agents.get(SessionId('h1'))])
+    expect(seen).toEqual([ctx.agents.get(SessionId('h1'), 'trusted-internal')])
   })
 
   it('resolves a cold session to its recorded preset standing key', async () => {

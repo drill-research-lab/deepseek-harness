@@ -1,5 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-agent'
+import { ownedAgent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-cordis-host-runner'
 
 export const name = 'cordis-host-only-approval'
@@ -11,7 +11,7 @@ export function apply(ctx: Context): void {
   ctx.on('cordis/request-run', (request) => {
     if (request.hasClientHalf) return
     void (async (): Promise<void> => {
-      const agent = ctx.agents.get(request.agentId)
+      const agent = ownedAgent(ctx, request.agentId)
       if (agent === undefined) throw new Error(`snapshot approval cannot find Agent ${request.agentId}`)
       const started = await ctx.dynamicCordisRunner.runHostHalf(
         agent,

@@ -29,7 +29,7 @@ function validate(events: readonly SessionEvent[], seedLength: number, fail: Inv
 /* jscpd:ignore-start -- package companions share replay and dispatch plumbing */
 /** Install replay and pre-append validation for the owned event stream. */
 const install: InvariantInstaller = Object.assign((ctx: Context, fail: InvariantFailure) => {
-  for (const session of ctx.sessions.list()) {
+  for (const session of ctx.sessions.list('trusted-internal')) {
     validate(session.events, session.header.seedLength ?? 0, fail)
   }
   ctx.on('session/created', (session) => {

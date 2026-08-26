@@ -4,9 +4,18 @@
  * @module @deepseek-ai/dsh-sandbox-local/profiles
  */
 
+import { isAbsolute } from 'node:path'
 import { grantArgs as landlockGrantArgs } from '@deepseek-ai/node-addon-landlock-run'
 import { writableRoots } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
+
+/**
+ * System roots required to execute dynamically linked programs under
+ * Landlock. `/usr` owns merged-usr binaries, loaders, libraries, and locale;
+ * the remaining file and directory resolve the dynamic-loader cache and
+ * alternatives selected by those programs.
+ */
+export const LANDLOCK_SYSTEM_READ_ROOTS = ['/usr', '/etc/ld.so.cache', '/etc/alternatives'] as const
 
 /**
  * Build the bwrap profile arguments for one file-effect policy.
@@ -25,14 +34,24 @@ export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
 /**
  * Build the Landlock launcher grants for one file-effect policy.
  * @param policy - file-effect policy to express as Landlock allow-list grants.
+ * @param executable - exact outer consumer executable; an absolute packaged
+ *   binary outside `/usr` and the workspace needs a file-only read grant to
+ *   reach `execve`. The landlock-run CLI contract guarantees that a
+ *   non-directory grant applies to that file alone, never its parent
+ *   directory tree.
  * @returns launcher grant arguments before the trailing separator and command argv.
  */
-export function landlockProfileArgs(policy: SandboxPolicy): string[] {
+export function landlockProfileArgs(policy: SandboxPolicy, executable?: string): string[] {
+  const readOnly = [
+    ...LANDLOCK_SYSTEM_READ_ROOTS,
+    policy.workspaceRoot,
+    ...executable !== undefined && isAbsolute(executable) ? [executable] : [],
+  ]
   const readWrite = ['/dev/null']
   if (policy.mode === 'workspace-write') {
     readWrite.push('/tmp', policy.workspaceRoot)
   }
-  return landlockGrantArgs({ readOnly: ['/'], readWrite })
+  return landlockGrantArgs({ readOnly, readWrite })
 }
 
 /** Quote one path as an SBPL string literal. */

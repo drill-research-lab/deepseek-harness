@@ -19,6 +19,15 @@
       "path": "../spill"
     },
     {
+      "path": "../../identity/ownership"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
+      "path": "../../session/session-persistence"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     }
   ]

@@ -9,6 +9,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { Context, Service, type Fiber } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-ownership'
 import type SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import type {
   SessionPersistenceRevision,
@@ -164,6 +165,7 @@ interface SessionHeaderRow {
   session_id: string
   version: number
   created_at: number
+  owner_user_id: string | null
   cwd: string | null
   parent_session: string | null
   seed_length: number | null
@@ -488,13 +490,13 @@ export class SqliteSessionQueryEngine extends SessionQueryEngine {
       assertNotAborted(signal)
       const persistenceBinding = this._persistenceBinding
       const persistence = persistenceBinding.service
-      const initiallyLive = new Set(this.ctx.sessions.list().map(session => session.id))
+      const initiallyLive = new Set(this.ctx.sessions.list('trusted-internal').map(session => session.id))
       let persisted = new Map<SessionId, ObservedPersistedSession>()
       if (persistence !== undefined) {
         try {
           const canReuseIndexed = this._lastPersistenceIdentity === undefined
             || this._lastPersistenceIdentity === persistenceBinding.identity
-          const before = await persistence.listSnapshots(signal)
+          const before = this._ownedSnapshots(await persistence.listSnapshots(signal))
           assertNotAborted(signal)
           persisted = materializePersistenceSnapshots(before)
           for (const entry of persisted.values()) {
@@ -503,7 +505,7 @@ export class SqliteSessionQueryEngine extends SessionQueryEngine {
             // non-mutating, so an owner attaching after this check cannot cause
             // crash-repair side effects; the live-membership retry below makes
             // the returned observation live-preferred.
-            if (initiallyLive.has(entry.header.id) || this.ctx.sessions.get(entry.header.id) !== undefined) continue
+            if (initiallyLive.has(entry.header.id) || this.ctx.sessions.get(entry.header.id, 'trusted-internal') !== undefined) continue
             assertNotAborted(signal)
             const loaded = await persistence.inspect(entry.header.id, signal)
             assertNotAborted(signal)
@@ -511,7 +513,7 @@ export class SqliteSessionQueryEngine extends SessionQueryEngine {
             entry.loaded = observeSession(loaded.meta, loaded.events)
           }
           assertNotAborted(signal)
-          const afterSnapshots = await persistence.listSnapshots(signal)
+          const afterSnapshots = this._ownedSnapshots(await persistence.listSnapshots(signal))
           assertNotAborted(signal)
           const after = materializePersistenceSnapshots(afterSnapshots)
           if (!samePersistenceSnapshots(persisted, after)) continue
@@ -532,7 +534,7 @@ export class SqliteSessionQueryEngine extends SessionQueryEngine {
         }
       }
       const live = new Map<SessionId, ObservedSession>()
-      for (const session of this.ctx.sessions.list()) {
+      for (const session of this.ctx.sessions.list('trusted-internal')) {
         const observed = observeLive(session)
         const durable = persisted.get(session.id)
         if (durable !== undefined) assertSessionHeadersCompatible(observed.header, durable.header)
@@ -545,6 +547,13 @@ export class SqliteSessionQueryEngine extends SessionQueryEngine {
       'session-search persistence observation did not stabilize after one retry',
       'SESSION_QUERY_PERSISTENCE_FAILED',
     )
+  }
+
+  /** Select the authenticated owner's metadata before loading any indexed log. */
+  private _ownedSnapshots(snapshots: readonly SessionPersistenceSnapshot[]): SessionPersistenceSnapshot[] {
+    const ownerUserId = this.ctx.root.get('ownership')?.currentPrincipalOrUndefined()?.userId
+    if (ownerUserId === undefined) return [...snapshots]
+    return snapshots.filter(snapshot => snapshot.header.ownerUserId === ownerUserId)
   }
 
   private _mainGeneration(): number {
@@ -574,8 +583,8 @@ export class SqliteSessionQueryEngine extends SessionQueryEngine {
     const db = this._requireDb()
     db.prepare(`
       INSERT INTO persisted_sessions
-        (id, version, created_at, cwd, parent_session, seed_length, delegation_depth, agent_preset, revision, generation)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, version, created_at, owner_user_id, cwd, parent_session, seed_length, delegation_depth, agent_preset, revision, generation)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       ...headerBindings(entry.header),
       revision,
@@ -604,8 +613,8 @@ export class SqliteSessionQueryEngine extends SessionQueryEngine {
     const db = this._requireDb()
     db.prepare(`
       INSERT INTO temp.live_sessions
-        (id, version, created_at, cwd, parent_session, seed_length, delegation_depth, agent_preset, fingerprint, persisted, generation)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, version, created_at, owner_user_id, cwd, parent_session, seed_length, delegation_depth, agent_preset, fingerprint, persisted, generation)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       ...headerBindings(entry.header),
       entry.fingerprint,
@@ -641,7 +650,11 @@ export class SqliteSessionQueryEngine extends SessionQueryEngine {
     assertFts5OuterPredicateCount(sessionWhere.predicateCount + eventWhere.predicateCount)
     const where = [sessionWhere.sql, eventWhere.sql].filter(Boolean).join(' AND ')
     const bindings = [
-      ...selectedDocumentsParams(request.query, persistenceBinding.service !== undefined),
+      ...selectedDocumentsParams(
+        request.query,
+        persistenceBinding.service !== undefined,
+        this.ctx.root.get('ownership')?.currentPrincipalOrUndefined()?.userId,
+      ),
       ...sessionWhere.params,
       ...eventWhere.params,
       request.limit + 1,
@@ -679,7 +692,11 @@ export class SqliteSessionQueryEngine extends SessionQueryEngine {
     assertFts5OuterPredicateCount(1 + eventWhere.predicateCount)
     const where = ['session_id = ?', eventWhere.sql].filter(Boolean).join(' AND ')
     const bindings = [
-      ...selectedDocumentsParams(request.query, persistenceBinding.service !== undefined),
+      ...selectedDocumentsParams(
+        request.query,
+        persistenceBinding.service !== undefined,
+        this.ctx.root.get('ownership')?.currentPrincipalOrUndefined()?.userId,
+      ),
       request.sessionId,
       ...eventWhere.params,
       request.limit + 1,
@@ -700,22 +717,24 @@ export class SqliteSessionQueryEngine extends SessionQueryEngine {
     persistenceBinding: PersistenceBinding,
   ): { header: SessionHeader; generation: string } {
     const db = this._requireDb()
+    const ownerUserId = this.ctx.root.get('ownership')?.currentPrincipalOrUndefined()?.userId
+    const ownerBindings = ownerUserId === undefined ? [0, ''] as const : [1, ownerUserId] as const
     const live = db.prepare(
       `SELECT
-        id AS session_id, version, created_at, cwd, parent_session, seed_length, delegation_depth, agent_preset, generation
+        id AS session_id, version, created_at, owner_user_id, cwd, parent_session, seed_length, delegation_depth, agent_preset, generation
       FROM temp.live_sessions
-      WHERE id = ?`,
-    ).get(sessionId) as (SessionHeaderRow & { generation: number }) | undefined
+      WHERE id = ? AND (? = 0 OR owner_user_id = ?)`,
+    ).get(sessionId, ...ownerBindings) as (SessionHeaderRow & { generation: number }) | undefined
     if (live !== undefined) {
       return { header: rowHeader(live), generation: `live:${live.generation}` }
     }
     if (persistenceBinding.service !== undefined) {
       const persisted = db.prepare(
         `SELECT
-          id AS session_id, version, created_at, cwd, parent_session, seed_length, delegation_depth, agent_preset, generation
+          id AS session_id, version, created_at, owner_user_id, cwd, parent_session, seed_length, delegation_depth, agent_preset, generation
         FROM persisted_sessions
-        WHERE id = ?`,
-      ).get(sessionId) as (SessionHeaderRow & { generation: number }) | undefined
+        WHERE id = ? AND (? = 0 OR owner_user_id = ?)`,
+      ).get(sessionId, ...ownerBindings) as (SessionHeaderRow & { generation: number }) | undefined
       if (persisted !== undefined) {
         return {
           header: rowHeader(persisted),
@@ -771,6 +790,7 @@ function headerBindings(header: SessionHeader): (string | number | null)[] {
     header.id,
     header.version,
     header.createdAt,
+    header.ownerUserId ?? null,
     header.cwd ?? null,
     header.parentSession ?? null,
     header.seedLength ?? null,
@@ -786,6 +806,7 @@ function selectedDocumentsSql(): { sql: string } {
         pd.session_id AS session_id,
         ps.version AS version,
         ps.created_at AS created_at,
+        ps.owner_user_id AS owner_user_id,
         ps.cwd AS cwd,
         ps.parent_session AS parent_session,
         ps.seed_length AS seed_length,
@@ -803,12 +824,14 @@ function selectedDocumentsSql(): { sql: string } {
       JOIN persisted_sessions AS ps ON ps.id = pd.session_id
       WHERE persisted_docs MATCH ?
         AND ? = 1
+        AND (? = 0 OR ps.owner_user_id = ?)
         AND NOT EXISTS (SELECT 1 FROM temp.live_sessions AS ls WHERE ls.id = pd.session_id)
       UNION ALL
       SELECT
         ld.session_id AS session_id,
         ls.version AS version,
         ls.created_at AS created_at,
+        ls.owner_user_id AS owner_user_id,
         ls.cwd AS cwd,
         ls.parent_session AS parent_session,
         ls.seed_length AS seed_length,
@@ -825,6 +848,7 @@ function selectedDocumentsSql(): { sql: string } {
       FROM temp.live_docs AS ld
       JOIN temp.live_sessions AS ls ON ls.id = ld.session_id
       WHERE live_docs MATCH ?
+        AND (? = 0 OR ls.owner_user_id = ?)
     ), matched AS (
       SELECT *,
         (
@@ -836,18 +860,28 @@ function selectedDocumentsSql(): { sql: string } {
   }
 }
 
-function selectedDocumentsParams(query: string, persistenceVisible: boolean): Array<string | number> {
+function selectedDocumentsParams(
+  query: string,
+  persistenceVisible: boolean,
+  ownerUserId: SessionHeader['ownerUserId'] | undefined,
+): Array<string | number> {
   const expression = quoteFtsData(query)
   const visible = persistenceVisible ? 1 : 0
+  const ownerEnabled = ownerUserId === undefined ? 0 : 1
+  const owner = ownerUserId ?? ''
   return [
     FTS_HIGHLIGHT_START,
     FTS_HIGHLIGHT_END,
     expression,
     visible,
+    ownerEnabled,
+    owner,
     visible,
     FTS_HIGHLIGHT_START,
     FTS_HIGHLIGHT_END,
     expression,
+    ownerEnabled,
+    owner,
     FTS_HIGHLIGHT_START,
     Buffer.byteLength(FTS_HIGHLIGHT_START, 'utf8'),
   ]
@@ -918,6 +952,7 @@ function sameHeader(a: SessionHeader, b: SessionHeader): boolean {
   return a.version === b.version
     && a.id === b.id
     && a.createdAt === b.createdAt
+    && a.ownerUserId === b.ownerUserId
     && a.cwd === b.cwd
     && a.parentSession === b.parentSession
     && a.seedLength === b.seedLength
@@ -930,6 +965,7 @@ function rowHeader(row: SessionHeaderRow): SessionHeader {
     version: row.version,
     id: row.session_id as SessionId,
     createdAt: row.created_at,
+    ...row.owner_user_id === null ? {} : { ownerUserId: row.owner_user_id as NonNullable<SessionHeader['ownerUserId']> },
     ...row.cwd === null ? {} : { cwd: row.cwd },
     ...row.parent_session === null ? {} : { parentSession: row.parent_session as SessionId },
     ...row.seed_length === null ? {} : { seedLength: row.seed_length },

@@ -335,9 +335,12 @@ abstract contains(parent: FsTarget, child: FsTarget): boolean
  * Return target metadata, or `undefined` when the target does not exist.
  * @param target - the resolved target to stat.
  * @param signal - aborts the metadata round-trip.
+ * @param sandboxPolicy - the per-call mode and workspace root this read runs
+ *   under; a sandboxing backend fences the read by it, the bare backend
+ *   ignores it. Omit to leave the backend its own default.
  * @returns metadata only, never content; undefined for an absent target.
  */
-abstract stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined>
+abstract stat( target: FsTarget, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy, ): Promise<FsInfo | undefined>
 
 /**
  * Return path metadata without following the final path component when it is a
@@ -351,17 +354,23 @@ abstract stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefine
  * @param path - the path to inspect; relative paths resolve against `opts.cwd`.
  * @param opts - `cwd` overrides the backend's default base for relative paths.
  * @param signal - aborts the metadata round-trip.
+ * @param sandboxPolicy - the per-call mode and workspace root this read runs
+ *   under; a sandboxing backend fences the path by it without following its
+ *   final component, while the bare backend ignores it.
  * @returns metadata only, never content; undefined for an absent path.
  */
-abstract lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined>
+abstract lstat( path: string, opts?: { cwd?: string }, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy, ): Promise<FsPathInfo | undefined>
 
 /**
  * Read the whole regular text file as a single decoded string.
  * @param target - the resolved target to read.
  * @param signal - aborts the read.
+ * @param sandboxPolicy - the per-call mode and workspace root this read runs
+ *   under; a sandboxing backend fences the read by it, the bare backend
+ *   ignores it.
  * @returns the full decoded UTF-8 content.
  */
-abstract readText(target: FsTarget, signal?: AbortSignal): Promise<string>
+abstract readText( target: FsTarget, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy, ): Promise<string>
 
 /**
  * Stream the whole regular text file as decoded text chunks (same text
@@ -370,9 +379,12 @@ abstract readText(target: FsTarget, signal?: AbortSignal): Promise<string>
  * touches raw bytes.
  * @param target - the resolved target to read.
  * @param signal - aborts the stream, including between chunks.
+ * @param sandboxPolicy - the per-call mode and workspace root this read runs
+ *   under; a sandboxing backend fences the read by it, the bare backend
+ *   ignores it.
  * @returns the chunk iterable, decoded and validated like {@link readText}.
  */
-abstract streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterable<string>>
+abstract streamText( target: FsTarget, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy, ): Promise<AsyncIterable<string>>
 
 /**
  * Read the whole regular file as raw bytes with no decoding or binary
@@ -382,18 +394,24 @@ abstract streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterab
  * @param target - the resolved target to read.
  * @param signal - aborts the read.
  * @param maxBytes - inclusive byte cap on the complete content.
+ * @param sandboxPolicy - the per-call mode and workspace root this read runs
+ *   under; a sandboxing backend fences the read by it, the bare backend
+ *   ignores it.
  * @returns the full raw content, at most `maxBytes` long.
  */
-abstract readBytes(target: FsTarget, signal: AbortSignal | undefined, maxBytes: number): Promise<Uint8Array>
+abstract readBytes( target: FsTarget, signal: AbortSignal | undefined, maxBytes: number, sandboxPolicy?: SandboxExecutionPolicy, ): Promise<Uint8Array>
 
 /**
  * List direct children of a directory in stable name order. Returns resolved
  * child targets plus cheap metadata only; never reads file contents.
  * @param target - the resolved directory target.
  * @param signal - aborts the listing.
+ * @param sandboxPolicy - the per-call mode and workspace root this read runs
+ *   under; a sandboxing backend fences the read by it, the bare backend
+ *   ignores it.
  * @returns one entry per direct child, in stable name order.
  */
-abstract listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]>
+abstract listDir( target: FsTarget, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy, ): Promise<FsDirEntry[]>
 
 /**
  * Atomically create or replace UTF-8 text. `expected` guards intent and
@@ -427,7 +445,7 @@ abstract editText( target: FsTarget, edit: FsEditRequest, expected?: { version: 
 
 Types: [SandboxExecutionPolicy](sandbox.md)
 
-Source: [`packages/fs/fs/src/index.ts:86`](../../packages/fs/fs/src/index.ts)
+Source: [`packages/fs/fs/src/index.ts:99`](../../packages/fs/fs/src/index.ts)
 
 <a id="fs-events"></a>
 
@@ -450,7 +468,7 @@ Single-slot decision for the next FileSystem.editText. Calling `next()` yields a
 'fs/edit-intent'(target: FsTarget, actor: object | undefined, next: () => { version: FsVersion } | undefined | Promise<{ version: FsVersion } | undefined>): Promise<{ version: FsVersion } | undefined>
 ```
 
-Source: [`packages/fs/fs/src/index.ts:66`](../../packages/fs/fs/src/index.ts)
+Source: [`packages/fs/fs/src/index.ts:79`](../../packages/fs/fs/src/index.ts)
 
 <a id="fsobserved--emit"></a>
 
@@ -471,7 +489,7 @@ Record an authoritative positive or negative observation. Listeners must be sync
 'fs/observed'(target: FsTarget, observation: FsObservation, actor: object | undefined): void
 ```
 
-Source: [`packages/fs/fs/src/index.ts:76`](../../packages/fs/fs/src/index.ts)
+Source: [`packages/fs/fs/src/index.ts:89`](../../packages/fs/fs/src/index.ts)
 
 <a id="fswrite-intent--waterfall"></a>
 
@@ -491,5 +509,5 @@ Single-slot decision for the next FileSystem.writeText. Calling `next()` yields 
 'fs/write-intent'(target: FsTarget, actor: object | undefined, next: () => FsWriteIntent | undefined | Promise<FsWriteIntent | undefined>): Promise<FsWriteIntent | undefined>
 ```
 
-Source: [`packages/fs/fs/src/index.ts:58`](../../packages/fs/fs/src/index.ts)
+Source: [`packages/fs/fs/src/index.ts:71`](../../packages/fs/fs/src/index.ts)
 <!-- END GENERATED cordis-surface -->

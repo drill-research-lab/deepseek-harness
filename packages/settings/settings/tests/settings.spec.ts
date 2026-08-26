@@ -167,6 +167,17 @@ describe('registration', () => {
     expect(serialized.refs[String(serialized.uid)]?.type).toBe('object')
   })
 
+  it('resolves the current owner document on every describe call', async () => {
+    const { ctx, provider } = await boot()
+    const ns = settingsNamespace('ui-theme')
+    ctx.settings.register(ns, ThemeSchema, { base: { fontSize: 16 } })
+
+    provider.replaceDocumentOnly({ 'ui-theme': { theme: 'light' } })
+
+    expect(ctx.settings.describe().find(entry => entry.ns === ns)?.value)
+      .toEqual({ theme: 'light', fontSize: 16 })
+  })
+
   it('reads undefined for an unregistered namespace', async () => {
     const { ctx } = await boot()
     expect(ctx.settings.get(settingsNamespace('missing'))).toBeUndefined()

@@ -89,7 +89,7 @@ describe('ACP prompt lifecycle', () => {
   it('rejects a turn-start failure before the prompt is claimed', async () => {
     harness = await makeBridgeHarness({ script: [textResponse('must not run')] })
     const sessionId = await newSession(harness)
-    const agent = harness.ctx.agents.get(SessionId(sessionId))!
+    const agent = harness.ctx.agents.get(SessionId(sessionId), 'trusted-internal')!
     const append = agent.session.append.bind(agent.session)
     vi.spyOn(agent.session, 'append').mockImplementation(((type: string, ...rest: never[]) => {
       if (type === 'turn/start') throw new Error('turn start unavailable')
@@ -114,7 +114,7 @@ describe('ACP prompt lifecycle', () => {
   it('correlates the owning prompt when a synchronous injection joins its first step', async () => {
     harness = await makeBridgeHarness({ script: [textResponse('real answer')] })
     const sessionId = await newSession(harness)
-    const agent = harness.ctx.agents.get(SessionId(sessionId))!
+    const agent = harness.ctx.agents.get(SessionId(sessionId), 'trusted-internal')!
     let injected = false
     harness.ctx.on('agent/inbox/inserted', ({ agent: subject, message }) => {
       if (subject === agent && message.source.kind === 'user' && !injected) {
@@ -131,7 +131,7 @@ describe('ACP prompt lifecycle', () => {
   it('ignores an autonomous message turn while correlating the client turn', async () => {
     harness = await makeBridgeHarness({ script: ['hang'] })
     const sessionId = await newSession(harness)
-    const agent = harness.ctx.agents.get(SessionId(sessionId))!
+    const agent = harness.ctx.agents.get(SessionId(sessionId), 'trusted-internal')!
     let autonomousStarted!: () => void
     const started = new Promise<void>((resolve) => { autonomousStarted = resolve })
     harness.ctx.on('session/event', (session, event) => {
@@ -187,7 +187,7 @@ describe('ACP prompt lifecycle', () => {
     harness = await makeBridgeHarness({ script: ['hang'] })
     const sessionId = await newSession(harness)
     const first = harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'one' }] })
-    await vi.waitFor(() => { expect(harness!.ctx.agents.get(SessionId(sessionId))?.status).toBe('running') })
+    await vi.waitFor(() => { expect(harness!.ctx.agents.get(SessionId(sessionId), 'trusted-internal')?.status).toBe('running') })
     await expect(harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'two' }] }))
       .rejects.toThrow(/already in flight/)
     await harness.client.cancel({ sessionId })
@@ -198,7 +198,7 @@ describe('ACP prompt lifecycle', () => {
     harness = await makeBridgeHarness({ script: ['hang'] })
     const sessionId = await newSession(harness)
     const prompt = harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'go' }] })
-    const agent = harness.ctx.agents.get(SessionId(sessionId))!
+    const agent = harness.ctx.agents.get(SessionId(sessionId), 'trusted-internal')!
     await vi.waitFor(() => { expect(agent.status).toBe('running') })
     await harness.client.cancel({ sessionId })
     await expect(prompt).resolves.toEqual({ stopReason: 'cancelled' })
@@ -211,7 +211,7 @@ describe('ACP prompt lifecycle', () => {
     harness = await makeBridgeHarness({ script: ['hang'] })
     const sessionId = await newSession(harness)
     const prompt = harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'go' }] })
-    const agent = harness.ctx.agents.get(SessionId(sessionId))!
+    const agent = harness.ctx.agents.get(SessionId(sessionId), 'trusted-internal')!
     await vi.waitFor(() => { expect(agent.status).toBe('running') })
     // A hook or another owner cancels the agent: the ACP client never called
     // session/cancel, so this is ordinary quiescence and reports end_turn.
@@ -222,7 +222,7 @@ describe('ACP prompt lifecycle', () => {
   it('cancels autonomous running work without an in-flight prompt', async () => {
     harness = await makeBridgeHarness({ script: ['hang'] })
     const sessionId = await newSession(harness)
-    const agent = harness.ctx.agents.get(SessionId(sessionId))!
+    const agent = harness.ctx.agents.get(SessionId(sessionId), 'trusted-internal')!
     agent.followup(createUserMessage({
       content: [{ type: 'text', text: 'autonomous work' }],
       source: { kind: 'plugin', plugin: 'test' },
@@ -251,7 +251,7 @@ describe('ACP prompt lifecycle', () => {
     harness = await makeBridgeHarness({ script: ['hang', textResponse('next')] })
     const sessionId = await newSession(harness)
     const first = harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'one' }] })
-    await vi.waitFor(() => { expect(harness!.ctx.agents.get(SessionId(sessionId))?.status).toBe('running') })
+    await vi.waitFor(() => { expect(harness!.ctx.agents.get(SessionId(sessionId), 'trusted-internal')?.status).toBe('running') })
     await harness.client.cancel({ sessionId })
     await expect(first).resolves.toEqual({ stopReason: 'cancelled' })
 

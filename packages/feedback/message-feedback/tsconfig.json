@@ -27,6 +27,9 @@
       "path": "../../core/session"
     },
     {
+      "path": "../../identity/auth"
+    },
+    {
       "path": "../../session/session-persistence"
     },
     {

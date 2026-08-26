@@ -184,6 +184,18 @@ export interface Config {
    * configured root. False mounts a roster over `roots` alone.
    */
   includeUserRoot: boolean
+  /**
+   * Production capability policy: when set, `list()` (and therefore
+   * `resolve()`/`mount()`, which read `list()`) only ever sees these ids —
+   * everything else reads exactly like an unconfigured id, not like a
+   * distinguishable "blocked" state. This deliberately reuses
+   * {@link UnknownPresetError} rather than a separate error: a caller
+   * probing for a disallowed preset must not be able to distinguish "exists
+   * but is not approved for this deployment" from "does not exist," the same
+   * not-found-not-403 posture this harness already applies to cross-owner
+   * resource access. Undefined preserves the unrestricted upstream roster.
+   */
+  approvedIds?: readonly string[]
 }
 
 /** One directory scanned for preset subdirectories. */
@@ -359,7 +371,7 @@ export interface Config {
   audienceRef?: string
   /** Browser cookie carrying the compact signed identity token. */
   cookieName?: string
-  /** Identity token and cookie lifetime, capped at fifteen minutes. */
+  /** Identity token and cookie lifetime, capped at one hour. */
   cookieExpireSeconds?: number
   /** Whether the identity cookie carries the Secure attribute. */
   cookieSecure?: boolean
@@ -684,7 +696,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/fs/fs-local/src/index.ts:41`](../packages/fs/fs-local/src/index.ts)
+来源：[`packages/fs/fs-local/src/index.ts:42`](../packages/fs/fs-local/src/index.ts)
 
 <a id="deepseek-aidsh-fs-sandbox"></a>
 
@@ -704,7 +716,7 @@ export type Config = LocalConfig
 
 依赖：[`LocalConfig`](#deepseek-aidsh-fs-local)
 
-来源：[`packages/fs/fs-sandbox/src/index.ts:49`](../packages/fs/fs-sandbox/src/index.ts)
+来源：[`packages/fs/fs-sandbox/src/index.ts:50`](../packages/fs/fs-sandbox/src/index.ts)
 
 <a id="deepseek-aidsh-goal"></a>
 
@@ -865,6 +877,8 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-host-directory-picker-browse`
 
+需要：`ownership`
+
 ```ts config-catalog
 /** Validated plugin configuration. */
 export interface Config {
@@ -873,7 +887,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/host/directory-picker-browse/src/index.ts:181`](../packages/host/directory-picker-browse/src/index.ts)
+来源：[`packages/host/directory-picker-browse/src/index.ts:200`](../packages/host/directory-picker-browse/src/index.ts)
 
 <a id="deepseek-aidsh-host-frontend-static"></a>
 
@@ -890,6 +904,31 @@ export interface Config {
 ```
 
 来源：[`packages/host/frontend-static/src/index.ts:28`](../packages/host/frontend-static/src/index.ts)
+
+<a id="deepseek-aidsh-host-ownership-file"></a>
+
+## `@deepseek-ai/dsh-host-ownership-file`
+
+需要：`auth`
+
+```ts config-catalog
+/** File-backed ownership configuration. */
+export interface Config {
+  /**
+   * Root containing hashed per-owner homes. An omitted or blank value uses
+   * `resolveDshHome()/users`; the Web bundle maps `DSH_USERS_HOME` into this
+   * field because this provider does not read that environment variable.
+   */
+  usersRoot?: string
+  /**
+   * Root containing hashed per-owner containment roots. An omitted or blank
+   * value uses `resolveDshHome()/owner-roots`.
+   */
+  ownerRoots?: string
+}
+```
+
+来源：[`packages/host/ownership-file/src/index.ts:22`](../packages/host/ownership-file/src/index.ts)
 
 <a id="deepseek-aidsh-host-webserver"></a>
 
@@ -1573,7 +1612,7 @@ export interface Config {
 
 ```ts config-catalog
 /** Plugin config. All optional — `static Config` supplies the defaults. */
-export interface Config {
+export interface Config extends ResourceLimitConfig {
   /**
    * Override the runner argv; bwrap-compatible profile arguments are appended. A
    * non-empty override asserts full enforcement and skips built-in selection and
@@ -1595,9 +1634,25 @@ export interface Config {
   /** Positive timeout for each functional probe; zero would mean unbounded to Node. */
   probeTimeoutMs?: number
 }
+
+/** User-configurable limits for one local sandbox process tree. */
+export interface ResourceLimitConfig {
+  /** CPU capacity as a percentage of one logical CPU; values above 100 permit multiple CPUs. */
+  cpuQuotaPercent?: number
+  /** Maximum resident memory in bytes. Setting this also sets swap to zero unless explicitly bounded. */
+  memoryMaxBytes?: number
+  /** Maximum swap in bytes; valid only with {@link memoryMaxBytes}. */
+  memorySwapMaxBytes?: number
+  /** Maximum number of tasks in the scope. */
+  maxTasks?: number
+  /** Seconds before systemd stops the entire scope. */
+  walltimeSeconds?: number
+  /** Seconds between systemd's stop request and its SIGKILL escalation. */
+  timeoutStopSeconds?: number
+}
 ```
 
-来源：[`packages/sandbox/sandbox-local/src/index.ts:44`](../packages/sandbox/sandbox-local/src/index.ts)
+来源：[`packages/sandbox/sandbox-local/src/index.ts:56`](../packages/sandbox/sandbox-local/src/index.ts)
 
 <a id="deepseek-aidsh-sandbox-policy"></a>
 
@@ -1614,6 +1669,8 @@ export interface Config {
 export interface Config {
   /** File-sandbox mode a session starts from (default: `read-only`). */
   mode?: SandboxMode
+  /** Widest mode this deployment permits from any standing or one-call policy path (default: `danger-full-access`). */
+  maximumMode?: SandboxMode
   /**
    * Fallback root for agentless calls and sessions without a cwd (default:
    * `process.cwd()`). Normal agent calls use their session cwd instead.
@@ -1624,7 +1681,7 @@ export interface Config {
 
 依赖：[`SandboxMode`](subsystems/sandbox.md)
 
-来源：[`packages/sandbox/sandbox-policy/src/index.ts:67`](../packages/sandbox/sandbox-policy/src/index.ts)
+来源：[`packages/sandbox/sandbox-policy/src/index.ts:80`](../packages/sandbox/sandbox-policy/src/index.ts)
 
 <a id="deepseek-aidsh-sdk-jsonrpc-server"></a>
 
@@ -2504,7 +2561,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-tool-fs-search`
 
-需要：`tools` · `systemPrompt` · `subprocess`
+需要：`tools` · `systemPrompt` · `subprocess` · `sandbox` · `sandboxPolicy`
 
 ```ts config-catalog
 /** Plugin config; over-cap glob sampling is an explicit deployment choice and the remaining fields have defaults. */
@@ -2533,7 +2590,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/fs/tool-fs-search/src/index.ts:73`](../packages/fs/tool-fs-search/src/index.ts)
+来源：[`packages/fs/tool-fs-search/src/index.ts:75`](../packages/fs/tool-fs-search/src/index.ts)
 
 <a id="deepseek-aidsh-tool-goal"></a>
 
@@ -2693,7 +2750,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/fs/tool-str-replace-editor/src/index.ts:497`](../packages/fs/tool-str-replace-editor/src/index.ts)
+来源：[`packages/fs/tool-str-replace-editor/src/index.ts:501`](../packages/fs/tool-str-replace-editor/src/index.ts)
 
 <a id="deepseek-aidsh-tool-subagent"></a>
 
@@ -3171,6 +3228,7 @@ export interface Config {
 - `@deepseek-ai/dsh-command-goal` — 需要 `commands` · `goals`（[`packages/goal/command-goal/src/index.ts`](../packages/goal/command-goal/src/index.ts)）
 - `@deepseek-ai/dsh-commands`（[`packages/interaction/commands/src/index.ts`](../packages/interaction/commands/src/index.ts)）
 - `@deepseek-ai/dsh-cordis-client-runner`（[`packages/extensions/cordis-client-runner/src/index.ts`](../packages/extensions/cordis-client-runner/src/index.ts)）
+- `@deepseek-ai/dsh-drill-production` — 需要 `agentPresets` · `permissionPresets` · `sandboxPolicy`（[`packages/bundle/drill-production/src/index.ts`](../packages/bundle/drill-production/src/index.ts)）
 - `@deepseek-ai/dsh-fs-e2b` — 需要 `e2b`（[`packages/e2b/fs-e2b/src/index.ts`](../packages/e2b/fs-e2b/src/index.ts)）
 - `@deepseek-ai/dsh-fs-observation-policy`（[`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts)）
 - `@deepseek-ai/dsh-goal-round-driver` — 需要 `agents` · `goals` · `sessions`（[`packages/goal/goal-round-driver/src/index.ts`](../packages/goal/goal-round-driver/src/index.ts)）
@@ -3209,6 +3267,7 @@ export interface Config {
 - `@deepseek-ai/dsh-fs` — 抽象 `FileSystem`（[`packages/fs/fs/src/index.ts`](../packages/fs/fs/src/index.ts)）
 - `@deepseek-ai/dsh-host-directory-picker` — 抽象 `DirectoryPicker`（[`packages/host/directory-picker/src/index.ts`](../packages/host/directory-picker/src/index.ts)）
 - `@deepseek-ai/dsh-jobs` — 抽象 `JobRegistry`（[`packages/jobs/jobs/src/index.ts`](../packages/jobs/jobs/src/index.ts)）
+- `@deepseek-ai/dsh-ownership` — 抽象 `OwnershipService`（[`packages/identity/ownership/src/index.ts`](../packages/identity/ownership/src/index.ts)）
 - `@deepseek-ai/dsh-sandbox` — 抽象 `SandboxProvider`（[`packages/sandbox/sandbox/src/index.ts`](../packages/sandbox/sandbox/src/index.ts)）
 - `@deepseek-ai/dsh-session-persistence` — 抽象 `SessionPersistence`（[`packages/session/session-persistence/src/index.ts`](../packages/session/session-persistence/src/index.ts)）
 - `@deepseek-ai/dsh-session-query` — 抽象 `SessionQueryEngine`（[`packages/session-query/session-query/src/index.ts`](../packages/session-query/session-query/src/index.ts)）
@@ -3243,6 +3302,7 @@ export interface Config {
 - `@deepseek-ai/dsh-loader-smoke`（[`packages/test-support/loader-smoke/src/index.ts`](../packages/test-support/loader-smoke/src/index.ts)）
 - `@deepseek-ai/dsh-native-command`（[`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts)）
 - `@deepseek-ai/dsh-output-retention`（[`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts)）
+- `@deepseek-ai/dsh-path-containment`（[`packages/util/path-containment/src/index.ts`](../packages/util/path-containment/src/index.ts)）
 - `@deepseek-ai/dsh-sandbox-windows-acl`（[`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts)）
 - `@deepseek-ai/dsh-scope`（[`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts)）
 - `@deepseek-ai/dsh-sdk-client`（[`packages/sdk/client/src/index.ts`](../packages/sdk/client/src/index.ts)）

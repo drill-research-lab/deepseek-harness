@@ -22,6 +22,15 @@ function portSetting(): number {
   return port
 }
 
+function cookieExpireSecondsSetting(): number {
+  const value = process.env['AUTH_COOKIE_EXPIRE_SECONDS'] ?? '300'
+  const seconds = Number(value)
+  if (!Number.isInteger(seconds) || seconds < 60 || seconds > 3600) {
+    throw new Error('AUTH_COOKIE_EXPIRE_SECONDS must be an integer from 60 to 3600')
+  }
+  return seconds
+}
+
 /* v8 ignore start -- executable composition; package tests cover each mounted provider. */
 async function main(): Promise<void> {
   const requestedHome = process.env['DSH_AUTH_HOME']
@@ -40,6 +49,7 @@ async function main(): Promise<void> {
   await ctx.plugin(WebServer, { host: booleanSetting('DSH_AUTH_PUBLIC', false) ? '0.0.0.0' : '127.0.0.1', port })
   await ctx.plugin(LdapAuthGateway, {
     sessionDirectory: join(authHome, 'sessions'),
+    cookieExpireSeconds: cookieExpireSecondsSetting(),
     cookieSecure: booleanSetting('AUTH_COOKIE_SECURE', true),
     registrationEnabled: booleanSetting('DSH_LOCAL_REGISTRATION_ENABLED', false),
     appUrl: process.env['DSH_APP_URL'] ?? 'http://127.0.0.1:3080/',

@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh.md) | 繁體中文
 
-**面向模型的檔案系統發現工具**（`glob`、`grep`）由 **打包的 ripgrep 二進位**（`@vscode/ripgrep`）支援，而不是由 `ctx.fs` 提供方方法或系統 `rg` 安裝支援。註冊是無條件的：二進位隨 NPM 相依性一起交付，因此沒有載入期可用性探針。每次呼叫都透過 `ctx.subprocess` seam 以固定 argv 向量 spawn 該二進位（前綴 `--no-config`，使宿主的 `RIPGREP_CONFIG_PATH` 無法向不受約束的 spawn 注入 `--pre` 預處理器；模型控制的值是普通 argv 元素——不存在 shell 層，因此不涉及 shell 引號處理），解析原始 `rg` 輸出，並返回相對於工作目錄的規範值。本包注入 `tools`、`systemPrompt` 和 `subprocess`，有意**不**注入 `fs`；格式化結果 spill 為選填功能，因此機會性讀取 `ctx.spillStore`，呼叫方式為 `ctx.get()`。
+**面向模型的檔案系統發現工具**（`glob`、`grep`）由**打包的 ripgrep 二進位**（`@vscode/ripgrep`）支援，而不是由 `ctx.fs` 提供方方法或系統 `rg` 安裝支援。註冊是無條件的：二進位隨 NPM 相依性一起交付，因此沒有載入期可用性探針。每次呼叫都會解析呼叫工作階段的沙盒策略，拒絕規範化後位於工作區外的搜尋根，前置 `--no-config` 以阻止宿主 `RIPGREP_CONFIG_PATH` 注入 `--pre` 預處理器，透過 `ctx.sandbox.confine()` 包裝受限執行，並且只把返回的 argv 交給 `ctx.subprocess` spawn。模型控制的值仍是普通 argv 元素，不存在 shell 層。本包注入 `tools`、`systemPrompt`、`subprocess`、`sandbox` 和 `sandboxPolicy`，有意**不**注入 `fs`；格式化結果 spill 為選填功能，因此機會性透過 `ctx.get()` 讀取 `ctx.spillStore`。
 
 ```ts ignore-check
 // A deployment chooses how over-cap glob pages are selected.
@@ -16,7 +16,7 @@ await ctx.plugin(LocalSpillStore)                           // @deepseek-ai/dsh-
 
 ## 部署要求：無需宿主 rg，但工作目錄與檔案系統需共置
 
-二進位隨包交付，覆蓋所有受支援平臺（macOS/Linux/Windows，x64/arm64），因此無需宿主 `rg` 安裝，工具在每個部署上都註冊。返迴路徑會相對於解析後的工作目錄顯示（呼叫方 agent（代理）有工作階段 cwd 時使用該 cwd，否則使用 `process.cwd()`）；只有該工作目錄與檔案系統根目錄是同一工作區時，才能用 `read` 繼續讀取。這項共置要求不附帶執行時期跨服務校驗；遠端或虛擬檔案系統搜尋需等待共享工作區約定或特定提供方的搜尋後端。
+二進位隨包交付，覆蓋所有受支援平臺（macOS/Linux/Windows，x64/arm64），因此無需宿主 `rg` 安裝，工具在每個部署上都註冊。返回路徑會相對於解析後的工作目錄顯示（呼叫方 agent（代理）有工作階段 cwd 時使用該 cwd，否則使用 `process.cwd()`）。受限呼叫的明確搜尋路徑經規範化符號連結解析後，必須仍位於已解析的工作區根目錄下。遠端或虛擬檔案系統搜尋仍需要特定提供方的搜尋後端，因為本包執行共置行程。
 
 ## 設定
 
@@ -48,7 +48,7 @@ await ctx.plugin(LocalSpillStore)                           // @deepseek-ai/dsh-
 
 ## 錯誤
 
-搜尋失敗會攜帶由本包定義的 `SearchError`（`HarnessError` 子類），並以 `{ name, code }` 的形式呈現在 `isError` 結果上：`SEARCH_INVALID_PATTERN`（ripgrep 拒絕正則/glob）、`SEARCH_FAILED`（`rg` 啟動失敗、目標不可訪問、訊號終止、`--json` 輸出格式錯誤）、`SEARCH_RAW_OUTPUT_OVERFLOW`（原始輸出超過 `rawOutputMaxBytes`，或在請求 stdout 捕獲預算後仍 lossy）和 `SEARCH_ABORTED`（協作式工具逾時或呼叫方取消）。ripgrep 的結束語義由工具負責處理：結束 0 表示成功且有結果，結束 1 表示成功的空搜尋（`No files found` / `No matches found`），只有其他結束值表示失敗。模型參數錯誤（空白 pattern、清單值 `include`）仍是普通工具參數錯誤。
+搜尋失敗會攜帶由本包定義的 `SearchError`（`HarnessError` 子類），並以 `{ name, code }` 的形式呈現在 `isError` 結果上：`SEARCH_INVALID_PATTERN`（ripgrep 拒絕正則/glob）、`SEARCH_FAILED`（外部搜尋根、`rg` 啟動失敗、目標不可存取、訊號終止或 `--json` 輸出格式錯誤）、`SEARCH_RAW_OUTPUT_OVERFLOW`（原始輸出超過 `rawOutputMaxBytes`，或在請求 stdout 捕獲預算後仍 lossy）和 `SEARCH_ABORTED`（協作式工具逾時或呼叫方取消）。ripgrep 的結束語義由工具負責處理：結束 0 表示成功且有結果，結束 1 表示成功的空搜尋（`No files found` / `No matches found`），只有其他結束值表示失敗。模型參數錯誤（空白 pattern、清單值 `include`）仍是普通工具參數錯誤。
 
 ## 模型體驗
 
@@ -128,7 +128,7 @@ glob 描述聲明瞭設定的超過上限排序方式。生成的 [`glob` 和 `g
 
 ## 已知限制與暫緩事項
 
-- **搜尋與文件訪問沒有共享工作區證明**——只有當工作目錄與檔案系統根目錄指向同一工作區時，返迴路徑纔可繼續讀取；本包不執行執行時期跨服務校驗。
+- **搜尋仍是共置行程能力**——根目錄圍欄與沙盒包裝覆蓋本機工作區執行；遠端或虛擬檔案系統需要另一個搜尋消費端。
 - **打包二進位固定在相依性版本上**——`@vscode/ripgrep` 覆蓋其隨附的平臺（macOS/Linux/Windows，x64/arm64）；不支援的平臺或損壞的安裝會以 `SEARCH_FAILED` 使呼叫失敗。遠端或虛擬檔案系統需要共置的工作區或另一個搜尋消費端。
 - **schema 只暴露一個有界頁面**——偏移分頁、大小寫開關、替代輸出模式與提供方支撐的發現仍不在本包範圍內；達到上限的完整輸出需要 spill 後端。
 - **啟用取樣時僅按搜尋根正下方的第一段路徑分組**——超過上限的 `glob` 頁面在這些頂層條目之間平衡，因此集中在更深處的結果（一棵均勻樹裡某個繁忙目錄）在該層級之下仍會呈現不均；遞迴平衡被延期。

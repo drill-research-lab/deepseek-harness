@@ -103,7 +103,7 @@ describe('Schedule package invariant', () => {
     expect(() => ctx.sessions.create(id, {
       seed: [event({ version: 9, operation: 'delete', id: 'schedule-1' }, 0)],
     })).toThrow(InvariantError)
-    expect(ctx.sessions.get(id)).toBeUndefined()
+    expect(ctx.sessions.get(id, 'trusted-internal')).toBeUndefined()
     await ctx.fiber.dispose()
   })
 

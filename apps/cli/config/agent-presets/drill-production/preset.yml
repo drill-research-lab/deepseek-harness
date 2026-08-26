@@ -1,0 +1,3 @@
+name: Drill Production
+description: Drill multi-user production preset with owner-scoped persistence and sandbox-confined shell and filesystem tools.
+order: 100

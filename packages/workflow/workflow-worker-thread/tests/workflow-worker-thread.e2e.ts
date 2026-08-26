@@ -95,7 +95,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('worker workflow engine with-key 
     expect(childIds.length).toBe(2)
     // The children were disposed to quiescence after collection.
     for (const childId of childIds) {
-      expect(ctx.agents.get(SessionId(childId))).toBeUndefined()
+      expect(ctx.agents.get(SessionId(childId), 'trusted-internal')).toBeUndefined()
     }
     await parentHandle.dispose()
   }, 240_000)

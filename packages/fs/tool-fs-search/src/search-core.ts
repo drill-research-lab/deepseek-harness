@@ -19,14 +19,19 @@
  * @module @deepseek-ai/dsh-tool-fs-search/search-core
  */
 
-import { isAbsolute, relative, sep } from 'node:path'
+import { realpathSync } from 'node:fs'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
 import { ItemRetainer, TextRetainer } from '@deepseek-ai/dsh-output-retention'
 import type { RetainedItems } from '@deepseek-ai/dsh-output-retention'
+import { isPathUnder } from '@deepseek-ai/dsh-path-containment'
+import { canonicalPath } from '@deepseek-ai/dsh-sandbox'
+import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SubprocessHandle, SubprocessOutcome, SubprocessOutputRead, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
 import type { ToolExecution } from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-sandbox-policy'
 
 /**
  * Default cap on the complete raw `rg` stdout the tools will parse (the
@@ -156,6 +161,47 @@ function completeStdout(toolName: string, stdout: SubprocessOutputRead, rawOutpu
 let rgPathPromise: Promise<string> | undefined
 
 /**
+ * Reject an explicit ripgrep target outside the resolved workspace, including
+ * a final symlink that resolves outside it. Ripgrep does not follow directory
+ * symlinks during traversal, so its sole caller-controlled read root is the
+ * path after `--` (or the process workdir when that path is absent).
+ * @param toolName - tool name used in the structured denial.
+ * @param argv - ripgrep arguments, excluding the binary and `--no-config`.
+ * @param workdir - process working directory for relative search roots.
+ * @param policy - resolved per-call sandbox policy.
+ * @returns after the target has passed containment, otherwise rejects.
+ */
+async function checkSearchRoot(
+  toolName: string,
+  argv: readonly string[],
+  workdir: string,
+  policy: SandboxExecutionPolicy,
+): Promise<void> {
+  if (policy.mode === 'danger-full-access') return
+  const separatorIndex = argv.lastIndexOf('--')
+  const searchPath = separatorIndex === -1 ? '.' : argv[separatorIndex + 1] ?? '.'
+  const workspaceRoot = canonicalPath(policy.workspaceRoot)
+  let resolvedWorkdir = resolve(workdir)
+  try {
+    resolvedWorkdir = realpathSync.native(resolvedWorkdir)
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  const lexicalTarget = resolve(resolvedWorkdir, searchPath)
+  if (!(await isPathUnder(lexicalTarget, workspaceRoot))) {
+    throw new SearchError(`${toolName} search path is outside the active workspace`, 'SEARCH_FAILED')
+  }
+  try {
+    const canonicalTarget = realpathSync.native(lexicalTarget)
+    if (!(await isPathUnder(canonicalTarget, workspaceRoot))) {
+      throw new SearchError(`${toolName} search path resolves outside the active workspace`, 'SEARCH_FAILED')
+    }
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+}
+
+/**
  * The packaged ripgrep binary path, resolved lazily once per process.
  *
  * `@vscode/ripgrep` resolves its platform package (`@vscode/ripgrep-<platform>
@@ -181,10 +227,10 @@ export function resolveRgPath(): Promise<string> {
  * (`@deepseek-ai/dsh-tool-call-timeout-policy`) and caller cancellation terminate the
  * process tree.
  *
- * The spawn is unconfined (a plain `ctx.subprocess` call), so `--no-config`
- * is prepended: a host `RIPGREP_CONFIG_PATH` (or `rg.conf` next to the
- * binary) can otherwise inject `--pre` and make ripgrep execute an arbitrary
- * preprocessor for every matched file. The collect dispositions are the
+ * The command is wrapped through `ctx.sandbox` under the calling session's
+ * resolved policy before `ctx.subprocess` starts it. `--no-config` is still
+ * prepended so a host `RIPGREP_CONFIG_PATH` (or `rg.conf` next to the binary)
+ * cannot inject `--pre` before confinement applies. The collect dispositions are the
  * seam's diagnostic-tail shape (no spill files): the tools never read a raw
  * spill path, and truncated stdout fails as `SEARCH_RAW_OUTPUT_OVERFLOW`.
  *
@@ -199,7 +245,7 @@ export function resolveRgPath(): Promise<string> {
  * `SEARCH_FAILED` with the original as `cause` — an abort already observed by
  * creation time becomes `SEARCH_ABORTED` instead.
  *
- * @param ctx - the plugin context; execution uses its `subprocess` service.
+ * @param ctx - the plugin context; execution uses its sandbox policy, sandbox, and subprocess services.
  * @param exec - the tool-execution context; supplies the session cwd and the abort signal.
  * @param toolName - `glob` or `grep`, used in error messages.
  * @param argv - the ripgrep arguments (every model value an unquoted argv element; no shell layer exists).
@@ -224,8 +270,14 @@ export async function runRipgrep(
   const workdir = cwd ?? process.cwd()
   let handle: SubprocessHandle
   try {
+    const commandArgv = [await resolveRgPath(), '--no-config', ...argv]
+    const policy = ctx.sandboxPolicy.resolve({ ...exec.agent ? { session: exec.agent.session } : {} })
+    await checkSearchRoot(toolName, argv, workdir, policy)
+    const confinedArgv = policy.mode === 'danger-full-access'
+      ? commandArgv
+      : ctx.sandbox.confine(commandArgv, { ...policy, mode: policy.mode }).argv
     handle = ctx.subprocess.spawn({
-      argv: [await resolveRgPath(), '--no-config', ...argv],
+      argv: confinedArgv,
       cwd: workdir,
       stdio: {
         stdin: 'ignore',
@@ -245,6 +297,7 @@ export async function runRipgrep(
     if (exec.signal.aborted) {
       throw new SearchError(`${toolName} was aborted before completion (tool timeout or caller cancellation)`, 'SEARCH_ABORTED')
     }
+    if (error instanceof SearchError) throw error
     throw new SearchError(`${toolName} could not start its search command (ripgrep launch failed)`, 'SEARCH_FAILED', { cause: error })
   }
   let outcome: SubprocessOutcome

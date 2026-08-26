@@ -150,9 +150,14 @@ export abstract class SessionPersistence extends Service {
    * for one read/check round trip; continuous external writers may delay completion.
    * @param id - persisted session to prepare.
    * @param signal - optional cancellation for preparation work.
+   * @param _ownerHint - trusted durable owner for selecting a scoped backend namespace.
    * @returns one owned unpublished Session preparation.
    */
-  async prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation> {
+  async prepare(
+    id: SessionId,
+    signal?: AbortSignal,
+    _ownerHint?: SessionHeader['ownerUserId'],
+  ): Promise<SessionPreparation> {
     signal?.throwIfAborted()
     const loaded = await this.load(id)
     signal?.throwIfAborted()
@@ -195,9 +200,14 @@ export abstract class SessionPersistence extends Service {
    * log. Continuous external writers may delay revision convergence.
    * @param id - the persisted session to inspect.
    * @param signal - optional cancellation for queued and backend read work.
+   * @param ownerHint - trusted durable owner for selecting a scoped backend namespace.
    * @returns the validated header and current logical event log.
    */
-  abstract inspect(id: SessionId, signal?: AbortSignal): Promise<SessionInspection>
+  abstract inspect(
+    id: SessionId,
+    signal?: AbortSignal,
+    ownerHint?: SessionHeader['ownerUserId'],
+  ): Promise<SessionInspection>
 
   /**
    * Read the stored events from `fromSeq` onward — the read-from-seq
@@ -215,9 +225,15 @@ export abstract class SessionPersistence extends Service {
    * @param id - the persisted session to read.
    * @param fromSeq - first event seq to include; a non-negative safe integer.
    * @param signal - optional cancellation for queued and backend read work.
+   * @param ownerHint - trusted durable owner for selecting a scoped backend namespace.
    * @returns the header and the stored events with `seq >= fromSeq`.
    */
-  abstract readFrom(id: SessionId, fromSeq: number, signal?: AbortSignal):
+  abstract readFrom(
+    id: SessionId,
+    fromSeq: number,
+    signal?: AbortSignal,
+    ownerHint?: SessionHeader['ownerUserId'],
+  ):
   Promise<{ meta: SessionHeader; events: SessionEvent[] }>
 
   /**

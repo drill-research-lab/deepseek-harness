@@ -38,10 +38,13 @@ export interface RpcErrorDetailsMap {
   'invalid-time-zone': { value: string }
   'workspace-attach-failed': { sessionId: SessionId; workspaceId: string }
   'workspace-not-found': { workspaceId: string }
+  'workspace-outside-owner-root': { path: string }
+  'cwd-outside-owner-root': { cwd: string }
   'workspace-invalid-path': { path: string }
   'workspace-name-conflict': { name: string }
   'workspace-move-invalid': { workspaceId: string; sessionId: SessionId; beforeSessionId?: SessionId }
   'directory-unreadable': { path: string }
+  'directory-outside-owner-root': { path: string }
   'directory-exists': { path: string }
   'directory-create-failed': { path: string }
   'directory-picker-unavailable': { capability: string }

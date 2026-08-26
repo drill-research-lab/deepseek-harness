@@ -50,7 +50,7 @@ describe('automation-only ACP bridge', () => {
       sessionUpdate: 'agent_message_chunk',
       content: { type: 'text', text: 'hello there' },
     }])
-    expect(harness.ctx.agents.get(SessionId(sessionId))?.session.header.cwd).toBe(process.cwd())
+    expect(harness.ctx.agents.get(SessionId(sessionId), 'trusted-internal')?.session.header.cwd).toBe(process.cwd())
     expect(harness.adapter.requests[0]?.messages.at(-1)?.content).toEqual([{ type: 'text', text: 'say hello' }])
   })
 
@@ -59,7 +59,7 @@ describe('automation-only ACP bridge', () => {
     await harness.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
     const { sessionId } = await harness.client.newSession({ cwd: process.cwd(), mcpServers: [] })
 
-    expect(harness.ctx.agents.get(SessionId(sessionId))?.options).toEqual({})
+    expect(harness.ctx.agents.get(SessionId(sessionId), 'trusted-internal')?.options).toEqual({})
   })
 
   it('concatenates text blocks without exposing protocol framing to the model', async () => {
@@ -118,7 +118,7 @@ describe('automation-only ACP bridge', () => {
       sessionId,
       prompt: [{ type: 'image', data: '', mimeType: 'image/png' }],
     })).rejects.toThrow(/only text and resource_link/)
-    expect(harness.ctx.agents.get(SessionId(sessionId))?.session.events.some(event => event.type === 'turn/start')).toBe(false)
+    expect(harness.ctx.agents.get(SessionId(sessionId), 'trusted-internal')?.session.events.some(event => event.type === 'turn/start')).toBe(false)
   })
 
   it('renders baseline resource links as textual references in the user message', async () => {

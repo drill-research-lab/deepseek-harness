@@ -1,7 +1,7 @@
 /** Filesystem-seam source access for the generic stdio LSP provider. */
 
 import { Buffer } from 'node:buffer'
-import type { FileSystem, FsTarget } from '@deepseek-ai/dsh-fs'
+import { readPolicyForTarget, type FileSystem, type FsTarget } from '@deepseek-ai/dsh-fs'
 import { throwIfAborted } from './abort.ts'
 
 /** A canonical workspace in the filesystem/subprocess execution world. */
@@ -43,7 +43,7 @@ export async function canonicalizeWorkspace(
     throw new Error(`workspace root "${workspaceRoot}" cannot be resolved: ${messageOf(error)}`, { cause: error })
   }
   throwIfAborted(signal)
-  const info = await fs.stat(target, signal).catch((error: unknown) => {
+  const info = await fs.stat(target, signal, readPolicyForTarget(fs, target)).catch((error: unknown) => {
     throwIfAborted(signal)
     throw error
   })
@@ -96,7 +96,7 @@ export async function readHostSource(
   try {
     // XXX(lsp-source-replacement): Revisit stable-handle identity only if a real query observes
     // replacement between canonical containment and the provider opening this stream.
-    const stream = await fs.streamText(target, signal)
+    const stream = await fs.streamText(target, signal, readPolicyForTarget(fs, workspace.target))
     for await (const chunk of stream) {
       throwIfAborted(signal)
       bytes += Buffer.byteLength(chunk)

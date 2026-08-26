@@ -355,7 +355,7 @@ export class LocalJobRegistry extends JobRegistry {
    */
   private assertAccess(job: TrackedTask, caller?: Agent): void {
     if (job.owner !== undefined && job.owner.id !== caller?.id) {
-      throw new Error(`job ${job.id} belongs to another session`)
+      throw new Error(`unknown job ${job.id}`)
     }
   }
 
@@ -451,7 +451,7 @@ export class LocalJobRegistry extends JobRegistry {
     if (agents === undefined) {
       throw new Error('background job ownership requires the agent registry (load @deepseek-ai/dsh-agent)')
     }
-    if (agents.get(ownerId) !== owner) {
+    if (agents.get(ownerId, 'trusted-internal') !== owner) {
       throw new Error(`agent "${ownerId}" is not the registered agent instance (background job owner must be live)`)
     }
     if (this.ownerCleanups.has(owner)) return

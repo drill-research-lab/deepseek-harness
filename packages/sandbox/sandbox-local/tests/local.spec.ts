@@ -13,13 +13,16 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { LAUNCHER_FAILURE_EXIT } from '@deepseek-ai/node-addon-landlock-run'
+import {
+  LAUNCHER_FAILURE_EXIT as PID_ISOLATE_FAILURE_EXIT,
+} from '@deepseek-ai/node-addon-pid-isolate-run'
 import { SANDBOX_UNAVAILABLE, SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import {
   LocalSandboxProvider,
 } from '@deepseek-ai/dsh-sandbox-local'
 import type { Config } from '@deepseek-ai/dsh-sandbox-local'
-import { bwrapProfileArgs, landlockProfileArgs, seatbeltProfileArgs } from '../src/profiles.ts'
+import { bwrapProfileArgs, LANDLOCK_SYSTEM_READ_ROOTS, landlockProfileArgs, seatbeltProfileArgs } from '../src/profiles.ts'
 
 const RO: SandboxPolicy = { mode: 'read-only', workspaceRoot: '/ws' }
 const WW: SandboxPolicy = { mode: 'workspace-write', workspaceRoot: '/ws' }
@@ -28,7 +31,7 @@ async function setup(config: Config = {}, internals: LocalSandboxProvider['inter
   const ctx = new Context()
   await ctx.plugin(LocalSandboxProvider, config)
   const sandbox = ctx.sandbox as LocalSandboxProvider
-  sandbox.internals = internals
+  sandbox.internals = { probePidIsolate: () => true, ...internals }
   return { ctx, sandbox }
 }
 
@@ -47,6 +50,14 @@ function fakeLauncher(report = 'landlock: fully enforced'): string {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-fake-landlock-'))
   const launcher = join(dir, 'landlock-run')
   writeFileSync(launcher, `#!/bin/sh\nif [ "$1" = "--probe" ]; then echo "${report}"; exit 0; fi\nexit ${LAUNCHER_FAILURE_EXIT}\n`, { mode: 0o755 })
+  return launcher
+}
+
+/** Write an executable fake `pid-isolate-run` functional probe. */
+function fakePidLauncher(report = 'pid-isolate: ok', status = 0): string {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-fake-pid-isolate-'))
+  const launcher = join(dir, 'pid-isolate-run')
+  writeFileSync(launcher, `#!/bin/sh\nprintf '%s\\n' "${report}"\nexit ${status}\n`, { mode: 0o755 })
   return launcher
 }
 
@@ -76,11 +87,28 @@ describe('profile dialects', () => {
   it('landlock read-only: readable tree plus a writable /dev/null, nothing else', () => {
     // /dev/null specifically, NOT /dev: a whole-/dev grant would let confined
     // commands write real host paths beneath it (/dev/shm) under read-only.
-    expect(landlockProfileArgs(RO)).toEqual(['--ro', '/', '--rw', '/dev/null'])
+    expect(landlockProfileArgs(RO)).toEqual([
+      ...LANDLOCK_SYSTEM_READ_ROOTS.flatMap(root => ['--ro', root]),
+      '--ro', '/ws',
+      '--rw', '/dev/null',
+    ])
   })
 
   it('landlock workspace-write: adds the host /tmp and the workspace root', () => {
-    expect(landlockProfileArgs(WW)).toEqual(['--ro', '/', '--rw', '/dev/null', '--rw', '/tmp', '--rw', '/ws'])
+    expect(landlockProfileArgs(WW)).toEqual([
+      ...LANDLOCK_SYSTEM_READ_ROOTS.flatMap(root => ['--ro', root]),
+      '--ro', '/ws',
+      '--rw', '/dev/null', '--rw', '/tmp', '--rw', '/ws',
+    ])
+  })
+
+  it('landlock grants an absolute packaged executable without granting its parent tree', () => {
+    expect(landlockProfileArgs(WW, '/opt/dsh-tools/rg')).toEqual([
+      ...LANDLOCK_SYSTEM_READ_ROOTS.flatMap(root => ['--ro', root]),
+      '--ro', '/ws', '--ro', '/opt/dsh-tools/rg',
+      '--rw', '/dev/null', '--rw', '/tmp', '--rw', '/ws',
+    ])
+    expect(landlockProfileArgs(WW, 'bash')).toEqual(landlockProfileArgs(WW))
   })
 
   it('seatbelt read-only: allow-default with every file write denied except the /dev/null literal', () => {
@@ -162,7 +190,8 @@ describe('the platform chains', () => {
   it('linux probes bwrap first: a passing probe wraps with the bwrap dialect at full enforcement', async () => {
     const probeBwrap = vi.fn(() => true)
     const probeLandlock = vi.fn(() => 'full' as const)
-    const { sandbox } = await setup({}, { platform: 'linux', probeBwrap, probeLandlock })
+    const probePidIsolate = vi.fn(() => true)
+    const { sandbox } = await setup({}, { platform: 'linux', probeBwrap, probeLandlock, probePidIsolate })
     const confined = sandbox.confine(['true'], RO)
     expect(confined).toEqual({
       argv: ['bwrap', ...bwrapProfileArgs(RO), '--', 'true'],
@@ -171,25 +200,57 @@ describe('the platform chains', () => {
       runnerFailureRules: [{ fatalSignatures: ['bwrap: '] }],
     })
     expect(probeLandlock).not.toHaveBeenCalled()
+    expect(probePidIsolate).not.toHaveBeenCalled()
   })
 
   it('linux falls back to the launcher when the bwrap probe fails, speaking the landlock dialect', async () => {
     const probeBwrap = vi.fn(() => false)
     const probeLandlock = vi.fn(() => 'full' as const)
+    const probePidIsolate = vi.fn(() => true)
     const launcher = fakeLauncher()
-    const { sandbox } = await setup({}, { platform: 'linux', probeBwrap, probeLandlock, landlockLauncher: launcher })
-    const confined = sandbox.confine(['bash', '-c', 'echo hi'], WW)
+    const pidLauncher = '/fake/pid-isolate-run'
+    const { sandbox } = await setup({}, {
+      platform: 'linux',
+      probeBwrap,
+      probeLandlock,
+      probePidIsolate,
+      landlockLauncher: launcher,
+      pidIsolateLauncher: pidLauncher,
+    })
+    const confined = sandbox.confine(['/opt/dsh-tools/rg', '--json', 'needle'], WW)
     expect(confined).toEqual({
-      argv: [launcher, ...landlockProfileArgs(WW), '--', 'bash', '-c', 'echo hi'],
+      argv: [
+        pidLauncher, '--', launcher, ...landlockProfileArgs(WW, '/opt/dsh-tools/rg'),
+        '--', '/opt/dsh-tools/rg', '--json', 'needle',
+      ],
       enforcement: 'full',
       denialSignatures: ['permission denied'],
-      runnerFailureRules: [{
-        allowedExitCodes: [LAUNCHER_FAILURE_EXIT],
-        fatalSignatures: ['landlock-run: '],
-        informationalLines: ['landlock-run: partial enforcement (older Landlock ABI)'],
-      }],
+      runnerFailureRules: [
+        {
+          allowedExitCodes: [PID_ISOLATE_FAILURE_EXIT],
+          fatalSignatures: ['pid-isolate-run: '],
+        },
+        {
+          allowedExitCodes: [LAUNCHER_FAILURE_EXIT],
+          fatalSignatures: ['landlock-run: '],
+          informationalLines: ['landlock-run: partial enforcement (older Landlock ABI)'],
+        },
+      ],
     })
+    expect(probePidIsolate).toHaveBeenCalledWith(pidLauncher)
     expect(probeLandlock).toHaveBeenCalledWith(launcher)
+  })
+
+  it('fails closed before probing Landlock when PID isolation is unusable', async () => {
+    const probeLandlock = vi.fn(() => 'full' as const)
+    const { sandbox } = await setup({}, {
+      platform: 'linux',
+      probeBwrap: () => false,
+      probePidIsolate: () => false,
+      probeLandlock,
+    })
+    expect(() => sandbox.confine(['true'], RO)).toThrow(expect.objectContaining({ code: SANDBOX_UNAVAILABLE }))
+    expect(probeLandlock).not.toHaveBeenCalled()
   })
 
   it('darwin selects its sole candidate WITHOUT probing: nothing to arbitrate', async () => {
@@ -275,6 +336,7 @@ describe('the platform chains', () => {
     // spawn run on every host: bwrap answers on a Linux box, ENOENT reads as
     // an unusable rung anywhere else — either way the walk is genuine.
     const { sandbox } = await setup({}, { platform: 'linux' })
+    delete sandbox.internals.probePidIsolate
     const verdict = (() => {
       try {
         sandbox.confine(['true'], RO)
@@ -288,7 +350,8 @@ describe('the platform chains', () => {
   })
 
   it('walks the real platform chain when nothing is injected (usable here or fail closed there)', async () => {
-    const { sandbox } = await setup({}, {})
+    const { sandbox } = await setup()
+    delete sandbox.internals.probePidIsolate
     const verdict = (() => {
       try {
         sandbox.confine(['true'], RO)
@@ -320,6 +383,36 @@ describe('the default landlock probe (launcher CLI contract)', () => {
     writeFileSync(launcher, `#!/bin/sh\nexit ${LAUNCHER_FAILURE_EXIT}\n`, { mode: 0o755 })
     const { sandbox } = await setup({}, { platform: 'linux', probeBwrap: () => false, landlockLauncher: launcher })
     expect(() => sandbox.confine(['true'], RO)).toThrow(expect.objectContaining({ code: SANDBOX_UNAVAILABLE }))
+  })
+})
+
+describe('the default PID-isolation probe (launcher CLI contract)', () => {
+  it('admits the compound rung only after the PID launcher reports exact functional success', async () => {
+    const pidLauncher = fakePidLauncher()
+    const { sandbox } = await setup({}, {
+      platform: 'linux',
+      probeBwrap: () => false,
+      pidIsolateLauncher: pidLauncher,
+      landlockLauncher: fakeLauncher(),
+    })
+    delete sandbox.internals.probePidIsolate
+    expect(sandbox.confine(['true'], RO).argv[0]).toBe(pidLauncher)
+  })
+
+  it.each([
+    ['wrong report', fakePidLauncher('wrong')],
+    ['non-zero exit', fakePidLauncher('pid-isolate: ok', PID_ISOLATE_FAILURE_EXIT)],
+  ])('rejects %s and never probes Landlock', async (_label, pidLauncher) => {
+    const probeLandlock = vi.fn(() => 'full' as const)
+    const { sandbox } = await setup({}, {
+      platform: 'linux',
+      probeBwrap: () => false,
+      pidIsolateLauncher: pidLauncher,
+      probeLandlock,
+    })
+    delete sandbox.internals.probePidIsolate
+    expect(() => sandbox.confine(['true'], RO)).toThrow(expect.objectContaining({ code: SANDBOX_UNAVAILABLE }))
+    expect(probeLandlock).not.toHaveBeenCalled()
   })
 })
 

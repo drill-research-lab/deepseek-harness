@@ -19,6 +19,9 @@
       "path": "../../util/output-retention"
     },
     {
+      "path": "../../util/path-containment"
+    },
+    {
       "path": "../../llm/llm"
     },
     {
@@ -35,6 +38,12 @@
     },
     {
       "path": "../../spill/spill"
+    },
+    {
+      "path": "../../sandbox/sandbox"
+    },
+    {
+      "path": "../../sandbox/sandbox-policy"
     },
     {
       "path": "../../util/timeout"

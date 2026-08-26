@@ -78,7 +78,7 @@ export async function flushLiveSessionLog(
   signal?.throwIfAborted()
   const sessions = deps.sessions
   if (sessions === undefined) return
-  const session = sessions.get(id)
+  const session = sessions.get(id, 'trusted-internal')
   if (session === undefined) return
   await sessions.flush(session)
   signal?.throwIfAborted()

@@ -1,0 +1,103 @@
+# The dsh-drill-production bundle patch: A3 Production Composition Closure.
+# Stack this AFTER `@deepseek-ai/dsh-web-app` in a profile's
+# `dsh.profile.bundles` (e.g. `[dsh-base, dsh-web-app, dsh-drill-production]`,
+# the same "additional overlay layer" pattern `dsh-headless` already uses over
+# `dsh-web-app`). Generic `dsh-web-app` deployments (single-user, self-hosted,
+# upstream-compatible) are UNCHANGED — this bundle is opt-in per deployment,
+# not a modification of `dsh-web-app` itself.
+#
+# A patch replaces the targeted row's whole `config`; rows below name only
+# the `id` and the fields this layer actually overrides.
+
+# ── preset roster: production capability policy ─────────────────────────────
+#
+# `approvedIds` (added to `dsh-agent-presets` for A3) narrows list()/resolve()/
+# mount() to exactly this set — a blocked preset (`cordis`, `minimal`, or any
+# future addition to config/agent-presets/ that isn't re-approved here) reads
+# exactly like an unconfigured id, never a distinguishable "blocked" signal.
+# `includeUserRoot: false` disables user-authored preset composition entirely
+# for v1 (5.4): Drill production does not yet support an allowlist model for
+# arbitrary user-supplied plugin graphs, so the simpler, stricter answer is no
+# custom composition at all, not a denylist a user could route around by
+# naming an as-yet-unlisted package.
+- id: agent-presets
+  config:
+    default: drill-production
+    approvedIds: [drill-production]
+    includeUserRoot: false
+
+# ── permission presets: danger-full-access closure (5.7) ────────────────────
+#
+# Full replacement of the table, not an addition: `danger-full-access` is
+# absent, so it cannot be selected through the `/permission` command, the
+# `permission` settings namespace (built from the table's own keys), or the
+# `permissions` session-projection UI catalog — there is no other write path
+# to `sandbox/mode` (`packages/sandbox/sandbox-policy`'s `setSandboxMode` has
+# exactly one caller in the whole repository: this service).
+- id: permission
+  config:
+    presets:
+      read-only:
+        sandbox: read-only
+        approval: ask
+      workspace-write:
+        sandbox: workspace-write
+        approval: ask
+
+# `maximumMode` closes both standing policy and one-call escalation above
+# workspace-write. The policy owner derives the schema target list from this
+# ceiling and rejects explicit or persisted wider modes during resolution.
+- id: sandbox-policy
+  config:
+    mode: !!js process.env.DSH_PERMISSION_MODE ?? 'workspace-write'
+    maximumMode: workspace-write
+    workspaceRoot: !!js process.cwd()
+
+# ── directory picker: owner-root-confined browse interaction ────────────────
+#
+# The adaptive picker may select a native host dialog, whose chosen path is
+# not owner-confined. Production disables that row and pins both halves of the
+# browse interaction below. The backend resolves the authenticated principal's
+# canonical owner root on every call, so one shared service instance serves
+# distinct browse trees without a deployment-global root value.
+- id: directory-picker
+  disabled: true
+
+# ── dynamic Cordis / self-modification: closed (5.2) ─────────────────────────
+#
+# Belt-and-suspenders on top of the preset closure above: `tool-cordis` (the
+# only model-facing surface for this capability) already cannot appear in any
+# approved preset, but this additionally removes the HOST-plane service
+# itself, so "cordis-host-runner absent" holds unconditionally, not only
+# "unreachable through every preset this deployment currently ships."
+# `dsh-drill-production/index.ts`'s startup check reads `ctx.get('dynamicCordisRunner')`
+# after every patch layer and fails boot if a later patch layer (an operator's
+# own `$DSH_HOME/cordis.patch.yml` or a `--patch` overlay) flips this row back
+# to `disabled: false`.
+- id: cordis-host-runner
+  disabled: true
+
+# ── session-query-sqlite: explicit lock, checked at startup (5.9) ────────────
+#
+# Already dormant in the layers below (`openAt: never`); restated here,
+# unchanged, as a self-documenting invariant this bundle asserts rather than
+# assumes. `dsh-drill-production/index.ts`'s startup check additionally
+# narrows the mounted `ctx.sessionQuery` to `SqliteSessionQueryEngine` and
+# asserts `config.openAt === 'never'` after every patch layer, so it refuses
+# to boot if a later patch layer (an operator's own `$DSH_HOME/cordis.patch.yml`
+# or a `--patch` overlay) changes it.
+- id: session-query-sqlite
+  config:
+    path: ':memory:'
+    openAt: never
+
+- insert:
+    - id: directory-picker-owner-scoped
+      name: '@deepseek-ai/dsh-host-directory-picker-browse'
+
+    - id: directory-picker-owner-scoped-ui
+      name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'
+
+    - id: drill-production-startup-check
+      name: '@deepseek-ai/dsh-drill-production'
+      inject: [agentPresets, permissionPresets, sandboxPolicy]

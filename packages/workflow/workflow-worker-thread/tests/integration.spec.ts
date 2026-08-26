@@ -54,7 +54,7 @@ describe('dsh-workflow-worker-thread over the real in-process stack', () => {
     ctx.on('workflow/agent-start', (_info, agent) => {
       // The workflow bridge must await asynchronous provider start: an observer
       // sees the real spawn child already published, never a reserved id.
-      expect(ctx.agents.get(agent.childId)).toBeDefined()
+      expect(ctx.agents.get(agent.childId, 'trusted-internal')).toBeDefined()
       childIds.push(agent.childId)
     })
     const run = ctx.workflowEngine.start({
@@ -76,7 +76,7 @@ return { prose, verdict: judged.verdict, confidence: judged.confidence }`,
     // Both children were disposed to quiescence — no live child agents remain.
     expect(childIds.length).toBe(2)
     for (const childId of childIds) {
-      expect(ctx.agents.get(SessionId(childId))).toBeUndefined()
+      expect(ctx.agents.get(SessionId(childId), 'trusted-internal')).toBeUndefined()
     }
   })
 

@@ -11,8 +11,9 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { isPromise } from 'node:util/types'
 import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
-import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type { TypertContext, TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
+import type {} from '@deepseek-ai/dsh-ownership'
 import type { Agent, AgentOptions } from './runtime-types.ts'
 
 export * from './runtime-types.ts'
@@ -143,6 +144,8 @@ export interface ResumeAgentOptions {
   readonly agentOptions?: AgentOptions
   /** Optional creation-only cancellation signal for persistence load/setup; detached before return. */
   readonly signal?: AbortSignal
+  /** Trusted durable owner used to select an owner-scoped persistence namespace outside a request. */
+  readonly ownerHint?: SessionHeader['ownerUserId']
   /**
    * Resume-time composition of the agent's fresh scoped world. Persistence is
    * loaded first; the factory then mints `agentCtx` and awaits setup while the
@@ -207,7 +210,7 @@ export interface AgentFactory {
    * `sessionPersistence`). Publication follows the same setup-commit and
    * ordered boundary as {@link createAgent}.
    * @param ownerCtx - caller-bound context that owns load, setup, and the live handle.
-   * @param options - persisted identity, configuration, and optional setup.
+   * @param options - persisted identity, configuration, trusted owner hint, and optional setup.
    * @returns the owned handle after setup, both announcements, and loop start complete.
    */
   resume(ownerCtx: Context, options: ResumeAgentOptions): Promise<AgentHandle>
@@ -271,12 +274,17 @@ export class AgentRegistry extends Service {
         wire: 'agentId',
         hostTypeSymbol: '@deepseek-ai/dsh-agent#Agent',
         wireTypeSymbol: '@deepseek-ai/dsh-session/types#SessionId',
-        resolve: sessionId => this.get(sessionId),
+        // A Typert Remote gateway deserialization boundary: any future
+        // `@remote` method taking an `agent` parameter has its wire id
+        // resolved here from caller-supplied input, so this MUST narrow
+        // through the owner-aware seam rather than the trusted-internal
+        // primitive, exactly like every other request-facing id resolution.
+        resolve: sessionId => ownedAgent(ctx, sessionId),
       })
       typeCtx.typert.contexts.registerHost('agent', {
         wire: 'agentId',
         wireTypeSymbol: '@deepseek-ai/dsh-session/types#SessionId',
-        resolve: sessionId => this.get(sessionId)?.ctx,
+        resolve: sessionId => ownedAgent(ctx, sessionId)?.ctx,
       })
     })
     // The `ctx.agent` DX accessor: default `undefined` on every context, so a
@@ -576,11 +584,23 @@ export class AgentRegistry extends Service {
   }
 
   /**
-   * Look up a live agent.
+   * Look up a live agent. Unfiltered: trusted internal machinery (lifecycle,
+   * lineage, and identity checks on an agent the caller already holds) relies
+   * on this seeing every live agent in the process regardless of the current
+   * request's owner. The caller MUST pass the literal `'trusted-internal'`
+   * marker, declaring — at every call site, checked by the compiler — that it
+   * is one of those trusted internal callers. A caller resolving a
+   * client-supplied id for an authenticated request MUST narrow the result
+   * through {@link ownedAgent} instead, which performs this trusted lookup
+   * and the owner check together.
    * @param id - the shared agent/session id to look up.
+   * @param access - must be the literal `'trusted-internal'`, naming this
+   *   call site as trusted internal machinery rather than a request-facing
+   *   caller resolving a client-supplied id.
    * @returns the agent, or undefined when no live agent has that id.
    */
-  get(id: SessionId): Agent | undefined {
+  get(id: SessionId, access: 'trusted-internal'): Agent | undefined {
+    void access
     return this.store.get(id)?.agent
   }
 
@@ -597,10 +617,12 @@ export class AgentRegistry extends Service {
   }
 
   /**
-   * All live agents, in registration order.
+   * All live agents, in registration order. Unfiltered — see {@link get}.
+   * @param access - must be the literal `'trusted-internal'` — see {@link get}.
    * @returns a fresh array; mutating it does not affect the registry.
    */
-  list(): Agent[] {
+  list(access: 'trusted-internal'): Agent[] {
+    void access
     return [...this.store.values()].map(entry => entry.agent)
   }
 
@@ -608,9 +630,12 @@ export class AgentRegistry extends Service {
    * All live top-level agents in registration order. A top-level agent was
    * created without an owning agent context; durable session lineage does not
    * affect this runtime relation, so a resumed fork may still be a root.
+   * Unfiltered — see {@link get}.
+   * @param access - must be the literal `'trusted-internal'` — see {@link get}.
    * @returns a fresh array; mutating it does not affect the registry.
    */
-  roots(): Agent[] {
+  roots(access: 'trusted-internal'): Agent[] {
+    void access
     return [...this.store.values()]
       .filter(entry => entry.owner === undefined)
       .map(entry => entry.agent)
@@ -701,6 +726,43 @@ export class AgentRegistry extends Service {
     this.initiatorDrain?.resolve()
     this.initiatorDrain = undefined
   }
+}
+
+/**
+ * Resolve a client-supplied id and narrow it to the current request or
+ * background principal, checked against its {@link Agent.session}'s durable
+ * owner. THE one seam for resolving a client-supplied agent id for an
+ * authenticated caller — {@link AgentRegistry.get}'s `'trusted-internal'`
+ * marker keeps its unfiltered result out of reach at every other call site.
+ * Fails closed when ownership is mounted but no principal is in scope; a
+ * deployment without an ownership service has no owner concept, so every
+ * agent stays visible, matching behavior before ownership existed.
+ * @param ctx - Context carrying the agent registry and the optional ownership service.
+ * @param id - a caller-supplied shared agent/session id.
+ * @returns the agent when it is live and the current principal owns its session, otherwise `undefined`.
+ */
+export function ownedAgent(ctx: Context, id: SessionId): Agent | undefined {
+  const agent = ctx.get('agents')?.get(id, 'trusted-internal')
+  if (agent === undefined) return undefined
+  const ownership = ctx.root.get('ownership')
+  if (ownership === undefined) return agent
+  const ownerUserId = ownership.currentPrincipalOrUndefined()?.userId
+  return ownerUserId !== undefined && agent.session.header.ownerUserId === ownerUserId ? agent : undefined
+}
+
+/**
+ * List every live agent the current request or background principal owns.
+ * Fails closed — see {@link ownedAgent}.
+ * @param ctx - Context carrying the agent registry and the optional ownership service.
+ * @returns a fresh array containing only the agents the current principal owns.
+ */
+export function ownedAgents(ctx: Context): Agent[] {
+  const agents = ctx.get('agents')?.list('trusted-internal') ?? []
+  const ownership = ctx.root.get('ownership')
+  if (ownership === undefined) return [...agents]
+  const ownerUserId = ownership.currentPrincipalOrUndefined()?.userId
+  if (ownerUserId === undefined) return []
+  return agents.filter(agent => agent.session.header.ownerUserId === ownerUserId)
 }
 
 export default AgentRegistry

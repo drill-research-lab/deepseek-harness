@@ -56,15 +56,15 @@ function resolveListAgentsRequest(request: ListAgentsRequest): ListAgentsSpec {
  * `ready` preserves resumability without presenting an inactive conversation
  * as a terminal result to collect.
  */
-function statusOf(agents: { get(id: SessionId): Agent | undefined }, id: SessionId): 'running' | 'idle' | 'ready' {
-  const agent = agents.get(id)
+function statusOf(agents: { get(id: SessionId, access: 'trusted-internal'): Agent | undefined }, id: SessionId): 'running' | 'idle' | 'ready' {
+  const agent = agents.get(id, 'trusted-internal')
   if (agent === undefined) return 'ready'
   return agent.status === 'running' ? 'running' : 'idle'
 }
 
 /** Project one service row into the model-facing entry, or omit a one-shot child. */
 function project(
-  agents: { get(id: SessionId): Agent | undefined },
+  agents: { get(id: SessionId, access: 'trusted-internal'): Agent | undefined },
   entry: SubagentListEntry,
   position?: Pick<SubagentDescendantListEntry, 'parentId' | 'depth'>,
 ): ListAgentsEntry | undefined {

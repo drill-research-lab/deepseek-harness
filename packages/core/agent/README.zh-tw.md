@@ -18,10 +18,8 @@ Agent 介面、登錄檔、行程本機發起方作用域，以及 `agent/*` 事
 
 - `ctx.agents.register(agent: Agent): () => void`：記錄一個 **已經構造完成** 的 agent。隨呼叫 fiber dispose。
 - 進階有序生命週期：`enter(agent, owner): () => void` 強制 `agent.id === agent.session.id`，執行權威 ID 衝突檢查，並在不通知的情況下插入；`owner` 顯式記錄即時建立方 agent 關係（根 agent 為 `undefined`），與持久工作階段譜系無關。`announce(agent)` 恰好寄出一次 `agent/created`。建立監聽器同步請求的 detach 會延後到該次分發結束；每次 detach 都會檢查捕獲的條目對象，因此過時能力無法刪除後續使用同一 ID 的替代項。非同步工廠使用這一拆分；普通外掛程式使用 `register()`。
-- `ctx.agents.get(id: SessionId): Agent | undefined`
+- `ctx.agents.get(id: SessionId, access: 'trusted-internal'): Agent | undefined`、`ctx.agents.list(access: 'trusted-internal'): Agent[]` 和 `ctx.agents.roots(access: 'trusted-internal'): Agent[]`（在沒有所屬 agent 上下文的情況下建立的即時 agent；帶譜系的復原工作階段仍可能是執行時期根）不做過濾——回傳行程中所有 owner 的全部即時 agent。字面量標記 `'trusted-internal'` 在每個呼叫點都是必需參數，因此解析 client 提供 id 的呼叫方必須改用 `ownedAgent(ctx, id)` / `ownedAgents(ctx)`：它們執行同樣的查找，並將結果收窄到目前 request 或 background principal 所屬的工作階段（ownership 已掛載但 scope 內沒有 principal 時 fail closed；未掛載任何 ownership 服務時則原樣放行，不做過濾）。
 - `ctx.agents.isOwnedBy(id: SessionId, owner: Agent): boolean`：該確切即時條目是否透過父 agent 的作用域上下文建立；執行時期所有權與持久工作階段譜系無關。
-- `ctx.agents.list(): Agent[]`
-- `ctx.agents.roots(): Agent[]`：在沒有所屬 agent 上下文的情況下建立的即時 agent；帶譜系的復原工作階段仍可能是執行時期根。
 
 #### 發起方 Agent 作用域
 
@@ -42,7 +40,7 @@ Agent *建立* 由實作 `AgentFactory` 的外掛程式（`dsh-agent-loop`）提
 - `ctx.agents.create(options: CreateAgentOptions): Promise<AgentHandle>`：建立工作階段和 agent，在不發布的情況下等待選填 setup，然後透過最終的 `SessionStore.enter()` 與 `AgentRegistry.enter()` 檢查發布。不支援並行建立同一 ID：多個操作可以進行準備，但只有一個能進入；每個失敗方都會回滾其私有作用域／工作階段／驅動器。選填且只用於建立的 `signal` 會取消未發布的 setup，並在返回 handle 前分離；之後的取消使用 `handle.dispose()` 或 `agent.cancel()`。發布包含在回滾範圍內，回滾期間每條已交付建立邊都會成對處理。未註冊工廠時拒絕。
 - `ctx.agents.resume(options: ResumeAgentOptions): Promise<AgentHandle>`：載入持久化工作階段（[工作階段持久化](../../../.agents/notes/implemented/architecture/2026-06-14-session-persistence.md)），建立新的未發布 agent 作用域，等待選填 setup，並使用相同的最終進入發布序列。其選填 `signal` 同樣只用於建立。未註冊工廠或未設定工作階段持久化時拒絕。
 
-`AgentHandle = { agent: Agent; dispose(): Promise<void> }`。Disposer 是一項 **消費端能力**；僅持有裸登錄檔條目的觀察方不能 teardown agent。呼叫方 fiber 和已註冊工廠提供方是結構化共同擁有者：呼叫方解除安裝會強制結構化所有權，而工廠解除安裝必須停止舊實例，因為它們的作用域相依性範圍屬於該提供方。任意擁有者呼叫 `dispose()` 都會到達同一個記憶化完全靜止邊界：它停止迴圈，等待迴圈結束，註銷 agent，從儲存中移除其工作階段，最後撤銷其作用域世界。`ctx.agents.get(id)` 仍返回裸 `Agent`；ACP 橋接層與行程內 subagent 後端持有消費端 handle，而設定建立的 agent 已由迴圈 fiber 擁有。
+`AgentHandle = { agent: Agent; dispose(): Promise<void> }`。Disposer 是一項 **消費端能力**；僅持有裸登錄檔條目的觀察方不能 teardown agent。呼叫方 fiber 和已註冊工廠提供方是結構化共同擁有者：呼叫方解除安裝會強制結構化所有權，而工廠解除安裝必須停止舊實例，因為它們的作用域相依性範圍屬於該提供方。任意擁有者呼叫 `dispose()` 都會到達同一個記憶化完全靜止邊界：它停止迴圈，等待迴圈結束，註銷 agent，從儲存中移除其工作階段，最後撤銷其作用域世界。`ctx.agents.get(id, 'trusted-internal')` 仍返回裸 `Agent`；ACP 橋接層與行程內 subagent 後端持有消費端 handle，而設定建立的 agent 已由迴圈 fiber 擁有。
 
 ### 即時事件
 

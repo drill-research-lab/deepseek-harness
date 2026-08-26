@@ -138,7 +138,7 @@ describe.skipIf(MODE === 'record')('web e2e: composer interrupt for a running co
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
 
-    const root = scaffold.ctx.agents.roots()[0]
+    const root = scaffold.ctx.agents.roots('trusted-internal')[0]
     if (root === undefined) throw new Error('fresh workspace did not publish its parent Agent')
     parent = root
     // The child's first model call claims the primary override and holds.
@@ -166,7 +166,7 @@ describe.skipIf(MODE === 'record')('web e2e: composer interrupt for a running co
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await page.getByRole('button', { name: /1 subagent/ }).waitFor({ timeout: 15_000 })
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
-    expect(scaffold.ctx.agents.get(childId)?.status).toBe('running')
+    expect(scaffold.ctx.agents.get(childId, 'trusted-internal')?.status).toBe('running')
   }, 120_000)
 
   afterAll(async () => {
@@ -234,7 +234,7 @@ describe.skipIf(MODE === 'record')('web e2e: composer interrupt for a running co
       }).result).toMatchObject({ ok: true, value: { accepted: true } })
       expect(apiCalls.filter(path => path === '/api/session.cancel')).toEqual([])
       await aborted
-      await expect.poll(() => scaffold.ctx.agents.get(childId)?.status, { timeout: 15_000 }).toBe('idle')
+      await expect.poll(() => scaffold.ctx.agents.get(childId, 'trusted-internal')?.status, { timeout: 15_000 }).toBe('idle')
 
       // Wake the parked setup message only after cancellation converges. A
       // second hang keeps the parent-available case independent from this stop.
@@ -245,7 +245,7 @@ describe.skipIf(MODE === 'record')('web e2e: composer interrupt for a running co
         { source: { kind: 'user' }, signal: new AbortController().signal },
       )
       await waitFor(() => existsSync(rearmedReadyFile), 'the re-armed child turn to open')
-      expect(scaffold.ctx.agents.get(childId)?.status).toBe('running')
+      expect(scaffold.ctx.agents.get(childId, 'trusted-internal')?.status).toBe('running')
     } finally {
       await page.unroute(pattern)
     }
@@ -285,8 +285,8 @@ describe.skipIf(MODE === 'record')('web e2e: composer interrupt for a running co
 
     // Parked: the Activation stays resident and idle with the retained
     // follow-up; the primary returns to Send without a new turn starting.
-    await expect.poll(() => scaffold.ctx.agents.get(childId)?.status, { timeout: 15_000 }).toBe('idle')
-    const child = scaffold.ctx.agents.get(childId)
+    await expect.poll(() => scaffold.ctx.agents.get(childId, 'trusted-internal')?.status, { timeout: 15_000 }).toBe('idle')
+    const child = scaffold.ctx.agents.get(childId, 'trusted-internal')
     expect(child).toBeDefined()
     expect(child!.inbox.nextTurn).toHaveLength(2)
     expect(child!.session.events.filter(event => event.type === 'turn/start')).toHaveLength(2)
@@ -298,7 +298,7 @@ describe.skipIf(MODE === 'record')('web e2e: composer interrupt for a running co
     await expect.poll(() => page.getByText(REARMED_ANSWER, { exact: true }).count(), { timeout: 30_000 }).toBe(1)
     await expect.poll(() => page.getByText(PARKED_ANSWER, { exact: true }).count(), { timeout: 30_000 }).toBe(1)
     await expect.poll(() => page.getByText(WAKING_ANSWER, { exact: true }).count(), { timeout: 30_000 }).toBe(1)
-    await expect.poll(() => scaffold.ctx.agents.get(childId), { timeout: 60_000 }).toBeUndefined()
+    await expect.poll(() => scaffold.ctx.agents.get(childId, 'trusted-internal'), { timeout: 60_000 }).toBeUndefined()
 
     const loaded = await scaffold.ctx.sessionPersistence.load(childId)
     const userTexts = loaded.events.flatMap(event => event.type === 'user/message'

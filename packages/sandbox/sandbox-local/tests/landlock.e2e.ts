@@ -1,12 +1,13 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { copyFile, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import { launcherPath } from '@deepseek-ai/node-addon-landlock-run'
+import { launcherPath as pidIsolateLauncherPath } from '@deepseek-ai/node-addon-pid-isolate-run'
 import { LocalSandboxProvider } from '@deepseek-ai/dsh-sandbox-local'
 
 /**
@@ -17,7 +18,8 @@ import { LocalSandboxProvider } from '@deepseek-ai/dsh-sandbox-local'
  */
 
 const probe = spawnSync(launcherPath(), ['--probe'], { timeout: 5_000, encoding: 'utf8' })
-const landlockUsable = probe.status === 0
+const pidProbe = spawnSync(pidIsolateLauncherPath(), ['--probe'], { timeout: 5_000, encoding: 'utf8' })
+const landlockUsable = probe.status === 0 && pidProbe.status === 0
 /** The running kernel's enforcement level, from the launcher's probe report — every wrap below must carry exactly this. */
 const enforcement = /partially enforced/.test(probe.stdout ?? '') ? 'partial' : 'full'
 
@@ -47,11 +49,77 @@ async function provider(): Promise<LocalSandboxProvider> {
 /** Confine a shell command under `policy` and run it for real; returns the spawn result and the wrap's enforcement. */
 function runConfined(sandbox: LocalSandboxProvider, command: string, policy: SandboxPolicy) {
   const confined = sandbox.confine(['bash', '-c', command], policy)
-  const result = spawnSync(confined.argv[0] as string, confined.argv.slice(1), { timeout: 30_000, encoding: 'utf8' })
+  const result = spawnSync(confined.argv[0] as string, confined.argv.slice(1), {
+    cwd: policy.workspaceRoot,
+    timeout: 30_000,
+    encoding: 'utf8',
+  })
   return { result, enforcement: confined.enforcement }
 }
 
 describe.skipIf(!landlockUsable)('sandbox-local: real Landlock confinement through the bundled launcher', () => {
+  it('limits reads to system roots and the workspace while merged-usr executables and their ELF interpreter run', async () => {
+    const workdir = await tempDir(homedir())
+    const outside = await tempDir(homedir())
+    await Promise.all([
+      writeFile(join(workdir, 'inside.txt'), 'inside-ok'),
+      writeFile(join(outside, 'secret.txt'), 'outside-secret'),
+      copyFile(process.execPath, join(workdir, 'node-runtime')),
+    ])
+    const interpreterReport = spawnSync('readelf', ['-l', '/usr/bin/bash'], { encoding: 'utf8' })
+    expect(interpreterReport.status).toBe(0)
+    const interpreter = /Requesting program interpreter:\s*([^\]]+)/u.exec(interpreterReport.stdout)?.[1]
+    expect(interpreter).toBeDefined()
+
+    const sandbox = await provider()
+    const allowed = runConfined(
+      sandbox,
+      [
+        'test "$(cat inside.txt)" = inside-ok',
+        'test -r /usr/bin/bash',
+        'test -r /etc/ld.so.cache',
+        'test -d /etc/alternatives',
+        '/bin/bash -c true',
+        '/sbin/ldconfig -p >/dev/null',
+        'git --version >/dev/null',
+        './node-runtime --version >/dev/null',
+        `${interpreter} /usr/bin/true`,
+      ].join(' && '),
+      { mode: 'read-only', workspaceRoot: workdir },
+    )
+    expect(allowed.result.status, allowed.result.stderr).toBe(0)
+
+    const deniedOutside = runConfined(
+      sandbox,
+      `cat ${outside}/secret.txt >/dev/null`,
+      { mode: 'read-only', workspaceRoot: workdir },
+    )
+    expect(deniedOutside.result.status).not.toBe(0)
+    expect(deniedOutside.result.stderr.toLowerCase()).toContain('permission denied')
+
+    const deniedEtc = runConfined(
+      sandbox,
+      'cat /etc/passwd >/dev/null',
+      { mode: 'read-only', workspaceRoot: workdir },
+    )
+    expect(deniedEtc.result.status).not.toBe(0)
+    expect(deniedEtc.result.stderr.toLowerCase()).toContain('permission denied')
+  })
+
+  it('denies cross-owner reads between sibling workspaces', async () => {
+    const alice = await tempDir(homedir())
+    const bob = await tempDir(homedir())
+    await writeFile(join(bob, 'bob-secret.txt'), 'bob-secret')
+    const sandbox = await provider()
+    const { result } = runConfined(
+      sandbox,
+      `cat ${bob}/bob-secret.txt >/dev/null`,
+      { mode: 'workspace-write', workspaceRoot: alice },
+    )
+    expect(result.status).not.toBe(0)
+    expect(result.stderr.toLowerCase()).toContain('permission denied')
+  })
+
   it('read-only denies a write — the file must NOT exist, the wrap reports the probed enforcement', async () => {
     const workdir = await tempDir(tmpdir())
     const sandbox = await provider()
@@ -61,10 +129,10 @@ describe.skipIf(!landlockUsable)('sandbox-local: real Landlock confinement throu
     expect(existsSync(join(workdir, 'denied.txt'))).toBe(false)
   })
 
-  it('read-only keeps the tree readable/executable and /dev/null writable', async () => {
+  it('read-only keeps the workspace readable/executable and /dev/null writable', async () => {
     const workdir = await tempDir(tmpdir())
     const sandbox = await provider()
-    const { result } = runConfined(sandbox, 'ls / > /dev/null && echo dev-ok', { mode: 'read-only', workspaceRoot: workdir })
+    const { result } = runConfined(sandbox, 'ls . > /dev/null && echo dev-ok', { mode: 'read-only', workspaceRoot: workdir })
     expect(result.status).toBe(0)
     expect(result.stdout).toBe('dev-ok\n')
   })

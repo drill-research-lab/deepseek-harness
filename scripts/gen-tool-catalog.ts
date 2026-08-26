@@ -24,6 +24,9 @@ import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
 import { PwshLocalExecutor } from '@deepseek-ai/dsh-pwsh-local'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
+import { SandboxProvider } from '@deepseek-ai/dsh-sandbox'
+import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
+import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
 import { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
@@ -85,6 +88,13 @@ class CatalogAttachmentStore extends AttachmentStore {
 
   override readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {
     return Promise.reject(new Error('gen-tool-catalog: attachment reads are unreachable during schema harvest'))
+  }
+}
+
+/** Inert process fence used only to satisfy tool registration during schema harvest. */
+class CatalogSandbox extends SandboxProvider {
+  override confine(_argv: readonly string[], _policy: SandboxPolicy): ConfinedArgv {
+    throw new Error('gen-tool-catalog: process confinement is unreachable during schema harvest')
   }
 }
 
@@ -314,15 +324,15 @@ const TOOL_PACKAGES: ToolPackage[] = [
     pkg: '@deepseek-ai/dsh-tool-fs-search',
     dir: 'tool-fs-search',
     source: 'packages/fs/tool-fs-search/src/index.ts',
-    requires: ['ctx.tools', 'ctx.subprocess', 'ctx.systemPrompt'],
+    requires: ['ctx.tools', 'ctx.subprocess', 'ctx.sandbox', 'ctx.sandboxPolicy', 'ctx.systemPrompt'],
     writes: ['tool/call', 'tool/result'],
     async mount(ctx) {
-      // The tools inject `subprocess` (search spawns the packaged ripgrep
-      // binary through the seam, not ctx.fs); registration itself never
-      // spawns, so the real local service is inert here. `ctx.spillStore` is
-      // optional (read via ctx.get) and does not affect the schemas, so no
-      // spill backend is mounted.
+      // Registration never spawns, so the local subprocess service and
+      // schema-harvest sandbox marker are inert here. `ctx.spillStore` is
+      // optional (read via ctx.get) and does not affect the schemas.
       await ctx.plugin(LocalSubprocessRuntime)
+      await ctx.plugin(CatalogSandbox)
+      await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access' })
       await ctx.plugin(ToolFsSearch, { sampleOverCapGlobResults: true })
     },
     note:

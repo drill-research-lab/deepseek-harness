@@ -59,7 +59,7 @@ function validateEvent(
 
 /** Check existing sessions and every candidate event before Session publishes it. */
 const install: InvariantInstaller = Object.assign((ctx: Context, fail: InvariantFailure) => {
-  for (const session of ctx.sessions.list()) {
+  for (const session of ctx.sessions.list('trusted-internal')) {
     const prior: SessionEvent[] = []
     for (const event of session.events) {
       validateEvent(prior, event, fail)

@@ -182,7 +182,7 @@ describe('SessionStore.fork', () => {
     const empty = ctx.sessions.create(SessionId('empty'))
     expect(() => sessions.fork(empty, 0, SessionId('empty-child')))
       .toThrow(new SessionForkError('fork boundary 0 does not exist in session "empty" (last seq: none)', 'INVALID_BOUNDARY'))
-    expect(ctx.sessions.get(SessionId('empty-child'))).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('empty-child'), 'trusted-internal')).toBeUndefined()
 
     const source = ctx.sessions.create(SessionId('parent'))
     appendClosedTurn(source, 1)
@@ -205,7 +205,7 @@ describe('SessionStore.fork', () => {
 
     expect(() => sessions.fork(source, 2, SessionId('corrupt-child')))
       .toThrow(new SessionForkError('fork boundary 2 does not match a contiguous event seq in session "corrupt-parent"', 'INVALID_BOUNDARY'))
-    expect(ctx.sessions.get(SessionId('corrupt-child'))).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('corrupt-child'), 'trusted-internal')).toBeUndefined()
   })
 
   it('rejects an unknown live session id', async () => {

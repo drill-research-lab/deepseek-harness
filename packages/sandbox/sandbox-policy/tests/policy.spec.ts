@@ -14,7 +14,11 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SandboxPolicyService, { SANDBOX_MODES, effectiveSandboxMode, setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import SystemPrompt, { renderContextSnapshot, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 
-async function mounted(config: { mode?: 'read-only' | 'workspace-write' | 'danger-full-access'; workspaceRoot?: string } = {}) {
+async function mounted(config: {
+  mode?: 'read-only' | 'workspace-write' | 'danger-full-access'
+  maximumMode?: 'read-only' | 'workspace-write' | 'danger-full-access'
+  workspaceRoot?: string
+} = {}) {
   const ctx = new Context()
   await ctx.plugin(SandboxPolicyService, config)
   return ctx
@@ -44,6 +48,29 @@ describe('SandboxPolicyService', () => {
     const ctx = await mounted()
     expect(ctx.sandboxPolicy.defaultMode).toBe('read-only')
     expect(ctx.sandboxPolicy.workspaceRoot).toBe(resolve(process.cwd()))
+    expect(ctx.sandboxPolicy.maximumMode).toBe('danger-full-access')
+    expect(ctx.sandboxPolicy.escalationTargets).toEqual(['workspace-write', 'danger-full-access'])
+  })
+
+  it('derives escalation targets from the deployment maximum and rejects wider policy state', async () => {
+    const ctx = await mounted({ mode: 'read-only', maximumMode: 'workspace-write' })
+    expect(ctx.sandboxPolicy.escalationTargets).toEqual(['workspace-write'])
+    expect(() => ctx.sandboxPolicy.resolve({ mode: 'danger-full-access' })).toThrow(
+      /mode "danger-full-access" exceeds deployment maximumMode "workspace-write"/,
+    )
+    const active = session('sess-too-wide')
+    setSandboxMode(active, 'danger-full-access')
+    expect(() => ctx.sandboxPolicy.resolve({ session: active })).toThrow(
+      /mode "danger-full-access" exceeds deployment maximumMode "workspace-write"/,
+    )
+  })
+
+  it('rejects a deployment default wider than its maximum at load', async () => {
+    const ctx = new Context()
+    await expect(ctx.plugin(SandboxPolicyService, {
+      mode: 'danger-full-access',
+      maximumMode: 'workspace-write',
+    })).rejects.toThrow(/default mode "danger-full-access" exceeds maximumMode "workspace-write"/)
   })
 
   it('carries a configured mode and resolves the workspace root absolute', async () => {
@@ -142,7 +169,11 @@ describe('SandboxPolicyService', () => {
 })
 
 describe('sandbox:policy request context', () => {
-  async function promptMounted(config: { mode?: 'read-only' | 'workspace-write' | 'danger-full-access'; workspaceRoot?: string } = {}): Promise<Context> {
+  async function promptMounted(config: {
+    mode?: 'read-only' | 'workspace-write' | 'danger-full-access'
+    maximumMode?: 'read-only' | 'workspace-write' | 'danger-full-access'
+    workspaceRoot?: string
+  } = {}): Promise<Context> {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(SandboxPolicyService, config)

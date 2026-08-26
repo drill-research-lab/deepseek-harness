@@ -65,6 +65,12 @@ Abstract credential service. Providers implement the four operations over their 
 
 ```ts cordis-catalog
 /**
+ * Reserve a reference for deployment/bootstrap use before authenticated user resolution exists.
+ * @param ref - the reference to forbid from every user-managed credential layer.
+ */
+reserveDeployment(ref: CredentialRef): void
+
+/**
  * Resolve one reference to its current value. Resolution is per call:
  * consumers re-resolve at each operation and must not cache across
  * operations — that per-operation read is what makes a changed credential

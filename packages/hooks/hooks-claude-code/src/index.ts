@@ -279,7 +279,7 @@ export function apply(ctx: Context, config: Config): void {
   // SubagentStart may inject child context; SubagentStop only observes. Both
   // use the live child's workspace and the generic agent-type matcher subject.
   ctx.on('subagent/start', (info) => {
-    const child = ctx.get('agents')?.get(info.id)
+    const child = ctx.get('agents')?.get(info.id, 'trusted-internal')
     if (child !== undefined) subagentChildren.set(info.runId, child)
     detached.track(runPoint('SubagentStart', SUBAGENT_TYPE, subagentPayload(ctx, 'SubagentStart', info, child), { ...child ? { agent: child } : {}, signal: detached.signal })
       .then((merged) => {
@@ -289,7 +289,7 @@ export function apply(ctx: Context, config: Config): void {
       .catch((error: unknown) => { ctx.logger.warn(`hooks-claude-code: SubagentStart hook failed: ${String(error)}`) }))
   })
   ctx.on('subagent/end', (info) => {
-    const child = subagentChildren.get(info.runId) ?? ctx.get('agents')?.get(info.id)
+    const child = subagentChildren.get(info.runId) ?? ctx.get('agents')?.get(info.id, 'trusted-internal')
     subagentChildren.delete(info.runId)
     detached.track(runPoint('SubagentStop', SUBAGENT_TYPE, subagentPayload(ctx, 'SubagentStop', info, child), { ...child ? { agent: child } : {}, signal: detached.signal }))
   })

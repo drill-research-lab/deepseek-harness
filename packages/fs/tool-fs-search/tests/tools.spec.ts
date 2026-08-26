@@ -22,6 +22,9 @@ import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { rgPath } from '@vscode/ripgrep'
 import { SpillLocator, SpillStore } from '@deepseek-ai/dsh-spill'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
+import { SandboxProvider } from '@deepseek-ai/dsh-sandbox'
+import type { ConfinedArgv, SandboxMode, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
+import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
 import * as ToolFsSearch from '@deepseek-ai/dsh-tool-fs-search'
 import {
   buildGlobCommand,
@@ -164,6 +167,21 @@ class FakeSubprocess extends SubprocessRuntime {
   }
 }
 
+/** A recording process fence whose wrapper marker proves the spawned argv came from `confine()`. */
+class FakeSandbox extends SandboxProvider {
+  calls: { argv: readonly string[]; policy: SandboxPolicy }[] = []
+
+  override confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv {
+    this.calls.push({ argv, policy })
+    return {
+      argv: ['fake-sandbox', '--', ...argv],
+      enforcement: 'full',
+      denialSignatures: ['permission denied'],
+      runnerFailureRules: [],
+    }
+  }
+}
+
 /** A recording spill backend; arm `failWith` to script a storage failure. */
 class FakeSpill extends SpillStore {
   saves: SaveTextSpill[] = []
@@ -183,6 +201,7 @@ class FakeSpill extends SpillStore {
 interface SetupOptions {
   config?: Partial<ToolFsSearch.Config>
   spill?: boolean
+  sandboxMode?: SandboxMode
 }
 
 const DEFAULT_CONFIG = { sampleOverCapGlobResults: true } satisfies ToolFsSearch.Config
@@ -193,16 +212,24 @@ async function setup(options: SetupOptions = {}) {
   ctx.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof ctx.logger.warn
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
+  await ctx.plugin(SandboxPolicyService, { mode: options.sandboxMode ?? 'danger-full-access' })
+  await ctx.plugin(FakeSandbox)
   await ctx.plugin(FakeSubprocess)
   const subprocess = ctx.subprocess as FakeSubprocess
   if (options.spill === true) await ctx.plugin(FakeSpill)
   const fiber = await ctx.plugin(ToolFsSearch, { ...DEFAULT_CONFIG, ...options.config })
   const spill = options.spill === true ? ctx.get('spillStore') as FakeSpill : undefined
-  return { ctx, subprocess, spill, fiber, warnings }
+  return { ctx, subprocess, sandbox: ctx.sandbox as FakeSandbox, spill, fiber, warnings }
 }
 
 /** A stand-in agent whose session header carries the given cwd (and a stable id). */
-const agent = (cwd?: string) => ({ session: { header: { id: 'session-1', ...cwd !== undefined ? { cwd } : {} } } })
+const agent = (cwd?: string) => ({
+  session: {
+    id: 'session-1',
+    header: { id: 'session-1', ...cwd !== undefined ? { cwd } : {} },
+    events: [],
+  },
+})
 
 let callCounter = 0
 function call(
@@ -251,6 +278,8 @@ describe('registration', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access' })
+    await ctx.plugin(FakeSandbox)
     await ctx.plugin(ToolFsSearch, DEFAULT_CONFIG) // no subprocess service
     expect(ctx.tools.schemas()).toHaveLength(0)
   })
@@ -309,6 +338,8 @@ describe('config validation', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access' })
+    await ctx.plugin(FakeSandbox)
     await ctx.plugin(FakeSubprocess)
     await expect(ctx.plugin(ToolFsSearch, { ...DEFAULT_CONFIG, ...config })).rejects.toThrow(new RegExp(`tool-fs-search: ${name} must be a positive integer`))
   })
@@ -317,6 +348,8 @@ describe('config validation', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access' })
+    await ctx.plugin(FakeSandbox)
     await ctx.plugin(FakeSubprocess)
     await expect(ctx.plugin(ToolFsSearch, {
       ...DEFAULT_CONFIG,
@@ -403,8 +436,7 @@ describe('workdir derivation and signal forwarding', () => {
     subprocess.handler = () => runResult('', { exitCode: 1 })
     await call(ctx, 'grep', { pattern: 'needle' })
     const spec = subprocess.spawns[0]
-    // --no-config keeps a host RIPGREP_CONFIG_PATH from injecting a
-    // preprocessor into this unconfined spawn.
+    // --no-config keeps a host RIPGREP_CONFIG_PATH from injecting a preprocessor.
     expect(spec?.argv).toEqual([rgPath, '--no-config', '--json', '--regexp=needle'])
     expect(spec?.stdio.stdin).toBe('ignore')
     // stdout gets the tool's parse budget; stderr is a diagnostic excerpt;
@@ -412,6 +444,21 @@ describe('workdir derivation and signal forwarding', () => {
     expect((spec?.stdio.stdout as { maxBytes: number }).maxBytes).toBe(1234)
     expect((spec?.stdio.stderr as { maxBytes: number }).maxBytes).toBe(4096)
     expect(spec?.graceMs).toBe(5_000)
+  })
+
+  it('resolves the calling session policy and spawns only the confined argv', async () => {
+    const { ctx, subprocess, sandbox } = await setup({ sandboxMode: 'workspace-write' })
+    subprocess.handler = () => runResult('a.ts\n')
+    await call(ctx, 'glob', { pattern: '*' }, { agent: agent('/sessions/s1') })
+
+    expect(sandbox.calls).toHaveLength(1)
+    const confinement = sandbox.calls[0]
+    expect(confinement?.argv).toEqual(expect.arrayContaining([rgPath, '--no-config', '--files']))
+    expect(confinement?.policy.mode).toBe('workspace-write')
+    expect(confinement?.policy.workspaceRoot).toBe(join(sep, 'sessions', 's1'))
+    expect(subprocess.spawns[0]?.argv).toEqual([
+      'fake-sandbox', '--', ...confinement!.argv,
+    ])
   })
 
   it('defaults the stderr tail budget and grace period when the config omits them', async () => {

@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh.md) | 繁體中文
 
-**面向模型的檔案系統工具**（`read`、`read_image`、`write`、`edit`）及其**執行器**。這是檔案系統棧的消費端層：擁有工具名稱、JSON Schema、參數校驗、提示詞段、**讀取視窗邏輯**和結果格式化。它**直接**透過 `ctx.fs` 提供方約定（[`@deepseek-ai/dsh-fs`](../fs)）讀取／寫入／編輯。新鮮度／觀察策略由獨立外掛程式（[`@deepseek-ai/dsh-fs-observation-policy`](../fs-observation-policy)）透過 `fs/*` 事件閘門貢獻；工具不與其方法耦合。使用施加沙盒限制的提供方時，逐工作階段執行需要共享沙盒策略服務，工具還會為檔案系統變更提供升權路徑。
+**面向模型的檔案系統工具**（`read`、`read_image`、`write`、`edit`）及其**執行器**。這是檔案系統棧的消費端層：擁有工具名稱、JSON Schema、參數校驗、提示詞段、**讀取視窗邏輯**和結果格式化。它**直接**透過 `ctx.fs` 提供方約定（[`@deepseek-ai/dsh-fs`](../fs)）讀取／寫入／編輯。新鮮度／觀察策略由獨立外掛程式（[`@deepseek-ai/dsh-fs-observation-policy`](../fs-observation-policy)）透過 `fs/*` 事件閘門貢獻；工具不與其方法耦合。使用施加沙盒限制的提供方時，共享沙盒策略服務會為讀取和變更解析呼叫工作階段的策略；只有變更公開升權欄位。
 
 ```ts ignore-check
 // Default deployment: a ctx.fs provider, the policy plugin, then the tools.
@@ -44,8 +44,8 @@ await ctx.plugin(ToolFs)                                  // this package — re
 
 工具**不**注入策略服務，也不檢查任何快取。每個工具透過 `ctx.fs.resolve(path, { cwd, signal })` 解析路徑；它會傳入呼叫 agent（代理）的工作階段 cwd（`exec.agent.session.header.cwd`），使相對路徑以工作階段工作區為基準解析並與 `dsh-tool-bash` 一致，同時把工具取消轉發到解析過程（見[每工作階段 cwd Agent Note](../../../.agents/notes/implemented/architecture/2026-07-02-fs-per-session-cwd.md)）。隨後執行：
 
-- **read**：一次 `ctx.fs.stat`（用於類型、大小路由和版本），隨後呼叫 `readText`/`streamText`，建置行視窗，再發出 `fs/observed`，使用普通 `ctx.emit`。（1 次 stat。）
-- **read_image**：在任何 I/O 之前校驗參數、擴充名、附件可用性、部署接受的媒體類型和影像路由；隨後一次 `ctx.fs.stat`（目標缺失時與 `read` 一樣記錄 `absent` 觀察）、以 `imageLimits.maxImageBytes` 與 `imageLimits.maxMessageImageBytes` 中較小者為上限的有界 `ctx.fs.readBytes`（結果是攜帶一張影像的一則訊息）、`attachments.saveImage`（內容尋址，因此在 `tool/result` 事件追加時影像塊引用的對象已持久提交），最後寄出 `fs/observed`。（1 次 stat。）
+- **read**：解析工作階段沙盒策略，把它傳給一次 `ctx.fs.stat`（用於類型、大小路由和版本）以及隨後的 `readText`/`streamText`，建置行視窗，再用普通 `ctx.emit` 發出 `fs/observed`。（1 次 stat。）
+- **read_image**：在任何 I/O 之前校驗參數、擴充名、附件可用性、部署接受的媒體類型和影像路由；隨後解析工作階段沙盒策略，把它傳給一次 `ctx.fs.stat`（目標缺失時與 `read` 一樣記錄 `absent` 觀察）和以 `imageLimits.maxImageBytes` 與 `imageLimits.maxMessageImageBytes` 中較小者為上限的有界 `ctx.fs.readBytes`；之後呼叫 `attachments.saveImage`，最後發出 `fs/observed`。（1 次 stat。）
 - **write**：呼叫 `ctx.waterfall('fs/write-intent', target, exec, () => undefined)` 取得選填防護，然後呼叫 `ctx.fs.writeText(target, content, intent)`，再發出 `fs/observed`。（0 次 stat。）
 - **edit**：呼叫 `ctx.waterfall('fs/edit-intent', target, exec, () => undefined)` 取得選填防護，然後呼叫 `ctx.fs.editText(target, edit, intent)`，再發出 `fs/observed`。（0 次 stat。）
 

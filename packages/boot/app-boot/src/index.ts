@@ -21,6 +21,11 @@ import type {} from '@deepseek-ai/cordis-plugin-hmr'
 // Side-effect type import: resolves `ctx.get('systemPrompt')` to the service.
 import type {} from '@deepseek-ai/dsh-system-prompt'
 
+export {
+  acquireDeploymentWriterLease,
+  type DeploymentWriterLease,
+} from './deployment-writer-lease.ts'
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Harness-home path resolver available to Loader `!!js` config expressions. */

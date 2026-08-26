@@ -75,6 +75,7 @@ export class ExternalCookieAuthService extends AuthService {
       const publicKeyRef = credentialRef(config.publicKeyRef ?? 'AUTH_COOKIE_PUBLIC_KEY')
       const issuerRef = credentialRef(config.issuerRef ?? 'AUTH_COOKIE_ISSUER')
       const audienceRef = credentialRef(config.audienceRef ?? 'AUTH_COOKIE_AUDIENCE')
+      for (const ref of [publicKeyRef, issuerRef, audienceRef]) ctx.credentials.reserveDeployment(ref)
       const [key, issuer, audience] = await Promise.all([
         ctx.credentials.resolve(publicKeyRef),
         ctx.credentials.resolve(issuerRef),

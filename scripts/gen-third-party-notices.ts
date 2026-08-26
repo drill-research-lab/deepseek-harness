@@ -44,6 +44,9 @@ const FIRST_PARTY = new Set([
   '@deepseek-ai/node-addon-landlock-run',
   '@deepseek-ai/node-addon-landlock-run-linux-arm64',
   '@deepseek-ai/node-addon-landlock-run-linux-x64',
+  '@deepseek-ai/node-addon-pid-isolate-run',
+  '@deepseek-ai/node-addon-pid-isolate-run-linux-arm64',
+  '@deepseek-ai/node-addon-pid-isolate-run-linux-x64',
 ])
 
 /** Official SDK identity covered by the project's narrow owner authorization. */
@@ -275,7 +278,7 @@ function installedManifest(name: string): VirtualManifest | undefined {
   let manifest: (Manifest & { license?: string; repository?: string | { url?: string }; homepage?: string }) | undefined
   // Workspace-local link farms can expose a dependency that is not linked at
   // the repository root; both are backed by the root workspace's lockfile.
-  for (const store of ['node_modules', 'native/landlock-run/node_modules']) {
+  for (const store of ['node_modules', 'native/landlock-run/node_modules', 'native/pid-isolate-run/node_modules']) {
     const direct = resolve(root, store, name, 'package.json')
     if (existsSync(direct)) {
       manifest = JSON.parse(readFileSync(direct, 'utf8')) as typeof manifest
@@ -739,7 +742,7 @@ ${BUILD_TIME_TOOLS.map(tool => `| [\`${tool.name}\`](${tool.repo}) | ${tool.lice
 
 ## First-party native packages
 
-\`@deepseek-ai/node-addon-landlock-run\` (and its platform packages) is built and released from this repository under BSD 3-Clause. It is listed here for completeness; it is first-party, not third-party.
+\`@deepseek-ai/node-addon-landlock-run\` and \`@deepseek-ai/node-addon-pid-isolate-run\` (and their platform packages) are built and released from this repository under BSD 3-Clause. They are listed here for completeness; they are first-party, not third-party.
 `
 }
 

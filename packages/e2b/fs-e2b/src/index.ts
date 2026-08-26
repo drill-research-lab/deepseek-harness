@@ -26,6 +26,7 @@ import {
   quoteE2BShellArg,
 } from '@deepseek-ai/dsh-e2b'
 import type { EntryInfo, Sandbox } from '@deepseek-ai/dsh-e2b'
+import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 
 const VERSION_METADATA_KEY = 'dsh-version'
 const BINARY_SAMPLE_BYTES = 8192
@@ -202,7 +203,7 @@ export class E2BFileSystem extends FileSystem {
     return relative === '' || (relative !== '..' && !relative.startsWith('../') && !posix.isAbsolute(relative))
   }
 
-  override async stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
+  override async stat(target: FsTarget, signal?: AbortSignal, _sandboxPolicy?: SandboxExecutionPolicy): Promise<FsInfo | undefined> {
     assertNotAborted(signal, 'stat')
     const entry = await this.probe(String(target.targetKey), target.displayPath, signal)
     if (entry === undefined) return undefined
@@ -213,7 +214,12 @@ export class E2BFileSystem extends FileSystem {
     }
   }
 
-  override async lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined> {
+  override async lstat(
+    path: string,
+    opts?: { cwd?: string },
+    signal?: AbortSignal,
+    _sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<FsPathInfo | undefined> {
     assertNotAborted(signal, 'lstat')
     if (path.trim().length === 0) throw new FsError('file_path must be a non-empty string', 'FS_NOT_FOUND')
     const displayPath = posix.resolve(opts?.cwd ?? this.ctx.e2b.cwd, path)
@@ -233,7 +239,7 @@ export class E2BFileSystem extends FileSystem {
     }
   }
 
-  override async readText(target: FsTarget, signal?: AbortSignal): Promise<string> {
+  override async readText(target: FsTarget, signal?: AbortSignal, _sandboxPolicy?: SandboxExecutionPolicy): Promise<string> {
     const sandbox = await this.ctx.e2b.getSandbox()
     await this.requireRegular(target, signal)
     try {
@@ -245,7 +251,12 @@ export class E2BFileSystem extends FileSystem {
     }
   }
 
-  override async readBytes(target: FsTarget, signal: AbortSignal | undefined, maxBytes: number): Promise<Uint8Array> {
+  override async readBytes(
+    target: FsTarget,
+    signal: AbortSignal | undefined,
+    maxBytes: number,
+    _sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<Uint8Array> {
     const sandbox = await this.ctx.e2b.getSandbox()
     const info = await this.requireRegular(target, signal)
     if (info.size !== undefined && info.size > maxBytes) {
@@ -292,7 +303,11 @@ export class E2BFileSystem extends FileSystem {
     return whole
   }
 
-  override async streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterable<string>> {
+  override async streamText(
+    target: FsTarget,
+    signal?: AbortSignal,
+    _sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<AsyncIterable<string>> {
     const sandbox = await this.ctx.e2b.getSandbox()
     await this.requireRegular(target, signal)
     const stream = await openReadStream(sandbox, target, signal)
@@ -343,7 +358,11 @@ export class E2BFileSystem extends FileSystem {
     }
   }
 
-  override async listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]> {
+  override async listDir(
+    target: FsTarget,
+    signal?: AbortSignal,
+    _sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<FsDirEntry[]> {
     const info = await this.stat(target, signal)
     if (info === undefined) throw new FsError(`cannot list "${target.displayPath}": not found`, 'FS_NOT_FOUND')
     if (info.type !== 'directory') throw new FsError(`cannot list "${target.displayPath}": not a directory`, 'FS_NOT_DIRECTORY')

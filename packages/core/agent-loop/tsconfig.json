@@ -24,6 +24,9 @@
       "path": "../../core/session"
     },
     {
+      "path": "../../identity/ownership"
+    },
+    {
       "path": "../../session/session-persistence"
     },
     {

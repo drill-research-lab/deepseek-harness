@@ -63,10 +63,11 @@ export interface HostApi {
 
   /**
    * List one directory level for the in-app browser; an absent path lists the
-   * host account's home directory. Only served under the `browse` capability;
-   * unreadable or missing targets fail with `directory-unreadable`. The
-   * carrier's request signal follows the caller, stopping the backend's scan
-   * on disconnect or timeout.
+   * current request owner's root. Only served under the `browse` capability;
+   * paths outside that root fail with `directory-outside-owner-root`, while
+   * unreadable or missing targets fail with `directory-unreadable`. The carrier's
+   * request signal follows the caller, stopping the backend's scan on disconnect
+   * or timeout.
    */
   listDirectory(
     request: RpcRequest<{ path?: string }>,
@@ -76,8 +77,9 @@ export interface HostApi {
   /**
    * Create one child directory under an existing parent (the browser's
    * "New folder"). Only served under the `browse` capability; an existing
-   * child fails with `directory-exists`, every other filesystem failure with
-   * `directory-create-failed`.
+   * child fails with `directory-exists`, a parent outside the current request
+   * owner's root with `directory-outside-owner-root`, and every other filesystem
+   * failure with `directory-create-failed`.
    */
   createDirectory(
     request: RpcRequest<{ path: string; name: string }>,

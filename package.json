@@ -13,6 +13,8 @@
     "packages/*/*",
     "native/landlock-run",
     "native/landlock-run/packages/*",
+    "native/pid-isolate-run",
+    "native/pid-isolate-run/packages/*",
     "apps/*",
     "website"
   ],

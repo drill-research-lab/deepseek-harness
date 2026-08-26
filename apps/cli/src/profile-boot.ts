@@ -19,6 +19,7 @@ import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import {
   boot,
+  acquireDeploymentWriterLease,
   composeEntries,
   healProfilesModuleFallback,
   installFailLoud,
@@ -27,6 +28,7 @@ import {
   loadProfile,
   PROFILE_PATCH_FILENAME,
   watchUserPatches,
+  type DeploymentWriterLease,
   type Profile,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
@@ -200,13 +202,34 @@ function suppressShutdownError(ctx: Context, signal: AbortSignal, error: unknown
 
 /**
  * Boot one profile invocation end to end and leave process lifetime to the
- * mounted plugins (or to a one-shot runner the composition mounts).
+ * mounted plugins (or to a one-shot runner the composition mounts). The
+ * deployment writer lease is acquired before profile initialization and held
+ * until the root context is disposed.
  * @param options - environment snapshot, profile name, overlays, and the booted app's own arguments.
  * @returns the settled root context and the shutdown controller.
  */
 export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
-  const composed = composeProfile(options.profile, options.patchFiles)
+  const deploymentRoot = resolveDshHome()
+  const deploymentLease = await acquireDeploymentWriterLease(deploymentRoot)
   const app: { current?: Context } = {}
+  try {
+    return await runProfileWithLease(options, deploymentLease, app)
+  } catch (error) {
+    try {
+      await app.current?.fiber.dispose()
+    } finally {
+      await deploymentLease.release()
+    }
+    throw error
+  }
+}
+
+async function runProfileWithLease(
+  options: RunProfileOptions,
+  deploymentLease: DeploymentWriterLease,
+  app: { current?: Context },
+): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
+  const composed = composeProfile(options.profile, options.patchFiles)
   const shutdown = createProcessShutdown(async () => { await app.current?.fiber.dispose() })
   const signalShutdown = new AbortController()
   const interrupt = (code: number): void => {
@@ -247,6 +270,10 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   // application must not mutate the objects later reloads recompose from.
   const ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), (hostCtx) => {
     app.current = hostCtx
+    hostCtx.effect(
+      () => () => deploymentLease.release(),
+      'dsh: hold the deployment writer lease through application shutdown',
+    )
     // Before any config-tree entry mounts, so plugins resolve all launch-time
     // environment values from the same immutable provenance snapshot.
     hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)

@@ -38,6 +38,7 @@ async function mounted() {
       const value = values[String(ref)]
       return value === undefined ? undefined : { value, source: 'test' }
     },
+    reserveDeployment: () => {},
   } as unknown as CredentialProvider)
   const fiber = ctx.plugin(ExternalCookieAuthService, { sessionDirectory: sessions.directory })
   await fiber.await()

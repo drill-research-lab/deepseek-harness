@@ -55,7 +55,7 @@ export function apply(ctx: Context) {
       render(event.data.chunk.text)
     }
   })
-  onUserInput(text => ctx.agents.get(SessionId('client-session'))?.followup(createUserMessage({
+  onUserInput(text => ctx.agents.get(SessionId('client-session'), 'trusted-internal')?.followup(createUserMessage({
     content: [{ type: 'text', text }],
     source: { kind: 'user' },
   })))

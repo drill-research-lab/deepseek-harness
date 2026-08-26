@@ -12,11 +12,13 @@
  * task. The tool layer owns schemas, argument validation, argv construction
  * ({@link module:@deepseek-ai/dsh-tool-fs-search/glob} /
  * {@link module:@deepseek-ai/dsh-tool-fs-search/grep}), result parsing,
- * retention, formatted-result spill, and timeout declaration; the subprocess
- * seam owns spawn execution, process-tree termination, environment scrubbing,
- * and raw output capture. The package injects `tools`, `systemPrompt`, and
- * `subprocess` — deliberately NOT `fs`, and `ctx.spillStore` is read
- * opportunistically with `ctx.get()` because formatted-result spill is optional.
+ * retention, formatted-result spill, search-root containment, and timeout
+ * declaration; the subprocess seam owns spawn execution, process-tree
+ * termination, environment scrubbing, and raw output capture, while the
+ * sandbox provider wraps confined runs. The package injects `tools`,
+ * `systemPrompt`, `subprocess`, `sandbox`, and `sandboxPolicy` — deliberately
+ * NOT `fs`, and `ctx.spillStore` is read opportunistically with `ctx.get()`
+ * because formatted-result spill is optional.
  *
  * Returned paths are displayed relative to the resolved workdir and are
  * follow-up-readable only in co-located deployments where the workdir and the
@@ -67,7 +69,7 @@ export type { GrepMatch, RipgrepRun, SearchErrorCode } from './search-core.ts'
 export const name = 'tool-fs-search'
 
 /** Services required by the search tool suite (`spillStore` is optional, read via `ctx.get()`). */
-export const inject = ['tools', 'systemPrompt', 'subprocess']
+export const inject = ['tools', 'systemPrompt', 'subprocess', 'sandbox', 'sandboxPolicy']
 
 /** Plugin config; over-cap glob sampling is an explicit deployment choice and the remaining fields have defaults. */
 export interface Config {

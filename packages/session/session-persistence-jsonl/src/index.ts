@@ -12,6 +12,7 @@ import { readdirSync } from 'node:fs'
 import { open, mkdir, readFile, readdir, realpath, link, rm, stat, truncate } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { scheduler } from 'node:timers/promises'
 import { randomBytes } from 'node:crypto'
 import {
@@ -22,6 +23,8 @@ import {
   type StoredPrefix,
 } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionEvent, SessionId, SessionHeader, SessionPreparation } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-ownership'
+import type { AuthenticatedUserId } from '@deepseek-ai/dsh-auth'
 import {
   encodeSegment, eventLines, logPath, logSuffix, parseHeaderMeta, projectDir, scanLog, sessionDir,
   SessionLogScanner, toHeaderLine,
@@ -139,11 +142,15 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
    */
   override readonly name = 'session-persistence-jsonl'
 
-  private root: string
+  /** Configured deployment root; the fallback when no ownership service is mounted or a header carries no owner. */
+  readonly root: string
+  private readonly rootScope = new AsyncLocalStorage<string>()
+  private readonly ownerRoots = new Map<AuthenticatedUserId, string>()
+  private readonly sessionOwners = new Map<SessionId, Set<AuthenticatedUserId>>()
   private packChunks: boolean
   private compression: JsonlCompression
-  private coordinator: PersistenceCoordinator<JsonlTornMarker>
-  private rootEncodingCheck: Promise<void> | undefined
+  private readonly coordinator: PersistenceCoordinator<JsonlTornMarker>
+  private readonly rootEncodingChecks = new Map<string, Promise<void>>()
 
   constructor(ctx: Context, public config: Config) {
     super(ctx)
@@ -169,34 +176,76 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
   // --- SessionPersistence service API (delegated to the coordinator) ---
 
   /** Resolve the absolute target path without touching the filesystem. */
-  locate(meta: SessionHeader): SessionLocation {
-    return { kind: 'jsonl', path: logPath(this.root, meta.cwd, meta.id, this.compression) }
+  locate(meta: SessionHeader): SessionLocation | undefined {
+    const root = meta.ownerUserId === undefined ? this.root : this.ownerRoots.get(meta.ownerUserId)
+    return root === undefined
+      ? undefined
+      : { kind: 'jsonl', path: logPath(root, meta.cwd, meta.id, this.compression) }
   }
 
-  create(meta: SessionHeader): Promise<void> {
-    return this.coordinator.create(meta)
+  async create(meta: SessionHeader): Promise<void> {
+    const snapshot = cloneBeforeAsyncBoundary(meta)
+    this.assertOwned(snapshot)
+    const root = await this.rootForHeader(snapshot)
+    if (snapshot.ownerUserId !== undefined) this.rememberOwner(snapshot.id, snapshot.ownerUserId)
+    return this.rootScope.run(root, () => this.coordinator.create(snapshot))
   }
 
-  append(id: SessionId, events: readonly SessionEvent[]): Promise<void> {
-    return this.coordinator.append(id, events)
+  async append(id: SessionId, events: readonly SessionEvent[]): Promise<void> {
+    const snapshot = cloneBeforeAsyncBoundary(events)
+    const root = await this.rootForId(id)
+    if (root === undefined) throw new Error(`session "${id}" not found`)
+    return this.rootScope.run(root, () => this.coordinator.append(id, snapshot))
   }
 
-  override prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation> {
-    return this.coordinator.prepare(id, signal)
+  override async prepare(
+    id: SessionId,
+    signal?: AbortSignal,
+    ownerHint?: SessionHeader['ownerUserId'],
+  ): Promise<SessionPreparation> {
+    const preparation = await this.runForId(id, () => this.coordinator.prepare(id, signal), ownerHint)
+    try {
+      this.assertOwned(preparation.session.header)
+      this.assertHintMatches(preparation.session.header, ownerHint)
+      if (preparation.session.header.ownerUserId !== undefined) {
+        this.rememberOwner(id, preparation.session.header.ownerUserId)
+      }
+      return preparation
+    } catch (error) {
+      preparation[Symbol.dispose]()
+      throw error
+    }
   }
 
-  load(id: SessionId): Promise<SessionInspection> {
-    return this.coordinator.load(id)
+  async load(id: SessionId): Promise<SessionInspection> {
+    const value = this.authorize(await this.runForId(id, () => this.coordinator.load(id)))
+    if (value.meta.ownerUserId !== undefined) this.rememberOwner(id, value.meta.ownerUserId)
+    return value
   }
 
-  inspect(id: SessionId, signal?: AbortSignal): Promise<SessionInspection> {
-    return this.coordinator.inspect(id, signal)
+  async inspect(
+    id: SessionId,
+    signal?: AbortSignal,
+    ownerHint?: SessionHeader['ownerUserId'],
+  ): Promise<SessionInspection> {
+    return this.authorize(
+      await this.runForId(id, () => this.coordinator.inspect(id, signal), ownerHint),
+      ownerHint,
+    )
   }
 
   // JSONL is sequential media: no loadStoredFrom hook, so the coordinator
   // parses the stored prefix (both encodings) and skips forward to fromSeq.
-  readFrom(id: SessionId, fromSeq: number, signal?: AbortSignal): Promise<{ meta: SessionHeader; events: SessionEvent[] }> {
-    return this.coordinator.readFrom(id, fromSeq, signal)
+  async readFrom(
+    id: SessionId,
+    fromSeq: number,
+    signal?: AbortSignal,
+    ownerHint?: SessionHeader['ownerUserId'],
+  ): Promise<{ meta: SessionHeader; events: SessionEvent[] }> {
+    return this.authorize(
+      await this.runForId(id, () => this.coordinator.readFrom(id, fromSeq, signal), ownerHint),
+      ownerHint,
+    )
   }
 
   // One method serves both public `list` and the backend hook; delegating it to
@@ -207,6 +256,11 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
 
   /** Read a stored prefix by id across all project directories when cwd is unknown. */
   async loadStored(id: SessionId, signal?: AbortSignal): Promise<StoredPrefix<JsonlTornMarker> | undefined> {
+    const selectedRoot = await this.rootForId(id)
+    if (selectedRoot === undefined) return undefined
+    if (this.rootScope.getStore() !== selectedRoot) {
+      return this.rootScope.run(selectedRoot, () => this.loadStored(id, signal))
+    }
     signal?.throwIfAborted()
     await this.ensureRootEncoding()
     signal?.throwIfAborted()
@@ -220,6 +274,11 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
    * Resolving an id with unknown cwd still scans the project directories.
    */
   async readStoredRevision(id: SessionId, signal?: AbortSignal): Promise<PersistenceRevision | undefined> {
+    const selectedRoot = await this.rootForId(id)
+    if (selectedRoot === undefined) return undefined
+    if (this.rootScope.getStore() !== selectedRoot) {
+      return this.rootScope.run(selectedRoot, () => this.readStoredRevision(id, signal))
+    }
     signal?.throwIfAborted()
     await this.ensureRootEncoding()
     signal?.throwIfAborted()
@@ -250,6 +309,11 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
    * line, or `undefined` when the session has no stored artifact.
    */
   override async readRaw(id: SessionId, signal?: AbortSignal): Promise<SessionRawArtifact | undefined> {
+    const selectedRoot = await this.rootForId(id)
+    if (selectedRoot === undefined) return undefined
+    if (this.rootScope.getStore() !== selectedRoot) {
+      return this.rootScope.run(selectedRoot, () => this.readRaw(id, signal))
+    }
     signal?.throwIfAborted()
     await this.ensureRootEncoding()
     signal?.throwIfAborted()
@@ -276,6 +340,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     if (meta === undefined || meta.id !== id) {
       throw new Error(`corrupt session log: invalid header line in "${path}"`)
     }
+    this.assertOwned(meta)
     // The logical artifact name is `session.jsonl` regardless of the physical
     // encoding suffix (`.jsonl.zstd` marks compression only).
     return { meta, filename: 'session.jsonl', content }
@@ -420,6 +485,10 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
 
   /** Durably append a batch, lazily materializing the file when not yet present. */
   async appendBatch(meta: SessionHeader, events: readonly SessionEvent[], isMaterialized: boolean): Promise<void> {
+    const root = await this.rootForHeader(meta)
+    if (this.rootScope.getStore() !== root) {
+      return this.rootScope.run(root, () => this.appendBatch(meta, events, isMaterialized))
+    }
     await this.ensureRootEncoding()
     if (isMaterialized) {
       await this.appendLines(meta, events)
@@ -438,6 +507,10 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     tornMarker: JsonlTornMarker | undefined,
     closers: readonly SessionEvent[],
   ): Promise<void> {
+    const root = await this.rootForHeader(meta)
+    if (this.rootScope.getStore() !== root) {
+      return this.rootScope.run(root, () => this.commitRepair(meta, tornMarker, closers))
+    }
     if (tornMarker !== undefined) await this.repair(meta, tornMarker.truncateTo)
     const repairedEvents = [...(tornMarker?.recoveredEvents ?? []), ...closers]
     if (repairedEvents.length > 0) await this.appendLines(meta, repairedEvents)
@@ -445,14 +518,21 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
 
   /** List valid unique stored sessions' metadata (header line only — no full-log parse). */
   async list(signal?: AbortSignal): Promise<SessionHeader[]> {
-    return (await this.listArtifacts(signal)).map(artifact => artifact.header)
+    const root = await this.currentOwnerRoot()
+    if (root === undefined) return []
+    if (this.rootScope.getStore() !== root) return this.rootScope.run(root, () => this.list(signal))
+    return (await this.listArtifacts(signal)).map(artifact => artifact.header).filter(header => this.isOwned(header))
   }
 
   /** List metadata plus a stat-derived identity for each append-only log. */
   async listSnapshots(signal?: AbortSignal): Promise<SessionPersistenceSnapshot[]> {
+    const root = await this.currentOwnerRoot()
+    if (root === undefined) return []
+    if (this.rootScope.getStore() !== root) return this.rootScope.run(root, () => this.listSnapshots(signal))
     const snapshots: SessionPersistenceSnapshot[] = []
     for (const artifact of await this.listArtifacts(signal)) {
       signal?.throwIfAborted()
+      if (!this.isOwned(artifact.header)) continue
       try {
         const identity = await stat(artifact.path, { bigint: true })
         signal?.throwIfAborted()
@@ -467,6 +547,111 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     }
     signal?.throwIfAborted()
     return snapshots
+  }
+
+  /** Whether one stored header is visible to the current authenticated owner. */
+  private isOwned(header: SessionHeader): boolean {
+    const principal = this.ctx.root.get('ownership')?.currentPrincipalOrUndefined()
+    return principal === undefined || header.ownerUserId === principal.userId
+  }
+
+  /** Reject an ownerless or foreign session with non-disclosing semantics. */
+  private assertOwned(header: SessionHeader): void {
+    if (!this.isOwned(header)) throw new Error(`session "${header.id}" not found`)
+  }
+
+  /** Reject a trusted lookup hint that does not match the selected durable lifecycle. */
+  private assertHintMatches(header: SessionHeader, ownerHint?: SessionHeader['ownerUserId']): void {
+    if (ownerHint !== undefined && header.ownerUserId !== ownerHint) {
+      throw new Error(`session "${header.id}" not found`)
+    }
+  }
+
+  /** Active physical namespace for low-level file mechanics. */
+  private activeRoot(): string {
+    return this.rootScope.getStore() ?? this.root
+  }
+
+  /** Resolve and cache one trusted owner's JSONL root through UserHome. */
+  private async ownerRoot(userId: AuthenticatedUserId): Promise<string> {
+    const cached = this.ownerRoots.get(userId)
+    if (cached !== undefined) return cached
+    const ownership = this.ctx.root.get('ownership')
+    if (ownership === undefined) return this.root
+    const principal = ownership.currentPrincipalOrUndefined()?.userId === userId
+      ? ownership.currentPrincipal()
+      : ownership.backgroundPrincipal(userId)
+    const root = (await ownership.resolveUserHome(principal)).path('sessions')
+    this.ownerRoots.set(userId, root)
+    return root
+  }
+
+  /** Resolve the physical namespace for an immutable stored header. */
+  private async rootForHeader(header: SessionHeader): Promise<string> {
+    const ownership = this.ctx.root.get('ownership')
+    if (ownership === undefined) return this.root
+    if (header.ownerUserId === undefined) throw new Error(`session "${header.id}" not found`)
+    const current = ownership.currentPrincipalOrUndefined()
+    if (current !== undefined && current.userId !== header.ownerUserId) {
+      throw new Error(`session "${header.id}" not found`)
+    }
+    this.rememberOwner(header.id, header.ownerUserId)
+    return this.ownerRoot(header.ownerUserId)
+  }
+
+  /** Resolve an exact lookup from current authority, never by scanning user homes. */
+  private async rootForId(
+    id: SessionId,
+    ownerHint?: SessionHeader['ownerUserId'],
+  ): Promise<string | undefined> {
+    const active = this.rootScope.getStore()
+    if (active !== undefined) return active
+    const ownership = this.ctx.root.get('ownership')
+    if (ownership === undefined) return this.root
+    const current = ownership.currentPrincipalOrUndefined()
+    if (current !== undefined) return this.ownerRoot(current.userId)
+    if (ownerHint !== undefined) return this.ownerRoot(ownerHint)
+    const owners = this.sessionOwners.get(id)
+    if (owners === undefined || owners.size !== 1) return undefined
+    return this.ownerRoot([...owners][0] as AuthenticatedUserId)
+  }
+
+  /** Resolve the current request namespace for enumeration. */
+  private async currentOwnerRoot(): Promise<string | undefined> {
+    const active = this.rootScope.getStore()
+    if (active !== undefined) return active
+    const ownership = this.ctx.root.get('ownership')
+    if (ownership === undefined) return this.root
+    const principal = ownership.currentPrincipalOrUndefined()
+    return principal === undefined ? undefined : this.ownerRoot(principal.userId)
+  }
+
+  /** Run one exact operation inside its trusted physical namespace. */
+  private async runForId<T>(
+    id: SessionId,
+    operation: () => Promise<T>,
+    ownerHint?: SessionHeader['ownerUserId'],
+  ): Promise<T> {
+    const root = await this.rootForId(id, ownerHint)
+    if (root === undefined) throw new Error(`session "${id}" not found`)
+    return this.rootScope.run(root, operation)
+  }
+
+  /** Remember every trusted owner observed for an id without collapsing same-id namespaces. */
+  private rememberOwner(id: SessionId, ownerUserId: AuthenticatedUserId): void {
+    const owners = this.sessionOwners.get(id)
+    if (owners === undefined) this.sessionOwners.set(id, new Set([ownerUserId]))
+    else owners.add(ownerUserId)
+  }
+
+  /** Apply exact-resource authorization before returning a logical read. */
+  private authorize<T extends { meta: SessionHeader }>(
+    value: T,
+    ownerHint?: SessionHeader['ownerUserId'],
+  ): T {
+    this.assertOwned(value.meta)
+    this.assertHintMatches(value.meta, ownerHint)
+    return value
   }
 
   private async listArtifacts(signal?: AbortSignal): Promise<Array<{ header: SessionHeader; path: string }>> {
@@ -512,9 +697,10 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
 
   /** Atomically write the header line + first batch (temp-write, fsync, publish). */
   private async materialize(meta: SessionHeader, events: readonly SessionEvent[]): Promise<void> {
-    const project = projectDir(this.root, meta.cwd)
-    const dir = sessionDir(this.root, meta.cwd, meta.id)
-    const finalPath = logPath(this.root, meta.cwd, meta.id, this.compression)
+    const root = this.activeRoot()
+    const project = projectDir(root, meta.cwd)
+    const dir = sessionDir(root, meta.cwd, meta.id)
+    const finalPath = logPath(root, meta.cwd, meta.id, this.compression)
     await this.rejectOppositeArtifact(meta.cwd, meta.id)
     const content = await this.encodeMaterialization(meta, events)
     /* v8 ignore next -- native Windows coverage exercises this platform dispatch; Linux covers the POSIX peer */
@@ -533,10 +719,11 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     id: SessionId,
     content: Buffer | string,
   ): Promise<void> {
-    await mkdir(this.root, { recursive: true, mode: 0o700 })
-    await this.syncDirPosix(dirname(this.root))
+    const root = this.activeRoot()
+    await mkdir(root, { recursive: true, mode: 0o700 })
+    await this.syncDirPosix(dirname(root))
     await mkdir(project, { recursive: true, mode: 0o700 })
-    await this.syncDirPosix(this.root)
+    await this.syncDirPosix(root)
     await mkdir(dir, { recursive: true, mode: 0o700 })
     await this.syncDirPosix(project)
     await this.rejectExistingLog(finalPath, id)
@@ -577,7 +764,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     id: SessionId,
     content: Buffer | string,
   ): Promise<void> {
-    await ensureDurableDirectoryWin32(this.root)
+    await ensureDurableDirectoryWin32(this.activeRoot())
     await ensureDurableDirectoryWin32(project)
     await ensureDurableDirectoryWin32(dir)
     await this.rejectExistingLog(finalPath, id)
@@ -650,7 +837,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
    */
   private async appendLines(meta: SessionHeader, events: readonly SessionEvent[]): Promise<void> {
     const content = await this.encodeEventBatch(events)
-    const path = logPath(this.root, meta.cwd, meta.id, this.compression)
+    const path = logPath(this.activeRoot(), meta.cwd, meta.id, this.compression)
     const handle = await open(path, 'a')
     let closed = false
     const closeAppendHandle = async (): Promise<void> => {
@@ -690,7 +877,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
 
   /** Truncate the log file to `offset` bytes and fsync (discard the crash tail). */
   private async repair(meta: SessionHeader, offset: number): Promise<void> {
-    const path = logPath(this.root, meta.cwd, meta.id, this.compression)
+    const path = logPath(this.activeRoot(), meta.cwd, meta.id, this.compression)
     await truncate(path, offset)
     const handle = await open(path, 'r+')
     try {
@@ -797,7 +984,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
   /** Require an existing configured root to be a readable directory. */
   private assertUsableRoot(): void {
     try {
-      readdirSync(this.root)
+      readdirSync(this.activeRoot())
     } catch (error) {
       if (isENOENT(error)) return
       throw error
@@ -817,7 +1004,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     }
     let expectedPath: string
     try {
-      expectedPath = logPath(this.root, meta.cwd, meta.id, this.compression)
+      expectedPath = logPath(this.activeRoot(), meta.cwd, meta.id, this.compression)
     } catch (error) {
       throw new Error(`corrupt session log "${path}": header id cannot name a storage path`, { cause: error })
     }
@@ -851,9 +1038,10 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
   private async listProjectDirs(signal?: AbortSignal): Promise<string[]> {
     try {
       signal?.throwIfAborted()
-      const entries = await readdir(this.root, { withFileTypes: true })
+      const root = this.activeRoot()
+      const entries = await readdir(root, { withFileTypes: true })
       signal?.throwIfAborted()
-      return entries.filter(e => e.isDirectory()).map(e => join(this.root, e.name))
+      return entries.filter(e => e.isDirectory()).map(e => join(root, e.name))
     } catch (error) {
       // Only an absent root means no sessions; rethrow every other I/O failure.
       if (isENOENT(error)) return []
@@ -874,8 +1062,12 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
 
   /** Reject a root that already belongs to the other physical encoding. */
   private ensureRootEncoding(): Promise<void> {
-    this.rootEncodingCheck ??= this.checkRootEncoding()
-    return this.rootEncodingCheck
+    const root = this.activeRoot()
+    const existing = this.rootEncodingChecks.get(root)
+    if (existing !== undefined) return existing
+    const check = this.checkRootEncoding()
+    this.rootEncodingChecks.set(root, check)
+    return check
   }
 
   private async checkRootEncoding(): Promise<void> {
@@ -903,7 +1095,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
   }
 
   private async rejectOppositeArtifact(cwd: string | undefined, id: SessionId): Promise<void> {
-    const path = logPath(this.root, cwd, id, this.oppositeCompression())
+    const path = logPath(this.activeRoot(), cwd, id, this.oppositeCompression())
     if (await this.exists(path)) throw this.encodingMismatch(path)
   }
 
@@ -962,6 +1154,18 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     }
   }
   /* v8 ignore stop */
+}
+
+/**
+ * Snapshot valid inputs before owner-root resolution without replacing the
+ * persistence layer's established diagnostics for invalid JSON values.
+ */
+function cloneBeforeAsyncBoundary<T>(value: T): T {
+  try {
+    return structuredClone(value)
+  } catch {
+    return value
+  }
 }
 
 export default JsonlSessionPersistence

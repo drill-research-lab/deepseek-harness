@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-`SandboxedFileSystem` 扩展 [`LocalFileSystem`](../fs-local/README.md) 并注册为 `ctx.fs`。它逐字继承全部文本存储机制（解析、stat、读取／流式读取、列出、原子写入、按读取、匹配、写入顺序执行的编辑临界区），只为 `writeText`/`editText` 增加按调用的模式围栏。读取始终直接通过：所有模式都允许读取。
+`SandboxedFileSystem` 扩展 [`LocalFileSystem`](../fs-local/README.md) 并注册为 `ctx.fs`。它继承本地存储机制，并增加按调用的读取和变更围栏。两种受限模式都只允许读取调用会话的工作区；写入仍使用各模式的可写根规则。
 
 它原样复用本地后端配置：`cwd` 仍是相对路径的解析默认值，`diffBasisMaxBytes` 则限制可选的覆写上下文 diff 基础。
 
@@ -15,6 +15,8 @@
 - `read-only`：以结构化 `FS_SANDBOX_DENIED` 拒绝所有变更；
 - `workspace-write`：只有目标规范化后位于可写根目录下，才允许变更。可写根包括工作区根目录和平台临时区域（`/tmp`、`os.tmpdir()`），与 Seatbelt profile 授权的集合相同；该集合由唯一的 [`writableRoots`](../../sandbox/README.md) 函数派生，使 fs 围栏与 bash runner 不会漂移。规范拼写使用词法快速路径；基于身份的祖先回退可以识别 Windows 长名称和 8.3 名称等别名等价根目录，而不会把无关前缀视为包含关系。委托前会立即重新规范化目标，因此工具解析后被替换的祖先符号链接也会被发现；
 - `danger-full-access`：不加围栏直接委托。
+
+对于读取，`read-only` 和 `workspace-write` 都只允许由 [`readableRoots`](../../sandbox/README.md) 派生的规范化工作区根目录。接收已解析目标的方法检查提供方的规范化目标身份。`lstat` 会先规范化并检查父目录，再检查最后一个路径条目，因此可以报告工作区内的符号链接，而不会跟随该链接进入工作区外。`stat`、文本／字节读取或目录列举若跟随最终符号链接解析到外部目标，则会被拒绝。
 
 ## 威胁模型：策略围栏，而非内核边界
 
@@ -41,5 +43,6 @@
 ## 已知限制与暂缓事项
 
 - **策略围栏，而非内核边界**：该检查是可信代码处理模型控制的路径，因此解析到系统调用之间残留的 TOCTOU 会被原位重新规范化缩小，但不会消除；对抗性宿主进程不在范围内。不可信代码的内核级隔离仍属于 `ctx.shell`。
+- **读取围栏位于进程内**：它限制 `ctx.fs` 读取和显式的 `tool-fs-search` 根目录；通用 shell 代码的内核级读取隔离属于独立的进程沙箱工作。
 - **围栏与 runner 的一致性由单一所有方派生**：可写集合来自 `writableRoots`，该函数与 Seatbelt profile 共享；在其他位置定义可写集合的 runner profile 会发生漂移。
 - **要求 `ctx.sandboxPolicy`**：工具使用它解析每个会话策略，后端用它处理无 agent（智能体）调用的回退；未组合该服务时，后端不会实施约束。

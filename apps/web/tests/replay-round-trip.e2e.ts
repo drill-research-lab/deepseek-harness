@@ -81,7 +81,7 @@ describe('web e2e: fresh round trip through the real assembly', () => {
 
   it('records the Web surface, source checkout, and session cwd in the request header', async () => {
     if (settledSessionId === undefined) throw new Error('the drive turn did not publish a session id')
-    const agent = scaffold.ctx.agents.get(settledSessionId)
+    const agent = scaffold.ctx.agents.get(settledSessionId, 'trusted-internal')
     if (agent === undefined) throw new Error(`the settled Web agent ${settledSessionId} is no longer live`)
     const system = agent.session.requestHeader()?.system
     if (system === undefined) throw new Error('the settled Web request has no system prompt')
@@ -94,7 +94,7 @@ describe('web e2e: fresh round trip through the real assembly', () => {
 
   it('exposes the assembled Web URL to the real bash tool', async () => {
     if (settledSessionId === undefined) throw new Error('the drive turn did not publish a session id')
-    const agent = scaffold.ctx.agents.get(settledSessionId)
+    const agent = scaffold.ctx.agents.get(settledSessionId, 'trusted-internal')
     if (agent === undefined) throw new Error(`the settled Web agent ${settledSessionId} is no longer live`)
     const result = await scaffold.ctx.tools.execute({
       signal: AbortSignal.timeout(5_000),

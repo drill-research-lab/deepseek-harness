@@ -22,7 +22,7 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
     if (!isAgentLoopRequest(options)) return next()
     if (!Object.isFrozen(options)) fail('a loop-built request must be frozen')
     if (options.sessionId === undefined) fail('a loop-built request must carry a session id')
-    const session = ctx.sessions.get(options.sessionId)
+    const session = ctx.sessions.get(options.sessionId, 'trusted-internal')
     if (!session) fail(`a loop-built request must carry a live session id, got "${String(options.sessionId)}"`)
     if (!Object.isFrozen(options.messages)) {
       fail('a loop-built request must carry a frozen messages array')

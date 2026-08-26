@@ -420,7 +420,7 @@ describe('disposal leaves the two-state status contract balanced', () => {
     await fiber.dispose()
     await driverDone(agent) // must not hang
 
-    expect(ctx.agents.get(SessionId('scoped'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('scoped'), 'trusted-internal')).toBeUndefined()
   })
 })
 
