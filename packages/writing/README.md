@@ -1,0 +1,15 @@
+# writing/ — agent-authored LaTeX reports (Overleaf-style)
+
+English | [简体中文](README.zh.md) | [繁體中文](README.zh-tw.md)
+
+The writing family gives the harness an Overleaf-like report workflow: durable report projects, immutable version snapshots, a template library, LaTeX compilation with error feedback, and a writer agent that a general agent can invoke as a subagent to produce a compiled PDF end-to-end.
+
+| Package | Role | ctx key |
+|---|---|---|
+| `writing/` | Report project registry: durable reports, version snapshots, templates | `reports` |
+| `writing-compile/` | LaTeX compilation with diagnostics parsing | `latexCompile` |
+| `tool-writing/` | Model-facing writing tools (create/write/read/compile/versions/restore) | — |
+| `agent-writer/` | `writer` subagent provider (fresh child + writing persona) | — |
+| `writing-api/` | Browser-facing writing gateway + compiled-PDF serving | `writing` |
+
+Each child reference owns its contract and detailed behavior.

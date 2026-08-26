@@ -40,3 +40,12 @@ apps/web/dist/
 worktrees/
 .agents/worktrees/
 .typert-*/
+
+# Build residue emitted into src/ by stray composite-path compiles (source is .ts)
+packages/**/src/*.js
+packages/**/src/*.js.map
+packages/**/src/*.d.ts
+packages/**/src/*.d.ts.map
+
+# LaTeX compile artifact/output residue from the writing capability
+.dsh-writing/
