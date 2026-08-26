@@ -285,6 +285,7 @@ describe('Web session model selection', () => {
     expect(catalog.groups).toEqual([{
       id: 'deepseek-official',
       name: 'DeepSeek',
+      keyConfigured: true,
       models: [
         { id: 'deepseek-chat', name: 'DeepSeek Chat', reasoning: REASONING },
         {

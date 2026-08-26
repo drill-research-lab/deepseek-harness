@@ -306,6 +306,7 @@ function fixtureModelGroups(): ModelProviderGroup[] {
     {
       id: 'deepseek-official',
       name: 'DeepSeek',
+      keyConfigured: true,
       models: [
         {
           id: 'deepseek-v4-flash',
@@ -324,6 +325,7 @@ function fixtureModelGroups(): ModelProviderGroup[] {
     {
       id: 'openai',
       name: 'OpenAI',
+      keyConfigured: true,
       models: [{ id: 'gpt-5', name: 'GPT-5', reasoning: OPENAI_REASONING }],
     },
   ]

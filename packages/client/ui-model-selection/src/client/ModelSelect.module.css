@@ -149,6 +149,12 @@
   font-weight: 500;
 }
 
+.noKeyHint {
+  margin-left: 6px;
+  color: var(--dsw-alias-label-dimmed);
+  font-weight: 400;
+}
+
 .option {
   display: flex;
   align-items: center;

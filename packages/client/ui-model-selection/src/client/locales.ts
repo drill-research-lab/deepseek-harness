@@ -12,6 +12,7 @@
 export const zh = {
   'command.description': '选择本会话使用的模型',
   'option.loadError': '目录加载失败：{message}',
+  'option.noKey': '尚未設定 API key，請先到 Models 設定',
   'trigger.fallback': '选择模型',
   'trigger.selectAria': '选择模型',
   'trigger.aria': '选择模型，当前 {model}',
@@ -33,6 +34,7 @@ export const zh = {
 export const zhTw = {
   'command.description': '選擇本工作階段使用的模型',
   'option.loadError': '目錄載入失敗：{message}',
+  'option.noKey': '尚未設定 API key，請先到 Models 設定',
   'trigger.fallback': '選擇模型',
   'trigger.selectAria': '選擇模型',
   'trigger.aria': '選擇模型，目前為 {model}',
@@ -57,6 +59,7 @@ export type ModelKey = keyof typeof zh
 export const en = {
   'command.description': 'Select the model for this conversation',
   'option.loadError': 'Catalog failed to load: {message}',
+  'option.noKey': 'No API key configured — set one in Models',
   'trigger.fallback': 'Select model',
   'trigger.selectAria': 'Select model',
   'trigger.aria': 'Select model, current {model}',

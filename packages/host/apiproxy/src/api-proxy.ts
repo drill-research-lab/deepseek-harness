@@ -332,7 +332,17 @@ async function buildModelCatalog(ctx: Context): Promise<{
   groups: ModelProviderGroup[]
   failures: ModelCatalogFailure[]
 }> {
+  const credentials = ctx.get('credentials')
   const catalog = await Promise.all(ctx.llm.listProviders().map(async (provider) => {
+    let keyConfigured = true
+    if (provider.apiKeyEnv !== undefined && credentials !== undefined) {
+      try {
+        keyConfigured = (await credentials.describe(credentialRef(provider.apiKeyEnv))).configured
+      } catch {
+        // A credential read must not hide a whole provider; request-time
+        // resolution still reports the missing credential.
+      }
+    }
     try {
       const models = await ctx.llm.listModels(provider.id)
       const entries = await Promise.all(models.map(async (model) => {
@@ -361,6 +371,7 @@ async function buildModelCatalog(ctx: Context): Promise<{
       const group: ModelProviderGroup = {
         id: provider.id,
         name: provider.name,
+        keyConfigured,
         models: entries,
       }
       return { kind: 'group' as const, group }
