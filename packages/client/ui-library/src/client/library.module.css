@@ -1,0 +1,475 @@
+/* Library surface: sidebar section rows + the full-page overlay view. */
+
+/* ── sidebar section ─────────────────────────────────────────────────── */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 4px 4px;
+  border-top: 1px solid var(--dsw-alias-border-l);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 8px 6px;
+}
+
+.sectionTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.sectionAdd {
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.sectionAdd:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.sectionEmpty {
+  padding: 2px 8px 6px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.sectionRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: none;
+  background: none;
+  text-align: left;
+  padding: 5px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+}
+
+.sectionRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.sectionRowActive {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.sectionRowTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sectionRowCount {
+  flex: none;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.railButton {
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  padding: 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+}
+
+.railButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* ── full-page view ──────────────────────────────────────────────────── */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: auto;
+  background: var(--dsw-alias-bg-base);
+  display: flex;
+}
+
+.page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.pageHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--dsw-alias-border-l);
+}
+
+.pageTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.pageError {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.closeButton {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.closeButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.pageBody {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.notebookColumn {
+  width: 220px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  border-right: 1px solid var(--dsw-alias-border-l);
+  padding: 8px;
+}
+
+.resourceColumn {
+  width: 320px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  border-right: 1px solid var(--dsw-alias-border-l);
+  padding: 8px;
+}
+
+.previewColumn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 12px;
+}
+
+.columnHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.columnEmpty {
+  padding: 12px 6px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.smallButton {
+  border: 1px solid var(--dsw-alias-border-l);
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.smallButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.smallButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.notebookRow,
+.resourceRow {
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+}
+
+.notebookRow:hover,
+.resourceRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.notebookRowActive,
+.resourceRowActive {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.notebookOpen,
+.resourceOpen {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  border: none;
+  background: none;
+  text-align: left;
+  padding: 6px 8px;
+  cursor: pointer;
+  color: var(--dsw-alias-label-primary);
+}
+
+.notebookOpen {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.notebookTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.notebookCount {
+  flex: none;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.resourceName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.resourceMeta {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.kindTag {
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+  border: 1px solid var(--dsw-alias-border-l);
+  border-radius: 999px;
+  padding: 0 6px;
+}
+
+.statusOk {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.statusError {
+  font-size: 11px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.rowActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.iconButton {
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  padding: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.iconButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.hiddenInput {
+  display: none;
+}
+
+.tabs {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.tab {
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.tab:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.tabActive {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.pdfFrame {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--dsw-alias-border-l);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+}
+
+.markdown {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--dsw-alias-border-l);
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--dsw-alias-label-primary);
+}
+
+.askPanel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 8px;
+}
+
+.askInputRow {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.askInput {
+  flex: 1;
+  resize: vertical;
+  border: 1px solid var(--dsw-alias-border-l);
+  border-radius: 8px;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  padding: 8px;
+}
+
+.askAnswer {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+}
+
+.askSources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.askSourcesTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dialogBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: var(--dsw-alias-bg-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dialog {
+  width: min(560px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.dialogName {
+  border: 1px solid var(--dsw-alias-border-l);
+  border-radius: 8px;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  padding: 6px 8px;
+}
+
+.dialogContent {
+  min-height: 180px;
+  resize: vertical;
+  border: 1px solid var(--dsw-alias-border-l);
+  border-radius: 8px;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  padding: 8px;
+}
+
+.dialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
