@@ -16,6 +16,8 @@ import type { SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
  * alternatives selected by those programs.
  */
 export const LANDLOCK_SYSTEM_READ_ROOTS = ['/usr', '/etc/ld.so.cache', '/etc/alternatives'] as const
+/** Fixed workspace path inside Linux mount-namespace runners. */
+export const LINUX_WORKSPACE_ROOT = '/workspace'
 
 /**
  * Build the bwrap profile arguments for one file-effect policy.
@@ -26,8 +28,11 @@ export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
   const args = ['--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--die-with-parent']
   if (policy.mode === 'workspace-write') {
     args.push('--tmpfs', '/tmp')
-    args.push('--bind', policy.workspaceRoot, policy.workspaceRoot)
+    args.push('--bind', policy.workspaceRoot, LINUX_WORKSPACE_ROOT)
+  } else {
+    args.push('--ro-bind', policy.workspaceRoot, LINUX_WORKSPACE_ROOT)
   }
+  args.push('--chdir', LINUX_WORKSPACE_ROOT)
   return args
 }
 
@@ -44,12 +49,12 @@ export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
 export function landlockProfileArgs(policy: SandboxPolicy, executable?: string): string[] {
   const readOnly = [
     ...LANDLOCK_SYSTEM_READ_ROOTS,
-    policy.workspaceRoot,
+    LINUX_WORKSPACE_ROOT,
     ...executable !== undefined && isAbsolute(executable) ? [executable] : [],
   ]
   const readWrite = ['/dev/null']
   if (policy.mode === 'workspace-write') {
-    readWrite.push('/tmp', policy.workspaceRoot)
+    readWrite.push('/tmp', LINUX_WORKSPACE_ROOT)
   }
   return landlockGrantArgs({ readOnly, readWrite })
 }

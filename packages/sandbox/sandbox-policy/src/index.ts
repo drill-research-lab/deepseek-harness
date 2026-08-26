@@ -48,12 +48,12 @@ function resolveWorkspaceRoot(path: string): string {
 }
 
 /** Render the policy without claiming which capabilities are mounted. */
-function renderPolicyContext(policy: SandboxExecutionPolicy): string {
+function renderPolicyContext(policy: SandboxExecutionPolicy, workspaceViewRoot?: string): string {
   switch (policy.mode) {
     case 'read-only':
       return 'Current DSH file policy: read-only. Any available operation enforced by the DSH file sandbox cannot modify files in the standing mode. Do not refuse a required modification from this policy alone: try an available tool normally and follow any denial and escalation guidance it returns.'
     case 'workspace-write':
-      return `Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(policy.workspaceRoot)}. Some platform temporary areas may also be writable.`
+      return `Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(workspaceViewRoot ?? policy.workspaceRoot)}. Some platform temporary areas may also be writable.`
     case 'danger-full-access':
       return 'Current DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations.'
     /* v8 ignore next 4 -- SandboxMode is a typed same-process closed union; this branch is only the static exhaustiveness guard. */
@@ -87,6 +87,8 @@ export interface Config {
    * `process.cwd()`). Normal agent calls use their session cwd instead.
    */
   workspaceRoot?: string
+  /** Fixed path exposed by a sandbox runner instead of the canonical workspace root. */
+  workspaceViewRoot?: string
 }
 
 /** Inputs that select the sandbox policy for one capability call. */
@@ -112,6 +114,7 @@ export class SandboxPolicyService extends Service {
     // No schema default: process.cwd() is resolved in the constructor so the
     // stored root is always absolute regardless of how it was supplied.
     workspaceRoot: z.string(),
+    workspaceViewRoot: z.string(),
   })
 
   /** The deployment default mode — the fallback beneath a session override. */
@@ -122,6 +125,8 @@ export class SandboxPolicyService extends Service {
   readonly escalationTargets: readonly SandboxEscalationTarget[]
   /** The absolute `workspace-write` fallback root for calls without a session cwd. */
   readonly workspaceRoot: string
+  /** Fixed workspace path presented to the model, when the runner provides one. */
+  readonly workspaceViewRoot: string | undefined
   constructor(ctx: Context, config: Config) {
     super(ctx, 'sandboxPolicy')
     // schemastery (static Config) already filled `mode`; the cast records that
@@ -137,6 +142,7 @@ export class SandboxPolicyService extends Service {
     }
     this.escalationTargets = ESCALATION_TARGETS.filter(mode => this.modeAllowed(mode))
     this.workspaceRoot = resolveWorkspaceRoot(config.workspaceRoot ?? process.cwd())
+    this.workspaceViewRoot = config.workspaceViewRoot === undefined ? undefined : resolvePath(config.workspaceViewRoot)
 
     ctx.inject(['systemPrompt'], (scope: Context) => {
       scope.systemPrompt.context({
@@ -146,7 +152,7 @@ export class SandboxPolicyService extends Service {
           const session = context.agent?.session
           return session === undefined
             ? ''
-            : renderPolicyContext(this.resolve({ session }))
+            : renderPolicyContext(this.resolve({ session }), this.workspaceViewRoot)
         },
       })
     })

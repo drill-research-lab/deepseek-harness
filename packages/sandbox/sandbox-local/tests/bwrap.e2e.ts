@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -72,8 +72,9 @@ describe.skipIf(!bwrapUsable)('sandbox-local: real bwrap confinement', () => {
 
   it('read-only keeps the tree readable/executable and the fresh /dev/null writable', async () => {
     const workdir = await tempDir(tmpdir())
+    await writeFile(join(workdir, 'identity.txt'), 'alice')
     const sandbox = await provider()
-    const { result } = runConfined(sandbox, 'ls / > /dev/null && echo dev-ok', { mode: 'read-only', workspaceRoot: workdir })
+    const { result } = runConfined(sandbox, 'test "$PWD" = /workspace && test "$(cat identity.txt)" = alice && ls / > /dev/null && echo dev-ok', { mode: 'read-only', workspaceRoot: workdir })
     expect(result.status).toBe(0)
     expect(result.stdout).toBe('dev-ok\n')
   })
@@ -83,7 +84,7 @@ describe.skipIf(!bwrapUsable)('sandbox-local: real bwrap confinement', () => {
     const outside = await tempDir(homedir())
     const sandbox = await provider()
 
-    const inside = runConfined(sandbox, `printf bwrap-ok > ${workdir}/allowed.txt`, { mode: 'workspace-write', workspaceRoot: workdir })
+    const inside = runConfined(sandbox, 'test "$PWD" = /workspace && printf bwrap-ok > /workspace/allowed.txt', { mode: 'workspace-write', workspaceRoot: workdir })
     expect(inside.result.status).toBe(0)
     expect(readFileSync(join(workdir, 'allowed.txt'), 'utf8')).toBe('bwrap-ok')
 

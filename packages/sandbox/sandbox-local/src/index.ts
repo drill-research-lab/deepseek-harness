@@ -44,7 +44,7 @@ import { SandboxProvider, SandboxUnavailableError } from '@deepseek-ai/dsh-sandb
 import type { ConfinedArgv, ConfinedSandboxMode, RunnerFailureRule, SandboxEnforcement, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { AclWriteGrant, assertTempRootOutsideWorkspace, tempWriteSid, workspaceWriteSid } from '@deepseek-ai/dsh-sandbox-windows-acl'
-import { bwrapProfileArgs, landlockProfileArgs, seatbeltProfileArgs } from './profiles.ts'
+import { bwrapProfileArgs, landlockProfileArgs, LINUX_WORKSPACE_ROOT, seatbeltProfileArgs } from './profiles.ts'
 import {
   probeResourceLimits as defaultProbeResourceLimits,
   resolveResourceLimits,
@@ -388,7 +388,10 @@ export class LocalSandboxProvider extends SandboxProvider {
     switch (runner) {
       case 'bwrap': return ['bwrap', ...bwrapProfileArgs(policy)]
       case 'landlock-pid': return [
-        this.pidIsolateLauncher(), '--',
+        this.pidIsolateLauncher(),
+        '--bind', policy.workspaceRoot, LINUX_WORKSPACE_ROOT,
+        '--chdir', LINUX_WORKSPACE_ROOT,
+        '--',
         this.landlockLauncher(), ...landlockProfileArgs(policy, argv[0]),
       ]
       case 'seatbelt': return [this.seatbeltExec(), ...seatbeltProfileArgs(policy)]

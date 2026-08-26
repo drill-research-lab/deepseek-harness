@@ -1674,6 +1674,8 @@ export interface Config {
    * `process.cwd()`). Normal agent calls use their session cwd instead.
    */
   workspaceRoot?: string
+  /** Fixed path exposed by a sandbox runner instead of the canonical workspace root. */
+  workspaceViewRoot?: string
 }
 ```
 

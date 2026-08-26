@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/node-addon-pid-isolate-run-linux-arm64",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Prebuilt pid-isolate-run namespace launcher for linux-arm64 (static musl) — resolved as a file path by @deepseek-ai/node-addon-pid-isolate-run, never imported",
   "repository": {
     "type": "git",

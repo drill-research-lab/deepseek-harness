@@ -13,13 +13,14 @@ Filesystem tools, one-shot bash commands, and terminal sessions may enforce the 
 - `mode` — the deployment default `SandboxMode` (`read-only` / `workspace-write` / `danger-full-access`), validated at load. Default `read-only` (fail-safe).
 - `maximumMode` — the widest mode the deployment permits from its default, a durable session override, or a one-call escalation. Default `danger-full-access`. The plugin rejects a default wider than this ceiling at load.
 - `workspaceRoot` — the fallback directory `workspace-write` may write under for agentless calls or sessions without a cwd. Default `process.cwd()`, resolved to its absolute filesystem identity either way. A normal agent call uses its session header's immutable `cwd` instead.
+- `workspaceViewRoot` — an optional fixed path presented to the model when the configured runner maps every session workspace to one visible location. The shipped local Linux composition sets `/workspace`; other compositions leave it unset and present the canonical workspace root.
 
 ## API
 
 - `ctx.sandboxPolicy.resolve({ session?, mode? })` — resolves one complete per-call policy. An explicit approved mode outranks the session's last `sandbox/mode` event, which outranks `defaultMode`; every source must stay at or below `maximumMode`. The session's immutable `cwd` is canonicalized with filesystem semantics before becoming `workspaceRoot`, otherwise the configured fallback applies. Canonicalization precedes lexical normalization so `symlink/..` agrees with process working-directory resolution.
 - `ctx.sandboxPolicy.defaultMode` / `maximumMode` / `workspaceRoot` — the deployment default, deployment ceiling, and fallback root used by `resolve()`.
 - `ctx.sandboxPolicy.escalationTargets` — the closed escalation vocabulary filtered to modes at or below `maximumMode`. Enforcing tools use the same value for schema advertisement and execution-time authorization.
-- `sandbox:policy` — a request-time cache-safe context contribution derived directly from `resolve({ session })`. It states the mode's capability-neutral file-effect contract and the canonical session workspace under `workspace-write`; tool owners retain operation-specific denial and escalation guidance.
+- `sandbox:policy` — a request-time cache-safe context contribution derived directly from `resolve({ session })`. Under `workspace-write` it states the configured `workspaceViewRoot` or, when unset, the canonical session workspace; tool owners retain operation-specific denial and escalation guidance.
 - `effectiveSandboxMode(events)` — the pure fold of a session's `sandbox/mode` events (the last switch wins, or `undefined`), used inside `resolve()`.
 - `setSandboxMode(session, mode)` — THE write path for a per-session override: appends exactly one `sandbox/mode` event. The switch IS its event; nothing mutates the mode out of band.
 - `SANDBOX_MODES` — every mode, for option advertisement and runtime validation.
@@ -58,7 +59,7 @@ Current DSH file policy: danger-full-access. The DSH file sandbox does not restr
 
 #### Token effect
 
-One concise durable context message on the first request and each effective policy change; unchanged requests add nothing. `workspace-write` carries only the canonical session workspace path; platform-specific temporary paths are summarized without adding host-dependent bytes.
+One concise durable context message on the first request and each effective policy change; unchanged requests add nothing. `workspace-write` carries the platform-visible workspace path; platform-specific temporary paths are summarized without adding host-dependent bytes. The session header separately retains the canonical host path for ownership and audit.
 
 #### KV Cache effect
 

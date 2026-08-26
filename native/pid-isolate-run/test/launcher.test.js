@@ -35,7 +35,15 @@ assert.ok(fs.existsSync(launcher), `launcher.test: missing ${launcher}; run pnpm
 
 const run = (binary, args, options = {}) => spawnSync(binary, args, { encoding: 'utf8', ...options });
 
-for (const args of [[], ['--bogus'], ['--'], ['--probe', '--']]) {
+for (const args of [
+  [],
+  ['--bogus'],
+  ['--'],
+  ['--probe', '--'],
+  ['--bind', '/source'],
+  ['--bind', 'relative', '/destination', '--', 'true'],
+  ['--chdir', 'relative', '--', 'true'],
+]) {
   const result = run(launcher, args);
   assert.equal(result.status, LAUNCHER_FAILURE_EXIT);
   assert.ok(result.stderr.startsWith(FATAL_PREFIX));
@@ -64,6 +72,33 @@ if (!usable) {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, 'command-ok');
   assert.equal(run(launcher, ['--', '/bin/sh', '-c', 'exit 7']).status, 7);
+}
+
+{
+  const result = run(launcher, [
+    '--bind', '/proc', '/path-that-must-not-exist/destination',
+    '--', '/bin/true',
+  ]);
+  assert.equal(result.status, LAUNCHER_FAILURE_EXIT);
+  assert.match(result.stderr, /^pid-isolate-run: bind mount failed:/u);
+}
+
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'npir-bind-'));
+  const source = path.join(dir, 'source');
+  const destination = path.join(dir, 'destination');
+  fs.mkdirSync(source);
+  fs.mkdirSync(destination);
+  fs.writeFileSync(path.join(source, 'identity'), 'alice');
+  const result = run(launcher, [
+    '--bind', source, destination,
+    '--chdir', destination,
+    '--', '/bin/sh', '-c', 'printf "cwd=%s identity=%s" "$PWD" "$(cat identity)"',
+  ]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, `cwd=${destination} identity=alice`);
+  assert.deepEqual(fs.readdirSync(destination), [], 'bind mount must remain private to the child namespace');
+  fs.rmSync(dir, { recursive: true, force: true });
 }
 
 function capabilityLines(status) {

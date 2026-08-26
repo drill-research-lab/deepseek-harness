@@ -32,7 +32,7 @@ if (probe(launcher)) {
 }
 ```
 
-CLI 是 `pid-isolate-run -- <argv>...`；`pid-isolate-run --probe` 會完成整套初始化，但不執行呼叫端命令。launcher 失敗時以 `125` 結束，且不會執行命令。
+CLI 是 `pid-isolate-run [--bind <src> <dst>] [--chdir <path>] -- <argv>...`；絕對 bind 目的地必須已存在。bind 與目錄切換只會在新的私有 mount namespace 內、移除初始化 capabilities 之前發生。`pid-isolate-run --probe` 會完成整套初始化，但不執行呼叫端命令。launcher 失敗時以 `125` 結束，且不會執行命令。
 
 ## 包與支援範圍
 

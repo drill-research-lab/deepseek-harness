@@ -9,6 +9,7 @@ import type { SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import { launcherPath } from '@deepseek-ai/node-addon-landlock-run'
 import { launcherPath as pidIsolateLauncherPath } from '@deepseek-ai/node-addon-pid-isolate-run'
 import { LocalSandboxProvider } from '@deepseek-ai/dsh-sandbox-local'
+import { LINUX_WORKSPACE_ROOT } from '../src/profiles.ts'
 
 /**
  * Keyless backend integration through `confine()` and the workspace `landlock-run` launcher, with
@@ -19,7 +20,7 @@ import { LocalSandboxProvider } from '@deepseek-ai/dsh-sandbox-local'
 
 const probe = spawnSync(launcherPath(), ['--probe'], { timeout: 5_000, encoding: 'utf8' })
 const pidProbe = spawnSync(pidIsolateLauncherPath(), ['--probe'], { timeout: 5_000, encoding: 'utf8' })
-const landlockUsable = probe.status === 0 && pidProbe.status === 0
+const landlockUsable = probe.status === 0 && pidProbe.status === 0 && existsSync(LINUX_WORKSPACE_ROOT)
 /** The running kernel's enforcement level, from the launcher's probe report — every wrap below must carry exactly this. */
 const enforcement = /partially enforced/.test(probe.stdout ?? '') ? 'partial' : 'full'
 
@@ -106,24 +107,37 @@ describe.skipIf(!landlockUsable)('sandbox-local: real Landlock confinement throu
     expect(deniedEtc.result.stderr.toLowerCase()).toContain('permission denied')
   })
 
-  it('denies cross-owner reads between sibling workspaces', async () => {
+  it('maps each owner to an isolated /workspace and denies the other owner root', async () => {
     const alice = await tempDir(homedir())
     const bob = await tempDir(homedir())
-    await writeFile(join(bob, 'bob-secret.txt'), 'bob-secret')
+    await Promise.all([
+      writeFile(join(alice, 'identity.txt'), 'alice'),
+      writeFile(join(bob, 'identity.txt'), 'bob'),
+    ])
     const sandbox = await provider()
-    const { result } = runConfined(
+    const aliceRun = runConfined(
       sandbox,
-      `cat ${bob}/bob-secret.txt >/dev/null`,
+      `printf 'cwd=%s identity=%s' "$PWD" "$(cat identity.txt)"; cat ${bob}/identity.txt`,
       { mode: 'workspace-write', workspaceRoot: alice },
     )
-    expect(result.status).not.toBe(0)
-    expect(result.stderr.toLowerCase()).toContain('permission denied')
+    expect(aliceRun.result.status).not.toBe(0)
+    expect(aliceRun.result.stdout).toBe('cwd=/workspace identity=alice')
+    expect(aliceRun.result.stderr.toLowerCase()).toContain('permission denied')
+
+    const bobRun = runConfined(
+      sandbox,
+      `printf 'cwd=%s identity=%s' "$PWD" "$(cat identity.txt)"; cat ${alice}/identity.txt`,
+      { mode: 'workspace-write', workspaceRoot: bob },
+    )
+    expect(bobRun.result.status).not.toBe(0)
+    expect(bobRun.result.stdout).toBe('cwd=/workspace identity=bob')
+    expect(bobRun.result.stderr.toLowerCase()).toContain('permission denied')
   })
 
   it('read-only denies a write — the file must NOT exist, the wrap reports the probed enforcement', async () => {
     const workdir = await tempDir(tmpdir())
     const sandbox = await provider()
-    const { result, enforcement: wrapped } = runConfined(sandbox, `echo hi > ${workdir}/denied.txt`, { mode: 'read-only', workspaceRoot: workdir })
+    const { result, enforcement: wrapped } = runConfined(sandbox, 'echo hi > /workspace/denied.txt', { mode: 'read-only', workspaceRoot: workdir })
     expect(result.status).not.toBe(0)
     expect(wrapped).toBe(enforcement)
     expect(existsSync(join(workdir, 'denied.txt'))).toBe(false)
@@ -154,7 +168,7 @@ describe.skipIf(!landlockUsable)('sandbox-local: real Landlock confinement throu
     const outside = await tempDir(homedir())
     const sandbox = await provider()
 
-    const inside = runConfined(sandbox, `printf landlock-ok > ${workdir}/allowed.txt`, { mode: 'workspace-write', workspaceRoot: workdir })
+    const inside = runConfined(sandbox, 'test "$PWD" = /workspace && printf landlock-ok > /workspace/allowed.txt', { mode: 'workspace-write', workspaceRoot: workdir })
     expect(inside.result.status).toBe(0)
     expect(readFileSync(join(workdir, 'allowed.txt'), 'utf8')).toBe('landlock-ok')
 

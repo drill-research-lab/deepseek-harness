@@ -2,6 +2,6 @@
 # side as of the last confirmed-consistent state. All languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write native/pid-isolate-run/README.md
-README.md: 6eee138dfa992d92f0613677c406bce4ae76e68a
-README.zh.md: d17a869cdb1fdc5d1e87c1621a01f31f9759f3e3
-README.zh-tw.md: b49d3f354433489c663bd1a9ec9907b8a6c9a1ac
+README.md: 6f162cb2aec8bf737e13cf57527d957656dbe261
+README.zh.md: a8af75aa25fdbeda540d211f01c894d6c160d1de
+README.zh-tw.md: 8ad84440572213c99f90a68ae42ded7b9b2e4ce2
