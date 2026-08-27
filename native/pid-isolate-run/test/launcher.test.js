@@ -43,6 +43,7 @@ for (const args of [
   ['--bind', '/source'],
   ['--bind', 'relative', '/destination', '--', 'true'],
   ['--chdir', 'relative', '--', 'true'],
+  ['--mask', 'relative', '--', 'true'],
 ]) {
   const result = run(launcher, args);
   assert.equal(result.status, LAUNCHER_FAILURE_EXIT);
@@ -98,6 +99,27 @@ if (!usable) {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, `cwd=${destination} identity=alice`);
   assert.deepEqual(fs.readdirSync(destination), [], 'bind mount must remain private to the child namespace');
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'npir-mask-'));
+  const source = path.join(dir, 'source');
+  const destination = path.join(dir, 'destination');
+  const masked = path.join(dir, 'owner-roots');
+  fs.mkdirSync(source);
+  fs.mkdirSync(destination);
+  fs.mkdirSync(masked);
+  fs.writeFileSync(path.join(source, 'identity'), 'alice');
+  fs.writeFileSync(path.join(masked, 'hash'), 'must-not-be-visible');
+  const result = run(launcher, [
+    '--bind', source, destination,
+    '--mask', masked,
+    '--chdir', destination,
+    '--', '/bin/sh', '-c', `test "$(cat identity)" = alice && test ! -e ${masked}/hash`,
+  ]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.readFileSync(path.join(masked, 'hash'), 'utf8'), 'must-not-be-visible');
   fs.rmSync(dir, { recursive: true, force: true });
 }
 

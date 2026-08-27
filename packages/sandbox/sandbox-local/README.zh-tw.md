@@ -16,7 +16,7 @@ Windows 檔為每個工作區保留一個確定性寫入 SID 和常駐 ACE，但
 
 [`@deepseek-ai/node-addon-landlock-run`](https://www.npmjs.com/package/@deepseek-ai/node-addon-landlock-run) 提供平臺 launcher、功能探測和 CLI 參數詞彙。該提供方只負責模式到授權的對映與 runner 選擇。把路徑解析和探測解析保留在帶版本的 binary 中，可防止約定漂移。
 
-Linux runner 會把 host 上的規範 workspace root bind 到 `/workspace`，並在執行命令前進入該路徑。每個 bwrap 行程自行建立別名；Landlock 鏈則讓 [`@deepseek-ai/node-addon-pid-isolate-run`](../../../native/pid-isolate-run/) 在 mount propagation 私有化之後、移除初始化 capabilities 之前建立別名。Landlock 部署必須提供已存在的 `/workspace` 目錄作為 bind 目的地，對已安裝的 launcher 執行 `setcap cap_sys_admin,cap_setpcap+ep`，並驗證 `--probe`；否則組合 runner 會失敗閉合。該別名不會取代規範 host root 或增加權限：兩個名稱指向相同 hierarchy，owner 隔離仍以每次呼叫的 source path 為依據。
+Linux runner 會把 host 上的規範 workspace root bind 到 `/workspace`，並在執行命令前進入該路徑。當每次呼叫的 workspace 是 `workspaceStorageRoot` 的嚴格後代時，runner 隨後會用空 tmpfs 覆蓋該 storage root，讓每個 owner 的 hash 目錄在命令的 mount 視圖中不存在，同時保留已建立的 bind。每個 bwrap 行程自行建立這兩個 mount；Landlock 鏈則讓 [`@deepseek-ai/node-addon-pid-isolate-run`](../../../native/pid-isolate-run/) 在 mount propagation 私有化之後、移除初始化 capabilities 之前建立它們。Landlock 部署必須提供已存在的 `/workspace` 目錄作為 bind 目的地，對已安裝的 launcher 執行 `setcap cap_sys_admin,cap_setpcap+ep`，並驗證 `--probe`；否則組合 runner 會失敗閉合。這兩個 mount 都不會取代規範 host root 或增加權限，owner 隔離仍以每次呼叫的 source path 為依據。
 
 Linux Landlock profile 允許讀取 `/workspace` 以及 `/usr`、`/etc/ld.so.cache`、`/etc/alternatives`；寫入權限仍由模式決定。受信任消費方傳入的絕對外層執行檔會獲得只針對該檔案的讀取授權，使 ripgrep 一類隨附靜態工具可到達 `execve`，但不會授權其上級 runtime 目錄。系統根目錄支援普通執行檔與 merged-usr loader symlink（符號連結）。Bubblewrap 不使用特權 helper。macOS Seatbelt 與 Windows ACL 執行維持規範 host 工作路徑，因為這些平臺沒有 mount namespace 別名。
 

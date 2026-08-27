@@ -10,7 +10,7 @@
  * CLI:
  *
  *   pid-isolate-run -- <argv>...
- *   pid-isolate-run --bind <src> <dst> --chdir <path> -- <argv>...
+ *   pid-isolate-run --bind <src> <dst> --mask <path> --chdir <path> -- <argv>...
  *   pid-isolate-run --probe
  *
  * Plain C11 over libc and stable Linux syscalls. The capability UAPI layouts
@@ -55,6 +55,7 @@ struct cli {
   int probe;
   const char *bind_source;
   const char *bind_destination;
+  const char *masked_path;
   const char *working_directory;
   char **command;
 };
@@ -98,15 +99,23 @@ static int parse(int argc, char **argv, struct cli *cli) {
       index += 2;
       continue;
     }
-    return fail_usage("expected `--bind <src> <dst>`, `--chdir <path>`, or `--`");
+    if (strcmp(argv[index], "--mask") == 0) {
+      if (cli->masked_path != NULL) return fail_usage("--mask may occur only once");
+      if (index + 1 >= argc) return fail_usage("--mask requires a path");
+      cli->masked_path = argv[index + 1];
+      index += 2;
+      continue;
+    }
+    return fail_usage("expected `--bind <src> <dst>`, `--mask <path>`, `--chdir <path>`, or `--`");
   }
   if (index >= argc || index + 1 >= argc) {
-    return fail_usage("expected `--probe` or `[--bind <src> <dst>] [--chdir <path>] -- <argv>...`");
+    return fail_usage("expected `--probe` or `[--bind <src> <dst>] [--mask <path>] [--chdir <path>] -- <argv>...`");
   }
   if ((cli->bind_source != NULL && cli->bind_source[0] != '/')
       || (cli->bind_destination != NULL && cli->bind_destination[0] != '/')
+      || (cli->masked_path != NULL && cli->masked_path[0] != '/')
       || (cli->working_directory != NULL && cli->working_directory[0] != '/')) {
-    return fail_usage("--bind and --chdir paths must be absolute");
+    return fail_usage("--bind, --mask, and --chdir paths must be absolute");
   }
   cli->command = &argv[index + 1];
   return 0;
@@ -250,6 +259,10 @@ static int prepare_child(const struct cli *cli) {
   if (cli->bind_source != NULL
       && mount(cli->bind_source, cli->bind_destination, NULL, MS_BIND | MS_REC, NULL) != 0) {
     return fail("bind mount failed", strerror(errno));
+  }
+  if (cli->masked_path != NULL
+      && mount("tmpfs", cli->masked_path, "tmpfs", MS_NOSUID | MS_NODEV | MS_NOEXEC, "mode=000") != 0) {
+    return fail("mask mount failed", strerror(errno));
   }
   if (cli->working_directory != NULL && chdir(cli->working_directory) != 0) {
     return fail("working directory change failed", strerror(errno));

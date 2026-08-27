@@ -1631,6 +1631,11 @@ export interface Config extends ResourceLimitConfig {
   runnerFailureSignatures?: string[]
   /** Positive timeout for each functional probe; zero would mean unbounded to Node. */
   probeTimeoutMs?: number
+  /**
+   * Deployment-owned root whose per-owner children are hidden after the workspace bind.
+   * An omitted or blank value uses `resolveDshHome()/owner-roots`.
+   */
+  workspaceStorageRoot?: string
 }
 
 /** User-configurable limits for one local sandbox process tree. */
@@ -1650,7 +1655,7 @@ export interface ResourceLimitConfig {
 }
 ```
 
-Source: [`packages/sandbox/sandbox-local/src/index.ts:56`](../packages/sandbox/sandbox-local/src/index.ts)
+Source: [`packages/sandbox/sandbox-local/src/index.ts:57`](../packages/sandbox/sandbox-local/src/index.ts)
 
 <a id="deepseek-aidsh-sandbox-policy"></a>
 

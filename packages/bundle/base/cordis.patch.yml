@@ -168,13 +168,15 @@
     # sessions pin workspace-write + ask through the permission service below.
     - id: sandbox
       name: '@deepseek-ai/dsh-sandbox-local'
+      config:
+        workspaceStorageRoot: !!js process.env.DSH_OWNER_ROOTS
 
     - id: sandbox-policy
       name: '@deepseek-ai/dsh-sandbox-policy'
       config:
         mode: !!js process.env.DSH_PERMISSION_MODE ?? 'workspace-write'
         workspaceRoot: !!js process.cwd()
-        workspaceViewRoot: !!js process.platform === 'linux' ? '/workspace' : undefined
+        workspaceViewRoot: !!js "process.platform === 'linux' ? '/workspace' : undefined"
 
     - id: bash-sandbox
       name: '@deepseek-ai/dsh-bash-sandbox'

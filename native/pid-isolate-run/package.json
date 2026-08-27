@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/node-addon-pid-isolate-run-workspace",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "license": "BSD-3-Clause",

@@ -38,7 +38,7 @@
         config:
           mode: workspace-write
           workspaceRoot: /tmp
-          workspaceViewRoot: !!js process.platform === 'linux' ? '/workspace' : undefined
+          workspaceViewRoot: !!js "process.platform === 'linux' ? '/workspace' : undefined"
       - insert:
           - id: llm-replay
             name: '@deepseek-ai/dsh-llm-replay'

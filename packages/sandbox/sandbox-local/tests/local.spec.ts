@@ -93,6 +93,14 @@ describe('profile dialects', () => {
     ])
   })
 
+  it('bwrap hides the configured storage root only after preserving the workspace alias', () => {
+    expect(bwrapProfileArgs(WW, '/owners')).toEqual([
+      '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--die-with-parent',
+      '--tmpfs', '/tmp', '--bind', '/ws', LINUX_WORKSPACE_ROOT,
+      '--tmpfs', '/owners', '--chdir', LINUX_WORKSPACE_ROOT,
+    ])
+  })
+
   it('landlock read-only: readable tree plus a writable /dev/null, nothing else', () => {
     // /dev/null specifically, NOT /dev: a whole-/dev grant would let confined
     // commands write real host paths beneath it (/dev/shm) under read-only.
@@ -251,6 +259,35 @@ describe('the platform chains', () => {
     })
     expect(probePidIsolate).toHaveBeenCalledWith(pidLauncher)
     expect(probeLandlock).toHaveBeenCalledWith(launcher)
+  })
+
+  it('linux masks a configured storage root only for its descendant workspace', async () => {
+    const launcher = fakeLauncher()
+    const pidLauncher = '/fake/pid-isolate-run'
+    const { sandbox } = await setup({ workspaceStorageRoot: '/owners' }, {
+      platform: 'linux',
+      probeBwrap: () => false,
+      probeLandlock: () => 'full',
+      landlockLauncher: launcher,
+      pidIsolateLauncher: pidLauncher,
+    })
+    expect(sandbox.confine(['true'], { mode: 'workspace-write', workspaceRoot: '/owners/alice/project' }).argv)
+      .toEqual([
+        pidLauncher,
+        '--bind', '/owners/alice/project', LINUX_WORKSPACE_ROOT,
+        '--mask', '/owners',
+        '--chdir', LINUX_WORKSPACE_ROOT,
+        '--', launcher, ...landlockProfileArgs({ mode: 'workspace-write', workspaceRoot: '/owners/alice/project' }, 'true'),
+        '--', 'true',
+      ])
+    expect(sandbox.confine(['true'], { mode: 'workspace-write', workspaceRoot: '/other/project' }).argv)
+      .not.toContain('--mask')
+  })
+
+  it('rejects masking the filesystem root', async () => {
+    await expect(setup({ workspaceStorageRoot: '/' })).rejects.toThrow(
+      'workspaceStorageRoot must not be the filesystem root',
+    )
   })
 
   it('fails closed before probing Landlock when PID isolation is unusable', async () => {

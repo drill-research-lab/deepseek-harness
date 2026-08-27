@@ -22,9 +22,10 @@ export const LINUX_WORKSPACE_ROOT = '/workspace'
 /**
  * Build the bwrap profile arguments for one file-effect policy.
  * @param policy - file-effect policy to express as bwrap mounts.
+ * @param workspaceStorageRoot - deployment storage root to hide after mounting the workspace.
  * @returns profile arguments before the trailing separator and command argv.
  */
-export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
+export function bwrapProfileArgs(policy: SandboxPolicy, workspaceStorageRoot?: string): string[] {
   const args = ['--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--die-with-parent']
   if (policy.mode === 'workspace-write') {
     args.push('--tmpfs', '/tmp')
@@ -32,6 +33,7 @@ export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
   } else {
     args.push('--ro-bind', policy.workspaceRoot, LINUX_WORKSPACE_ROOT)
   }
+  if (workspaceStorageRoot !== undefined) args.push('--tmpfs', workspaceStorageRoot)
   args.push('--chdir', LINUX_WORKSPACE_ROOT)
   return args
 }

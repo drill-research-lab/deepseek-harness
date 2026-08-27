@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
-import { copyFile, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -9,6 +9,7 @@ import type { SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import { launcherPath } from '@deepseek-ai/node-addon-landlock-run'
 import { launcherPath as pidIsolateLauncherPath } from '@deepseek-ai/node-addon-pid-isolate-run'
 import { LocalSandboxProvider } from '@deepseek-ai/dsh-sandbox-local'
+import type { Config } from '@deepseek-ai/dsh-sandbox-local'
 import { LINUX_WORKSPACE_ROOT } from '../src/profiles.ts'
 
 /**
@@ -39,9 +40,9 @@ async function tempDir(base: string): Promise<string> {
   return dir
 }
 
-async function provider(): Promise<LocalSandboxProvider> {
+async function provider(config: Config = {}): Promise<LocalSandboxProvider> {
   ctx = new Context()
-  await ctx.plugin(LocalSandboxProvider, {})
+  await ctx.plugin(LocalSandboxProvider, config)
   const sandbox = ctx.sandbox as LocalSandboxProvider
   sandbox.internals = { probeBwrap: () => false }
   return sandbox
@@ -108,30 +109,30 @@ describe.skipIf(!landlockUsable)('sandbox-local: real Landlock confinement throu
   })
 
   it('maps each owner to an isolated /workspace and denies the other owner root', async () => {
-    const alice = await tempDir(homedir())
-    const bob = await tempDir(homedir())
+    const ownerRoots = await tempDir(homedir())
+    const alice = join(ownerRoots, 'alice')
+    const bob = join(ownerRoots, 'bob')
+    await Promise.all([mkdir(alice), mkdir(bob)])
     await Promise.all([
       writeFile(join(alice, 'identity.txt'), 'alice'),
       writeFile(join(bob, 'identity.txt'), 'bob'),
     ])
-    const sandbox = await provider()
+    const sandbox = await provider({ workspaceStorageRoot: ownerRoots })
     const aliceRun = runConfined(
       sandbox,
-      `printf 'cwd=%s identity=%s' "$PWD" "$(cat identity.txt)"; cat ${bob}/identity.txt`,
+      `printf 'cwd=%s identity=%s visible=%s' "$PWD" "$(cat identity.txt)" "$(test -e ${bob} && echo yes || echo no)"; cat ${bob}/identity.txt`,
       { mode: 'workspace-write', workspaceRoot: alice },
     )
     expect(aliceRun.result.status).not.toBe(0)
-    expect(aliceRun.result.stdout).toBe('cwd=/workspace identity=alice')
-    expect(aliceRun.result.stderr.toLowerCase()).toContain('permission denied')
+    expect(aliceRun.result.stdout).toBe('cwd=/workspace identity=alice visible=no')
 
     const bobRun = runConfined(
       sandbox,
-      `printf 'cwd=%s identity=%s' "$PWD" "$(cat identity.txt)"; cat ${alice}/identity.txt`,
+      `printf 'cwd=%s identity=%s visible=%s' "$PWD" "$(cat identity.txt)" "$(test -e ${alice} && echo yes || echo no)"; cat ${alice}/identity.txt`,
       { mode: 'workspace-write', workspaceRoot: bob },
     )
     expect(bobRun.result.status).not.toBe(0)
-    expect(bobRun.result.stdout).toBe('cwd=/workspace identity=bob')
-    expect(bobRun.result.stderr.toLowerCase()).toContain('permission denied')
+    expect(bobRun.result.stdout).toBe('cwd=/workspace identity=bob visible=no')
   })
 
   it('read-only denies a write — the file must NOT exist, the wrap reports the probed enforcement', async () => {

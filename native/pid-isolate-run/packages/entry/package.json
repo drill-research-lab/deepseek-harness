@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/node-addon-pid-isolate-run",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "PID and mount namespace self-restrict-then-exec launcher for Linux: prebuilt static binaries plus the JS seam that resolves and probes them",
   "repository": {
