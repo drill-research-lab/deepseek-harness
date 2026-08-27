@@ -135,6 +135,41 @@ describe.skipIf(!landlockUsable)('sandbox-local: real Landlock confinement throu
     expect(bobRun.result.stdout).toBe('cwd=/workspace identity=bob visible=no')
   })
 
+  it('creates and reads back a multi-file, multi-directory project under /workspace, isolated per owner', async () => {
+    const ownerRoots = await tempDir(homedir())
+    const alice = join(ownerRoots, 'alice')
+    const bob = join(ownerRoots, 'bob')
+    await Promise.all([mkdir(alice), mkdir(bob)])
+
+    const sandbox = await provider({ workspaceStorageRoot: ownerRoots })
+    const buildProject = [
+      'mkdir -p src/lib test',
+      'printf "export const value = 1;\\n" > src/index.ts',
+      'printf "export const helper = () => value;\\n" > src/lib/helper.ts',
+      'printf "check(helper());\\n" > test/helper.test.ts',
+      'find . -type f | sort',
+    ].join(' && ')
+
+    const aliceRun = runConfined(sandbox, buildProject, { mode: 'workspace-write', workspaceRoot: alice })
+    expect(aliceRun.result.status, aliceRun.result.stderr).toBe(0)
+    expect(aliceRun.result.stdout).toBe(
+      ['./src/index.ts', './src/lib/helper.ts', './test/helper.test.ts'].join('\n') + '\n',
+    )
+    expect(readFileSync(join(alice, 'src', 'lib', 'helper.ts'), 'utf8')).toBe('export const helper = () => value;\n')
+
+    const bobRun = runConfined(sandbox, buildProject, { mode: 'workspace-write', workspaceRoot: bob })
+    expect(bobRun.result.status, bobRun.result.stderr).toBe(0)
+    expect(readFileSync(join(bob, 'test', 'helper.test.ts'), 'utf8')).toBe('check(helper());\n')
+
+    const aliceReadBob = runConfined(
+      sandbox,
+      `cat ${bob}/src/index.ts 2>&1; find ${bob} 2>&1`,
+      { mode: 'workspace-write', workspaceRoot: alice },
+    )
+    expect(aliceReadBob.result.status).not.toBe(0)
+    expect(aliceReadBob.result.stdout).not.toContain('value')
+  })
+
   it('read-only denies a write — the file must NOT exist, the wrap reports the probed enforcement', async () => {
     const workdir = await tempDir(tmpdir())
     const sandbox = await provider()
