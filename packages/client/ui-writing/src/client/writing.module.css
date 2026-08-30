@@ -69,8 +69,9 @@
 
 .reports {
   display: flex;
-  gap: 8px;
-  overflow-x: auto;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -78,8 +79,7 @@
 
 .row {
   flex: 0 0 auto;
-  max-width: 12em;
-  padding: 6px 12px;
+  padding: 6px 10px;
   border-radius: 4px;
   cursor: pointer;
   overflow: hidden;
