@@ -49,6 +49,11 @@ export interface PipelineRunRecord {
   nodeCount: number
 }
 
+/** Extract the numeric ordinal from a `<pipelineId>-run-<ordinal>` run id. */
+function runOrdinal(runId: string): number {
+  return Number(runId.slice(runId.lastIndexOf('-') + 1))
+}
+
 /** Directory names inside the storage root; one level, fixed. */
 const LAYOUT = {
   definitions: 'definitions',
@@ -182,6 +187,25 @@ export class PipelineFileRegistry {
   /** Read one persisted definition, or undefined when unknown. */
   get(id: PipelineId): WorkflowJson | undefined {
     return this.definitions.get(String(id))
+  }
+
+  /**
+   * List one pipeline's settled run records, oldest first. An unknown pipeline
+   * or one without runs yields an empty list.
+   */
+  listRuns(id: PipelineId): readonly PipelineRunRecord[] {
+    const dir = join(this.runsDir, String(id))
+    if (!existsSync(dir)) return []
+    return readdirSync(dir)
+      .filter(file => file.endsWith('.json'))
+      .map(file => JSON.parse(readFileSync(join(dir, file), 'utf8')) as PipelineRunRecord)
+      .sort((a, b) => runOrdinal(a.runId) - runOrdinal(b.runId))
+  }
+
+  /** Read one settled run record, or `undefined` when the pipeline or ordinal is unknown. */
+  readRun(id: PipelineId, ordinal: number): PipelineRunRecord | undefined {
+    const raw = readJsonFile(join(this.runsDir, String(id), `${ordinal}.json`))
+    return raw === undefined ? undefined : (raw as PipelineRunRecord)
   }
 
   /** List every persisted definition's id (the durable source-of-truth set). */

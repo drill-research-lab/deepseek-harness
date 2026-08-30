@@ -34,6 +34,7 @@ import type {
   WorkflowJson,
 } from '@deepseek-ai/dsh-pipeline'
 import { PipelineFileRegistry } from './registry.ts'
+import { PipelineRpcService } from './service.ts'
 import type { PipelineRunRecord } from './registry.ts'
 
 /** One registered builtin step: a pure transformation over its config and the upstream input. */
@@ -133,6 +134,7 @@ export class PipelineLocalEngine extends PipelineEngine {
     this.registry = new PipelineFileRegistry(config.storageDir, config.retainedRuns)
     this.llmProvider = config.llmProvider
     this.llmModel = config.llmModel
+    ctx.plugin(PipelineRpcService)
     const tickMs = (config.tickSeconds ?? 60) * 1000
     if (config.scheduler ?? true) {
       this.ctx.effect(() => {
@@ -167,6 +169,16 @@ export class PipelineLocalEngine extends PipelineEngine {
 
   get(id: PipelineId): WorkflowJson | undefined {
     return this.registry.get(id)
+  }
+
+  /** List one pipeline's settled run records, oldest first. */
+  listRuns(id: PipelineId): readonly PipelineRunRecord[] {
+    return this.registry.listRuns(id)
+  }
+
+  /** Read one settled run record, or `undefined` when the pipeline or ordinal is unknown. */
+  readRun(id: PipelineId, ordinal: number): PipelineRunRecord | undefined {
+    return this.registry.readRun(id, ordinal)
   }
 
   async save(request: PipelineSaveRequest): Promise<WorkflowJson> {
