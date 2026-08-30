@@ -20,8 +20,8 @@ export interface WritingReportsState {
 export interface WritingReportsSource extends HostObservable<WritingReportsState> {
   /** Replace the whole report list. */
   setReports(reports: ReportSummaryView[]): void
-  /** Select the active report. */
-  select(reportId: string): void
+  /** Select the active report; `undefined` clears the selection (close the overlay). */
+  select(reportId: string | undefined): void
   /** Rename one report in the list in place. */
   renameReport(reportId: string, title: string): void
 }

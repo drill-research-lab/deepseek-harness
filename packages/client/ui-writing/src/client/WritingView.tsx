@@ -1,4 +1,4 @@
-/** Writing view: the LaTeX editor + PDF preview for the selected report, with compile feedback. */
+/** Writing view: a full-screen overlay (editor + PDF preview) for the selected report. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -18,19 +18,32 @@ const AUTOSAVE_DELAY_MS = 1000
 /** Served prefix for a compiled report's PDF; matches the writing-api route. */
 const PDF_PATH_PREFIX = '/writing'
 
+/** Compile toast auto-dismiss delay (ms). */
+const TOAST_MS = 4000
+let toastSeq = 0
+
+/** One transient compile/save notice shown top-right. */
+interface Toast {
+  readonly id: number
+  readonly kind: 'ok' | 'error' | 'info'
+  readonly text: string
+}
+
 /** The Writing editor surface. Report selection arrives from the shared source via `useReportSelection`. */
 export function WritingView(props: WritingViewProps): JSX.Element {
-  const { rename, getSource, updateSource, compile, versions, restore, renameReport, t, useReportSelection } = props
+  const { rename, getSource, updateSource, compile, versions, restore, select, renameReport, t, useReportSelection } = props
   const selectedReportId = useReportSelection(state => state.selectedReportId)
   const reports = useReportSelection(state => state.reports)
   const [selectedTitle, setSelectedTitle] = useState('')
   const [source, setSource] = useState('')
   const [compileResult, setCompileResult] = useState<CompileResultView | undefined>(undefined)
   const [versionList, setVersionList] = useState<ReportVersionView[]>([])
-  const [message, setMessage] = useState('')
   const [compiling, setCompiling] = useState(false)
   const [split, setSplit] = useState(50)
   const [showAllVersions, setShowAllVersions] = useState(false)
+  const [toolbarOpen, setToolbarOpen] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [toasts, setToasts] = useState<Toast[]>([])
   const [previewModalOpen, setPreviewModalOpen] = useState(false)
   const [modalSplit, setModalSplit] = useState(50)
   const [showOutline, setShowOutline] = useState(false)
@@ -47,17 +60,33 @@ export function WritingView(props: WritingViewProps): JSX.Element {
 
   const outline = useMemo(() => buildOutline(source), [source])
 
+  const pushToast = useCallback((kind: Toast['kind'], text: string): void => {
+    const id = ++toastSeq
+    setToasts(current => [...current, { id, kind, text }])
+    window.setTimeout(() => {
+      setToasts(current => current.filter(toast => toast.id !== id))
+    }, TOAST_MS)
+  }, [])
+
   const compileSelected = useCallback(async (noSnapshot = false): Promise<void> => {
     const id = selectedRef.current
     if (id === undefined) return
     setCompiling(true)
     try {
-      setCompileResult(noSnapshot ? await compile(id, { snapshot: false }) : await compile(id))
+      const result = noSnapshot ? await compile(id, { snapshot: false }) : await compile(id)
+      setCompileResult(result)
       setVersionList(await versions(id))
+      const errors = result.diagnostics.filter(diagnostic => diagnostic.severity === 'error')
+      if (result.ok) pushToast('ok', t('compiledOk'))
+      else if (errors.length > 0) {
+        const messages = errors.map(diagnostic =>
+          `${diagnostic.line === undefined ? '' : `@ ${diagnostic.line} `}: ${diagnostic.message}`).join('；')
+        pushToast('error', `${errors.length} ${t('errorSummary')}：${messages}`)
+      }
     } finally {
       setCompiling(false)
     }
-  }, [compile, versions])
+  }, [compile, versions, pushToast, t])
 
   // When the sidebar selects a report, load its source and versions, compiling
   // only when the report has never compiled.
@@ -76,7 +105,6 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     const summary = reports.find(report => report.reportId === selectedReportId)
     setSelectedTitle(summary?.title ?? '')
     committedTitleRef.current = summary?.title ?? ''
-    setMessage('')
     void (async () => {
       if (autosaveTimer.current !== undefined) clearTimeout(autosaveTimer.current)
       const loaded = await getSource(selectedReportId)
@@ -100,7 +128,7 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     const id = selectedRef.current
     if (id === undefined) return
     await updateSource(id, sourceRef.current)
-    setMessage(t('saved'))
+    pushToast('info', t('saved'))
   }
 
   const scheduleAutosave = useCallback((): void => {
@@ -127,9 +155,8 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     const id = selectedRef.current
     if (id === undefined) return
     await updateSource(id, sourceRef.current)
-    setMessage(t('saved'))
     await compileSelected()
-  }, [updateSource, compileSelected, t])
+  }, [updateSource, compileSelected])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -162,10 +189,10 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     const restored = await restore(id, versionId, branch.trim())
     sourceRef.current = restored
     setSource(restored)
-    setMessage(t('restored'))
+    pushToast('info', t('restored'))
     // Refresh the preview for the restored content without snapshotting a version.
     await compileSelected(true)
-  }, [restore, compileSelected, t])
+  }, [restore, compileSelected, pushToast, t])
 
   const onTitleCommit = useCallback(async (): Promise<void> => {
     const id = selectedRef.current
@@ -179,8 +206,6 @@ export function WritingView(props: WritingViewProps): JSX.Element {
   }, [selectedTitle, rename, renameReport])
 
   const openPreview = useCallback((): void => {
-    // Opening the window never recompiles: selection already resolved to the
-    // latest compiled version, or compiled when the report had none.
     setPreviewModalOpen(true)
   }, [])
 
@@ -220,20 +245,47 @@ export function WritingView(props: WritingViewProps): JSX.Element {
   }, [beginSplitDrag, modalSplit])
 
   const pdfUrl = compileResult?.pdfUrl
-  const errorCount = compileResult !== undefined && !compileResult.ok
-    ? compileResult.diagnostics.filter(diagnostic => diagnostic.severity === 'error').length
-    : 0
-  const headerStatus = compiling
-    ? t('compiling')
-    : compileResult?.ok === true
-      ? t('compiledOk')
-      : compileResult !== undefined && errorCount > 0
-        ? `${errorCount} ${t('errorSummary')}`
-        : t('noPreview')
+
+  // No report selected yet: show a lightweight placeholder within the tab.
+  if (selectedReportId === undefined) {
+    return <div className={css.writingEmpty}>{t('noReportSelected')}</div>
+  }
 
   return (
-    <div className={css.writing}>
-      <main ref={editorRef} className={css.editor} style={{ gridTemplateColumns: `${split}% 6px 1fr` }}>
+    <div className={css.writingOverlay}>
+      <div className={css.writingTopbar}>
+        <span className={css.writingTitle}>{selectedTitle}</span>
+        <div className={css.toolbarWrap}>
+          <button
+            className={css.toolbarToggle}
+            title={t('toolbar')}
+            onClick={() => setToolbarOpen(visible => !visible)}
+          >
+            ☰
+          </button>
+          {toolbarOpen && (
+            <div className={css.toolbarMenu}>
+              <button className={css.button} onClick={() => { void onSave() }}>{t('save')}</button>
+              <button className={css.button} onClick={() => { void onCompile() }}>{t('compile')}</button>
+              <button className={css.button} onClick={openPreview}>{t('openPreview')}</button>
+              <button className={css.button} onClick={onDownload}>{t('download')}</button>
+              {versionList.length > 0 && (
+                <button className={css.button} onClick={() => setShowAllVersions(visible => !visible)}>
+                  {t('versions')}: {versionList[0]?.label ?? ''}
+                </button>
+              )}
+              {showAllVersions && versionList.map(version => (
+                <button key={version.versionId} className={css.versionButton} onClick={() => { void onRestore(version.versionId) }}>
+                  {version.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <button className={css.writingClose} title={t('close')} onClick={() => select(undefined)}>×</button>
+      </div>
+
+      <div ref={editorRef} className={css.writingBody} style={{ gridTemplateColumns: `${split}% 6px 1fr` }}>
         <div className={css.editorCol}>
           <SourceEditor value={source} onChange={onSourceEdit} textareaRef={mainTextareaRef} />
           <div className={css.outlineBar}>
@@ -244,10 +296,7 @@ export function WritingView(props: WritingViewProps): JSX.Element {
               <ul className={css.outlineList}>
                 {outline.map(item => (
                   <li key={item.line} className={css.outlineRow}>
-                    <button
-                      className={css.outlineItem}
-                      onClick={() => jumpOutline(item.line)}
-                    >
+                    <button className={css.outlineItem} onClick={() => jumpOutline(item.line)}>
                       {item.title}
                     </button>
                   </li>
@@ -264,51 +313,26 @@ export function WritingView(props: WritingViewProps): JSX.Element {
               ? <div className={css.none}>{t('noPreview')}</div>
               : <iframe className={css.frame} src={pdfUrl} title={t('preview')} />}
         </div>
-      </main>
-      <footer className={css.footer}>
-        <div className={css.actions}>
-          <button className={css.button} onClick={() => { void onSave() }}>{t('save')}</button>
-          <button className={css.button} onClick={() => { void onCompile() }}>{t('compile')}</button>
-          <button className={css.button} onClick={openPreview}>{t('openPreview')}</button>
-          <button className={css.button} onClick={onDownload}>{t('download')}</button>
+      </div>
+
+      <div className={css.toasts}>
+        {toasts.map(toast => (
+          <span key={toast.id} className={`${css.toast} ${toast.kind === 'ok' ? css.toastOk : toast.kind === 'error' ? css.toastError : ''}`}>
+            {toast.text}
+          </span>
+        ))}
+      </div>
+
+      <button className={css.chatBubble} title={t('chat')} onClick={() => setChatOpen(visible => !visible)}>
+        💬
+      </button>
+      {chatOpen && (
+        <div className={css.chatDrawer}>
+          <div className={css.chatDrawerHeader}>{t('chat')}</div>
+          <div className={css.chatDrawerBody}>{t('chatPlaceholder')}</div>
         </div>
-        {message.length > 0 && <span className={css.status}>{message}</span>}
-        {compileResult !== undefined && !compileResult.ok && errorCount > 0 && (
-          <div className={css.diagnostics}>
-            {compileResult.diagnostics
-              .filter(diagnostic => diagnostic.severity === 'error')
-              .map((diagnostic, index) => (
-                // eslint-disable-next-line react/no-array-index-key -- stable position in one compile result
-                <p key={index} className={css.error}>
-                  {diagnostic.line === undefined ? '' : `@ ${diagnostic.line} `}: {diagnostic.message}
-                </p>
-              ))}
-          </div>
-        )}
-        {compileResult !== undefined && compileResult.ok && <p className={css.ok}>{t('compiledOk')}</p>}
-        {versionList.length > 0 && (
-          <div className={css.versions}>
-            <button
-              className={css.versionLatest}
-              onClick={() => setShowAllVersions(visible => !visible)}
-            >
-              {t('versions')}: {versionList[0]?.label ?? ''}
-              {versionList.length > 1 ? ` (${t('more')} ${versionList.length - 1})` : ''}
-            </button>
-            {showAllVersions && (
-              <ul className={css.versionList}>
-                {versionList.map(version => (
-                  <li key={version.versionId}>
-                    <button className={css.versionButton} onClick={() => { void onRestore(version.versionId) }}>
-                      {version.label}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-      </footer>
+      )}
+
       {previewModalOpen && (
         <div className={css.modal}>
           <div className={css.modalHeader}>
@@ -327,7 +351,6 @@ export function WritingView(props: WritingViewProps): JSX.Element {
             <button className={css.modalAction} onClick={() => { void onSave() }}>{t('save')}</button>
             <button className={css.modalAction} onClick={() => { void onCompile() }}>{t('compile')}</button>
             <button className={css.modalAction} onClick={onDownload}>{t('download')}</button>
-            <span className={css.modalStatus}>{headerStatus}</span>
             <button className={css.modalClose} title={t('close')} onClick={() => setPreviewModalOpen(false)}>×</button>
           </div>
           <div

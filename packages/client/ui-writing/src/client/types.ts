@@ -35,8 +35,8 @@ export interface WritingViewInjected {
    * original branch intact; returns the restored source.
    */
   restore(reportId: string, versionId: string, branch: string): Promise<string>
-  /** Write the selected report id into the shared report-selection source. */
-  select(reportId: string): void
+  /** Write the selected report id into the shared report-selection source; `undefined` clears it. */
+  select(reportId: string | undefined): void
   /** Rename one report in the shared list in place. */
   renameReport(reportId: string, title: string): void
   /** Report list + selection observable, bound to `useReportSelection`. */

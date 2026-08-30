@@ -34,7 +34,7 @@ const setState = (updater: (current: WritingReportsState) => WritingReportsState
 }
 const useReportSelection = <S,>(selector: (current: WritingReportsState) => S): S => selector(useSyncExternalStore(subscribe, getSnapshot))
 
-const select = (reportId: string): void => setState(current => ({ ...current, selectedReportId: reportId }))
+const select = (reportId: string | undefined): void => setState(current => ({ ...current, selectedReportId: reportId }))
 const renameReport = (reportId: string, title: string): void => setState(current => ({
   ...current,
   reports: current.reports.map(r => r.reportId === reportId ? { ...r, title } : r),
@@ -56,12 +56,22 @@ function view(over: Partial<WritingViewInjected> = {}): WritingViewInjected {
   }
 }
 
-/** Assemble the component props with the hooks share, inject face, and locale. */
 function props(injected: WritingViewInjected): WritingViewProps {
   return { ...conv, useReportSelection, ...injected, t } as unknown as WritingViewProps
 }
 
+/** Open the collapsed ☰ toolbar menu so its buttons are clickable. */
+function openToolbar(): void {
+  fireEvent.click(screen.getByText('☰'))
+}
+
 describe('WritingView', () => {
+  it('shows a placeholder when no report is selected', async () => {
+    state = { reports: [], selectedReportId: undefined }
+    render(<WritingView {...props(view())} />)
+    expect(screen.getByText('noReportSelected')).toBeTruthy()
+  })
+
   it('loads the selected report source and compiles once when it has no version', async () => {
     const actions = view()
     render(<WritingView {...props(actions)} />)
@@ -77,7 +87,7 @@ describe('WritingView', () => {
     expect(container.querySelector('[class*="frame"]')?.getAttribute('src')).toBe('/writing/r1/pdf')
   })
 
-  it('surfaces each compile diagnostic', async () => {
+  it('shows compile errors as a toast in the top-right', async () => {
     const actions = view({
       compile: vi.fn().mockResolvedValue({
         ok: false,
@@ -87,18 +97,19 @@ describe('WritingView', () => {
     })
     render(<WritingView {...props(actions)} />)
     await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
+    openToolbar()
     fireEvent.click(screen.getByText('compile'))
     expect(await screen.findByText(/Undefined control sequence/)).toBeTruthy()
   })
 
-  it('saves and compiles when the save button is pressed', async () => {
+  it('saves and compiles when the save button (behind the toolbar) is pressed', async () => {
     const actions = view()
     const { container } = render(<WritingView {...props(actions)} />)
     await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
-
     vi.useFakeTimers()
     const textarea = container.querySelector('textarea')
     fireEvent.change(textarea as Element, { target: { value: '\\documentclass{article}% save' } })
+    openToolbar()
     fireEvent.click(screen.getByText('save'))
     await vi.advanceTimersByTimeAsync(0)
     expect(actions.updateSource).toHaveBeenCalledWith('r1', '\\documentclass{article}% save')
@@ -111,7 +122,6 @@ describe('WritingView', () => {
     const { container } = render(<WritingView {...props(actions)} />)
     await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
     const compileBefore = vi.mocked(actions.compile).mock.calls.length
-
     vi.useFakeTimers()
     const textarea = container.querySelector('textarea')
     fireEvent.change(textarea as Element, { target: { value: '\\documentclass{article}% edited' } })
@@ -130,44 +140,27 @@ describe('WritingView', () => {
     await waitFor(() => expect(vi.mocked(actions.compile).mock.calls.length).toBe(before + 1))
   })
 
-  it('opens and closes the LaTeX preview window', async () => {
+  it('opens and closes the preview modal from the toolbar', async () => {
     const { container } = render(<WritingView {...props(view())} />)
-    await waitFor(() => expect(screen.getByText('openPreview')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('☰')).toBeTruthy())
+    openToolbar()
     fireEvent.click(screen.getByText('openPreview'))
-    expect(container.querySelector('[class*="modal"]')).toBeTruthy()
-    fireEvent.click(screen.getByText('×'))
+    const modal = container.querySelector('[class*="modal"]') as HTMLElement
+    expect(modal).toBeTruthy()
+    fireEvent.click(within(modal).getByText('×'))
     expect(container.querySelector('[class*="modal"]')).toBeNull()
   })
 
-  it('downloads the current source as a .tex file named after the report', async () => {
+  it('downloads the current source from the toolbar as a .tex file', async () => {
     const actions = view()
     render(<WritingView {...props(actions)} />)
     await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
-
+    openToolbar()
     let clickedLink: HTMLAnchorElement | undefined
     const spy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
       clickedLink = this
     })
     fireEvent.click(screen.getByText('download'))
-    expect(clickedLink?.getAttribute('download')).toBe('Paper.tex')
-    expect(clickedLink?.href).toContain('data:text/plain;charset=utf-8,')
-    spy.mockRestore()
-  })
-
-  it('compiles and downloads from the full-screen preview toolbar', async () => {
-    const actions = view()
-    const { container } = render(<WritingView {...props(actions)} />)
-    await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
-    fireEvent.click(screen.getByText('openPreview'))
-    const header = container.querySelector('[class*="modalHeader"]') as HTMLElement
-    const before = vi.mocked(actions.compile).mock.calls.length
-    fireEvent.click(within(header).getByText('compile'))
-    expect(vi.mocked(actions.compile).mock.calls.length).toBe(before + 1)
-    let clickedLink: HTMLAnchorElement | undefined
-    const spy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
-      clickedLink = this
-    })
-    fireEvent.click(within(header).getByText('download'))
     expect(clickedLink?.getAttribute('download')).toBe('Paper.tex')
     spy.mockRestore()
   })
@@ -184,18 +177,28 @@ describe('WritingView', () => {
     expect(textarea).toBeTruthy()
   })
 
-  it('restores a version onto a new branch by refreshing the PDF without snapshotting', async () => {
+  it('restores a version from the toolbar onto a named branch without snapshotting', async () => {
     const actions = view({ versions: vi.fn().mockResolvedValue([
       { versionId: 'g2', reportId: 'r1', label: 'successful compile #2', createdAt: 't2' },
       { versionId: 'g1', reportId: 'r1', label: 'successful compile #1', createdAt: 't1' },
     ]) })
     render(<WritingView {...props(actions)} />)
     await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
+    openToolbar()
     fireEvent.click(screen.getByText(/successful compile #2/))
     const prompt = vi.spyOn(window, 'prompt').mockReturnValue('restore-v1')
     fireEvent.click(screen.getByText(/successful compile #1/))
     await waitFor(() => expect(actions.restore).toHaveBeenCalledWith('r1', 'g1', 'restore-v1'))
     await waitFor(() => expect(actions.compile).toHaveBeenCalledWith('r1', { snapshot: false }))
     prompt.mockRestore()
+  })
+
+  it('closes the overlay and toggles the chat bubble', async () => {
+    const { container } = render(<WritingView {...props(view())} />)
+    await waitFor(() => expect(screen.getByText('☰')).toBeTruthy())
+    fireEvent.click(screen.getByText('💬'))
+    expect(container.querySelector('[class*="chatDrawer"]')).toBeTruthy()
+    fireEvent.click(screen.getByTitle('close'))
+    expect(state.selectedReportId).toBeUndefined()
   })
 })

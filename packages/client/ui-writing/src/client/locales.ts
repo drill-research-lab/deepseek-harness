@@ -29,6 +29,10 @@ export const zh = {
   close: '關閉',
   outline: '大綱',
   errorSummary: '個錯誤',
+  noReportSelected: '從左側選擇一份報告',
+  toolbar: '工具列',
+  chat: '對話',
+  chatPlaceholder: '對話面板(與 AI 討論此報告)',
 } as const
 
 export const zhTw = {
@@ -57,6 +61,10 @@ export const zhTw = {
   close: '關閉',
   outline: '大綱',
   errorSummary: '個錯誤',
+  noReportSelected: '從左側選擇一份報告',
+  toolbar: '工具列',
+  chat: '對話',
+  chatPlaceholder: '對話面板(與 AI 討論此報告)',
 } as const
 
 export const en = {
@@ -85,6 +93,10 @@ export const en = {
   close: 'Close',
   outline: 'Outline',
   errorSummary: 'errors',
+  noReportSelected: 'Select a report from the left',
+  toolbar: 'Toolbar',
+  chat: 'Chat',
+  chatPlaceholder: 'Chat panel (discuss this report with the AI)',
 } as const
 
 export type WritingKey = keyof typeof zh
