@@ -355,21 +355,22 @@
   text-align: left;
 }
 
+.writing {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--dsw-bg, #1e1e1e);
+}
+
 .writingEmpty {
   display: flex;
   align-items: center;
   justify-content: center;
   height: 100%;
   color: var(--dsw-text-muted, rgba(128, 128, 128, 0.9));
-}
-
-.writingOverlay {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: flex;
-  flex-direction: column;
-  background: var(--dsw-bg, #1e1e1e);
 }
 
 .writingTopbar {
@@ -444,7 +445,7 @@
 }
 
 .toasts {
-  position: fixed;
+  position: absolute;
   top: 56px;
   right: 16px;
   display: flex;
@@ -466,7 +467,7 @@
 .toastError { color: var(--dsw-text-negative, #c62828); }
 
 .chatBubble {
-  position: fixed;
+  position: absolute;
   right: 20px;
   bottom: 20px;
   width: 48px;
@@ -483,7 +484,7 @@
 }
 
 .chatDrawer {
-  position: fixed;
+  position: absolute;
   right: 20px;
   bottom: 80px;
   width: 320px;

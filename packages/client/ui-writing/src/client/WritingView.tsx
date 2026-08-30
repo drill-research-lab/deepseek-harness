@@ -252,7 +252,7 @@ export function WritingView(props: WritingViewProps): JSX.Element {
   }
 
   return (
-    <div className={css.writingOverlay}>
+    <div className={css.writing}>
       <div className={css.writingTopbar}>
         <span className={css.writingTitle}>{selectedTitle}</span>
         <div className={css.toolbarWrap}>
