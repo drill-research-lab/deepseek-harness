@@ -8,30 +8,13 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { PipelineId } from '@deepseek-ai/dsh-pipeline'
-import type { PipelineRunResultInfo, PipelineSummary, WorkflowJson } from '@deepseek-ai/dsh-pipeline'
-import type { PipelineRunRecord } from './registry.ts'
+import type { PipelineSummary, WorkflowJson } from '@deepseek-ai/dsh-pipeline/types'
+import type { PipelineRunRecord, TriggerNowResult } from './types.ts'
 import type { PipelineLocalEngine } from './engine.ts'
 
-/** One "run now" request's outcome: the awaited run facts, or the overlap skip. */
-export type TriggerNowResult =
-  | {
-    /** The run started and settled. */
-    outcome: 'started'
-    /** The run's id (`<pipelineId>-run-<ordinal>`). */
-    runId: string
-    /** How the run settled. */
-    result: PipelineRunResultInfo
-  }
-  | {
-    /** No run started. */
-    outcome: 'skipped'
-    /** Why not. */
-    reason: 'already-running'
-  }
-
 /**
- * The pipelines Remote service. Mounted by {@link PipelineLocalEngine}, which
- * is why the engine lookup cannot fail on a live composition.
+ * The pipelines Remote service over one {@link PipelineLocalEngine}. Mounted
+ * by that engine, so the engine lookup cannot fail on a live composition.
  */
 export class PipelineRpcService extends TypertRemoteService {
   /**

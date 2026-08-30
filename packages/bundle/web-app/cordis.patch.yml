@@ -88,6 +88,14 @@
       config:
         maxNoteBytes: 8192
 
+    # Pipelines: cron-scheduled and manually triggered workflow runs over the
+    # file-backed local registry. llm nodes fail loud with LLM_NODE_UNCONFIGURED
+    # until the model-selection wiring lands (the engine reads no session).
+    - id: pipeline-local
+      name: '@deepseek-ai/dsh-pipeline-local'
+      config:
+        storageDir: !!js dshHomePath('pipelines')
+
     # Browser Session export: `/export` command plus the shared download dialog.
     - id: session-log-download
       name: '@deepseek-ai/dsh-session-log-export'

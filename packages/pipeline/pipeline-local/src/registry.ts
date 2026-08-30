@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import { validateWorkflowJson } from '@deepseek-ai/dsh-pipeline'
 import { PipelineId } from '@deepseek-ai/dsh-pipeline'
 import type { PipelineRunStatus, PipelineSummary, WorkflowJson } from '@deepseek-ai/dsh-pipeline'
+import type { PipelineRunRecord } from './types.ts'
 
 /** On-disk index record for one pipeline: the metrics projection plus ordinal bookkeeping. */
 interface IndexEntry {
@@ -33,21 +34,7 @@ interface IndexEntry {
   nextOrdinal: number
 }
 
-/** One settled run's durable record (`runs/<pipelineId>/<ordinal>.json`). */
-export interface PipelineRunRecord {
-  /** The run's id (`<pipelineId>-run-<ordinal>`). */
-  runId: string
-  /** Epoch milliseconds when the run started. */
-  startedAt: number
-  /** Epoch milliseconds when the run settled. */
-  finishedAt: number
-  /** How the run settled. */
-  status: PipelineRunStatus
-  /** The failure message (present iff `status` is `'failed'`). */
-  error?: string
-  /** How many nodes produced an outcome (skipped nodes excluded). */
-  nodeCount: number
-}
+export type { PipelineRunRecord }
 
 /** Extract the numeric ordinal from a `<pipelineId>-run-<ordinal>` run id. */
 function runOrdinal(runId: string): number {

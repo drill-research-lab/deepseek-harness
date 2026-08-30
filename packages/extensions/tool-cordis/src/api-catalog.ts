@@ -3837,7 +3837,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PipelineSummary',
-    declaration: 'export interface PipelineSummary {\n    readonly id: PipelineId;\n    readonly name: string;\n    readonly enabled: boolean;\n    readonly status: \'idle\' | \'running\';\n    readonly nextRunAt?: string;\n    readonly lastRunAt?: string;\n    readonly lastStatus?: PipelineRunStatus;\n    readonly lastError?: string;\n    readonly failureStreak: number;\n    readonly runCount: number;\n}',
+    declaration: 'export interface PipelineSummary {\n    readonly id: PipelineId;\n    readonly name: string;\n    readonly enabled: boolean;\n    readonly status: \'idle\' | \'running\';\n    readonly nextRunAt?: string;\n    readonly lastRunAt?: string;\n    readonly lastStatus?: PipelineRunStatus;\n    readonly lastError?: string;\n    readonly failureStreak: number;\n    readonly runCount: number;\n    readonly skippedCount: number;\n}',
   },
   {
     name: 'PipelineTrigger',

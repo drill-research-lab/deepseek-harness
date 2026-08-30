@@ -16,8 +16,8 @@ export { dedupeStep, normalizeStep, persistStep, searchStep } from './steps/sche
 export type { DedupeResult, PersistResult, ScheduledSearchInputs } from './steps/scheduled-search.ts'
 export type { BuiltinStep, BuiltinStepContext, Config } from './engine.ts'
 export { PipelineRpcService } from './service.ts'
-export type { TriggerNowResult } from './service.ts'
+export type { TriggerNowResult } from './types.ts'
 export { PipelineFileRegistry } from './registry.ts'
-export type { PipelineRunRecord } from './registry.ts'
+export type { PipelineRunRecord } from './types.ts'
 
 export default PipelineLocalEngine
