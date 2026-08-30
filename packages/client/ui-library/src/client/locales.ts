@@ -46,6 +46,10 @@ export const zh = {
   'view.ask.thinking': '思考中…',
   'view.ask.sources': '引用来源',
   'view.ask.empty': '答案会基于知识库内容并附引用',
+  'view.ask.emptyTitle': '问问这个知识库',
+  'view.ask.example1': '简单介绍一下',
+  'view.ask.example2': '这个知识库的重点是什么？',
+  'view.ask.example3': '帮我整理成重点清单',
   'view.error': '操作失败：{message}',
 } as const
 
@@ -92,6 +96,10 @@ export const zhTw = {
   'view.ask.thinking': '思考中…',
   'view.ask.sources': '引用來源',
   'view.ask.empty': '答案會基於知識庫內容並附引用',
+  'view.ask.emptyTitle': '問問這個知識庫',
+  'view.ask.example1': '簡單介紹一下',
+  'view.ask.example2': '這個知識庫的重點是什麼？',
+  'view.ask.example3': '幫我整理成重點清單',
   'view.error': '操作失敗：{message}',
 } satisfies Record<keyof typeof zh, string>
 
@@ -141,5 +149,9 @@ export const en: Record<LibraryKey, string> = {
   'view.ask.thinking': 'Thinking…',
   'view.ask.sources': 'Sources',
   'view.ask.empty': 'Answers are grounded in the notebook with citations',
+  'view.ask.emptyTitle': 'Ask this notebook',
+  'view.ask.example1': 'Give me a quick overview',
+  'view.ask.example2': 'What are the key points?',
+  'view.ask.example3': 'Summarize this as a bullet list',
   'view.error': 'Action failed: {message}',
 }

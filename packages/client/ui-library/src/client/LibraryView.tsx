@@ -325,8 +325,7 @@ function AskPanel({ notebookId, ask, t }: {
     if (element) element.scrollTop = element.scrollHeight
   }, [entries.length, busy])
 
-  const submit = () => {
-    const asked = question.trim()
+  const submitQuestion = (asked: string) => {
     if (notebookId === undefined || asked === '' || busy) return
     setBusy(true)
     setFailure(undefined)
@@ -338,12 +337,29 @@ function AskPanel({ notebookId, ask, t }: {
       .catch((cause: unknown) => { setFailure(cause instanceof Error ? cause.message : String(cause)) })
       .finally(() => { setBusy(false) })
   }
+  const submit = () => { submitQuestion(question.trim()) }
 
   return (
     <div className={css.askPanel}>
       <div ref={thread} className={css.askThread}>
         {entries.length === 0 && failure === undefined && !busy && (
-          <div className={css.columnEmpty}>{t('view.ask.empty')}</div>
+          <div className={css.askEmpty}>
+            <div className={css.askEmptyTitle}>{t('view.ask.emptyTitle')}</div>
+            <div className={css.columnEmpty}>{t('view.ask.empty')}</div>
+            <div className={css.askExamples}>
+              {(['view.ask.example1', 'view.ask.example2', 'view.ask.example3'] as const).map(key => (
+                <button
+                  key={key}
+                  type="button"
+                  className={css.askExample}
+                  disabled={notebookId === undefined}
+                  onClick={() => { submitQuestion(t(key)) }}
+                >
+                  {t(key)}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
         {entries.map((entry, entryIndex) => (
           <div key={`${String(entryIndex)}-${entry.question}`} className={css.askEntry}>
