@@ -15,12 +15,8 @@ export interface ReportSummaryView {
   readonly updatedAt: string
 }
 
-/** The business face the Writing view calls, closed over the client ctx. */
+/** The editor-facing business face the Writing view calls, closed over the client ctx. */
 export interface WritingViewInjected {
-  /** All reports, newest first. */
-  listReports(): Promise<ReportSummaryView[]>
-  /** Create a report from a title. */
-  createReport(title: string): Promise<void>
   /** Rename a report. */
   rename(reportId: string, title: string): Promise<void>
   /** Read a report's current source. */
@@ -36,4 +32,12 @@ export interface WritingViewInjected {
    * original branch intact; returns the restored source.
    */
   restore(reportId: string, versionId: string, branch: string): Promise<string>
+}
+
+/** The sidebar-facing business face the report panel calls: listing + creation. */
+export interface SidebarReportsInjected {
+  /** All reports, newest first. */
+  listReports(): Promise<ReportSummaryView[]>
+  /** Create a report from a title. */
+  createReport(title: string): Promise<void>
 }

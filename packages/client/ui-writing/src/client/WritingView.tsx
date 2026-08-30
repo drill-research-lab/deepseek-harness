@@ -1,16 +1,17 @@
-/** Writing view: report list (left), LaTeX editor + PDF preview (right), compile feedback (bottom). */
+/** Writing view: the LaTeX editor + PDF preview for the selected report, with compile feedback. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { CompileResultView, ReportVersionView } from '@deepseek-ai/dsh-writing-api/types'
 import { SourceEditor } from './SourceEditor.tsx'
 import { buildOutline, jumpToLine } from './outline.ts'
-import type { ReportSummaryView, WritingViewInjected } from './types.ts'
+import type { WritingReportsStore } from './reportStore.ts'
+import type { WritingViewInjected } from './types.ts'
 import css from './writing.module.css'
 
-/** Props of the Writing view: the conversation.view runtime + the inject face + locale. */
-export type WritingViewProps = ConvViewProps & WritingViewInjected & PropsLocale<'writing'>
+/** Props of the Writing view: the conversation.view runtime + store + inject face + locale. */
+export type WritingViewProps = ConvViewProps & PropsStore<WritingReportsStore> & WritingViewInjected & PropsLocale<'writing'>
 
 /** Pause (ms) before an edit is auto-saved and recompiled. */
 const AUTOSAVE_DELAY_MS = 1000
@@ -18,21 +19,19 @@ const AUTOSAVE_DELAY_MS = 1000
 /** Served prefix for a compiled report's PDF; matches the writing-api route. */
 const PDF_PATH_PREFIX = '/writing'
 
-/** The Writing surface. State is view-local; the report data comes from the inject face. */
+/** The Writing editor surface. Report selection arrives from the shared store. */
 export function WritingView(props: WritingViewProps): JSX.Element {
-  const { listReports, createReport, rename, getSource, updateSource, compile, versions, restore, t } = props
-  const [reports, setReports] = useState<ReportSummaryView[]>([])
-  const [selected, setSelected] = useState<string | undefined>(undefined)
+  const { rename, getSource, updateSource, compile, versions, restore, t, useStore, actions } = props
+  const selectedReportId = useStore(state => state.selectedReportId)
+  const reports = useStore(state => state.reports)
   const [selectedTitle, setSelectedTitle] = useState('')
   const [source, setSource] = useState('')
   const [compileResult, setCompileResult] = useState<CompileResultView | undefined>(undefined)
   const [versionList, setVersionList] = useState<ReportVersionView[]>([])
   const [message, setMessage] = useState('')
-  const [newTitle, setNewTitle] = useState('')
   const [compiling, setCompiling] = useState(false)
   const [split, setSplit] = useState(50)
   const [showAllVersions, setShowAllVersions] = useState(false)
-  const [listCollapsed, setListCollapsed] = useState(false)
   const [previewModalOpen, setPreviewModalOpen] = useState(false)
   const [modalSplit, setModalSplit] = useState(50)
   const [showOutline, setShowOutline] = useState(false)
@@ -47,19 +46,6 @@ export function WritingView(props: WritingViewProps): JSX.Element {
   const autosaveRef = useRef<() => Promise<void>>(() => Promise.resolve())
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
-  const reload = useCallback(async (): Promise<void> => {
-    setReports(await listReports())
-  }, [listReports])
-
-  useEffect(() => {
-    let active = true
-    void (async () => {
-      const listed = await listReports()
-      if (active) setReports(listed)
-    })()
-    return () => { active = false }
-  }, [listReports])
-
   const outline = useMemo(() => buildOutline(source), [source])
 
   const compileSelected = useCallback(async (noSnapshot = false): Promise<void> => {
@@ -73,6 +59,43 @@ export function WritingView(props: WritingViewProps): JSX.Element {
       setCompiling(false)
     }
   }, [compile, versions])
+
+  // When the sidebar selects a report, load its source and versions, compiling
+  // only when the report has never compiled.
+  useEffect(() => {
+    if (selectedReportId === undefined) {
+      selectedRef.current = undefined
+      sourceRef.current = ''
+      setSource('')
+      setCompileResult(undefined)
+      setVersionList([])
+      setSelectedTitle('')
+      return
+    }
+    let active = true
+    selectedRef.current = selectedReportId
+    const summary = reports.find(report => report.reportId === selectedReportId)
+    setSelectedTitle(summary?.title ?? '')
+    committedTitleRef.current = summary?.title ?? ''
+    setMessage('')
+    void (async () => {
+      if (autosaveTimer.current !== undefined) clearTimeout(autosaveTimer.current)
+      const loaded = await getSource(selectedReportId)
+      if (!active) return
+      sourceRef.current = loaded
+      setSource(loaded)
+      const listed = await versions(selectedReportId)
+      if (!active) return
+      setVersionList(listed)
+      if (listed.length > 0) {
+        setCompileResult({ ok: true, diagnostics: [], versionCreated: false, pdfUrl: `${PDF_PATH_PREFIX}/${selectedReportId}/pdf` })
+      } else {
+        setCompileResult(undefined)
+        await compileSelected()
+      }
+    })()
+    return () => { active = false }
+  }, [selectedReportId, reports, getSource, versions, compileSelected])
 
   autosaveRef.current = async (): Promise<void> => {
     const id = selectedRef.current
@@ -89,40 +112,6 @@ export function WritingView(props: WritingViewProps): JSX.Element {
   useEffect(() => () => {
     if (autosaveTimer.current !== undefined) clearTimeout(autosaveTimer.current)
   }, [])
-
-  const select = useCallback(async (reportId: string): Promise<void> => {
-    if (autosaveTimer.current !== undefined) clearTimeout(autosaveTimer.current)
-    selectedRef.current = reportId
-    setSelected(reportId)
-    const summary = reports.find(report => report.reportId === reportId)
-    setSelectedTitle(summary?.title ?? '')
-    committedTitleRef.current = summary?.title ?? ''
-    const loaded = await getSource(reportId)
-    sourceRef.current = loaded
-    setSource(loaded)
-    const listed = await versions(reportId)
-    setVersionList(listed)
-    setMessage('')
-    // Show the latest compiled version when one exists; compile only for a
-    // report that has never compiled.
-    if (listed.length > 0) {
-      setCompileResult({ ok: true, diagnostics: [], versionCreated: false, pdfUrl: `${PDF_PATH_PREFIX}/${reportId}/pdf` })
-    } else {
-      setCompileResult(undefined)
-      await compileSelected()
-    }
-  }, [getSource, versions, reports, compileSelected])
-
-  const onCreate = useCallback(async (): Promise<void> => {
-    const title = newTitle.trim()
-    if (title.length === 0) return
-    await createReport(title)
-    setNewTitle('')
-    await reload()
-    const listed = await listReports()
-    const created = listed[0]
-    if (created !== undefined) await select(created.reportId)
-  }, [newTitle, createReport, reload, listReports, select])
 
   const onSourceEdit = useCallback((value: string): void => {
     sourceRef.current = value
@@ -187,8 +176,8 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     await rename(id, trimmed)
     setSelectedTitle(trimmed)
     committedTitleRef.current = trimmed
-    await reload()
-  }, [selectedTitle, rename, reload])
+    actions.renameReport(id, trimmed)
+  }, [selectedTitle, rename, actions])
 
   const openPreview = useCallback((): void => {
     // Opening the window never recompiles: selection already resolved to the
@@ -245,65 +234,29 @@ export function WritingView(props: WritingViewProps): JSX.Element {
 
   return (
     <div className={css.writing}>
-      <nav className={css.list}>
-        <div className={css.listHeader}>
-          <h2 className={css.heading}>{t('title')}</h2>
-          <button
-            className={css.listToggle}
-            title={listCollapsed ? t('listExpand') : t('listCollapse')}
-            onClick={() => setListCollapsed(visible => !visible)}
-          >
-            {listCollapsed ? '+' : '−'}
-          </button>
-          {!listCollapsed && (
-            <div className={css.newRow}>
-              <input
-                className={css.newInput}
-                value={newTitle}
-                onChange={event => setNewTitle(event.target.value)}
-                placeholder={t('newPlaceholder')}
-              />
-              <button className={css.button} onClick={() => { void onCreate() }}>{t('create')}</button>
-            </div>
-          )}
-        </div>
-        {!listCollapsed && (
-          <>
-            <ul className={css.reports}>
-              {reports.map(report => (
-                <li
-                  key={report.reportId}
-                  className={report.reportId === selected ? css.rowActive : css.row}
-                  onClick={() => { void select(report.reportId) }}
-                >
-                  {report.title}
-                </li>
-              ))}
-            </ul>
-            <div className={css.outlineSection}>
-              <button className={css.outlineToggle} onClick={() => setShowOutline(visible => !visible)}>
-                {t('outline')}{outline.length > 0 ? ` (${outline.length})` : ''}
-              </button>
-              {showOutline && (
-                <ul className={css.outlineList}>
-                  {outline.map(item => (
-                    <li key={item.line} className={css.outlineRow}>
-                      <button
-                        className={css.outlineItem}
-                        onClick={() => jumpOutline(item.line)}
-                      >
-                        {item.title}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </>
-        )}
-      </nav>
       <main ref={editorRef} className={css.editor} style={{ gridTemplateColumns: `${split}% 6px 1fr` }}>
-        <SourceEditor value={source} onChange={onSourceEdit} textareaRef={mainTextareaRef} />
+        <div className={css.editorCol}>
+          <SourceEditor value={source} onChange={onSourceEdit} textareaRef={mainTextareaRef} />
+          <div className={css.outlineBar}>
+            <button className={css.outlineToggle} onClick={() => setShowOutline(visible => !visible)}>
+              {t('outline')}{outline.length > 0 ? ` (${outline.length})` : ''}
+            </button>
+            {showOutline && (
+              <ul className={css.outlineList}>
+                {outline.map(item => (
+                  <li key={item.line} className={css.outlineRow}>
+                    <button
+                      className={css.outlineItem}
+                      onClick={() => jumpOutline(item.line)}
+                    >
+                      {item.title}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
         <div className={css.divider} onPointerDown={onDividerPointerDown} />
         <div className={css.preview}>
           {compiling

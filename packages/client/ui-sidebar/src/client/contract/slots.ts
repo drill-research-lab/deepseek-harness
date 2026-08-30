@@ -23,9 +23,15 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'sidebar.workspaces': { kind: 'single'; scope: 'root'; owner: SidebarSectionOwnerProps }
     /**
+     * The report picker strip below the workspace browser. Declared by this
+     * package's 'sidebar' entry; ui-writing registers it. It receives only the
+     * column state — report data and selection flow through its own store.
+     */
+    'sidebar.reports': { kind: 'single'; scope: 'root'; owner: SidebarSectionOwnerProps }
+    /**
      * The settings seat at the sidebar foot. Declared by this package's
      * 'sidebar' entry; ui-settings registers its trigger row + modal panel.
-     * The sidebar passes only its column state — it holds no settings state.
+     * The sidebar passes only its column state ??it holds no settings state.
      */
     'sidebar.settings': { kind: 'single'; scope: 'root'; owner: SidebarSettingsOwnerProps }
     /**
@@ -85,5 +91,5 @@ export type SidebarRootInjected = {
  */
 export type SidebarRootComponentProps =
   PropsRuntime<'sidebar'>
-  & PropsRenderSlots<'sidebar.workspaces' | 'sidebar.settings' | 'sidebar.footer.action'>
+  & PropsRenderSlots<'sidebar.workspaces' | 'sidebar.settings' | 'sidebar.footer.action' | 'sidebar.reports'>
   & SidebarRootInjected & PropsLocale<'sidebar'>

@@ -170,9 +170,16 @@ export function SidebarRoot({
       </Tooltip>
 
       {/* The browsing region fills the column between the controls and the
-          foot in both states; its rail icon column rides the same slot. */}
+          foot in both states; its rail icon column rides the same slot. The
+          report region (sidebar.reports) sits below the workspace browser. */}
       <div className={css.regionArea}>
-        {renderSlot('sidebar.workspaces', {
+        <div className={css.regionBrowser}>
+          {renderSlot('sidebar.workspaces', {
+            wide,
+            expandSidebar: () => { if (collapsed) toggleSidebar() },
+          })}
+        </div>
+        {renderSlot('sidebar.reports', {
           wide,
           expandSidebar: () => { if (collapsed) toggleSidebar() },
         })}
