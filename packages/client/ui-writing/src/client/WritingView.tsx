@@ -244,58 +244,63 @@ export function WritingView(props: WritingViewProps): JSX.Element {
         : t('noPreview')
 
   return (
-    <div className={css.writing} style={{ gridTemplateColumns: `${listCollapsed ? '34px' : '220px'} 1fr` }}>
+    <div className={css.writing}>
       <nav className={css.list}>
-        {listCollapsed
-          ? <button className={css.listExpander} title={t('listExpand')} onClick={() => setListCollapsed(false)}>{t('title')}</button>
-          : (
-            <>
-              <div className={css.listHeader}>
-                <h2 className={css.heading}>{t('title')}</h2>
-                <button className={css.listToggle} title={t('listCollapse')} onClick={() => setListCollapsed(true)}>−</button>
-              </div>
-              <div className={css.newRow}>
-                <input
-                  className={css.newInput}
-                  value={newTitle}
-                  onChange={event => setNewTitle(event.target.value)}
-                  placeholder={t('newPlaceholder')}
-                />
-                <button className={css.button} onClick={() => { void onCreate() }}>{t('create')}</button>
-              </div>
-              <ul className={css.reports}>
-                {reports.map(report => (
-                  <li
-                    key={report.reportId}
-                    className={report.reportId === selected ? css.rowActive : css.row}
-                    onClick={() => { void select(report.reportId) }}
-                  >
-                    {report.title}
-                  </li>
-                ))}
-              </ul>
-              <div className={css.outlineSection}>
-                <button className={css.outlineToggle} onClick={() => setShowOutline(visible => !visible)}>
-                  {t('outline')}{outline.length > 0 ? ` (${outline.length})` : ''}
-                </button>
-                {showOutline && (
-                  <ul className={css.outlineList}>
-                    {outline.map(item => (
-                      <li key={item.line} className={css.outlineRow}>
-                        <button
-                          className={css.outlineItem}
-                          style={{ paddingLeft: `${item.depth * 12}px` }}
-                          onClick={() => jumpOutline(item.line)}
-                        >
-                          {item.title}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </>
+        <div className={css.listHeader}>
+          <h2 className={css.heading}>{t('title')}</h2>
+          <button
+            className={css.listToggle}
+            title={listCollapsed ? t('listExpand') : t('listCollapse')}
+            onClick={() => setListCollapsed(visible => !visible)}
+          >
+            {listCollapsed ? '+' : '−'}
+          </button>
+          {!listCollapsed && (
+            <div className={css.newRow}>
+              <input
+                className={css.newInput}
+                value={newTitle}
+                onChange={event => setNewTitle(event.target.value)}
+                placeholder={t('newPlaceholder')}
+              />
+              <button className={css.button} onClick={() => { void onCreate() }}>{t('create')}</button>
+            </div>
           )}
+        </div>
+        {!listCollapsed && (
+          <>
+            <ul className={css.reports}>
+              {reports.map(report => (
+                <li
+                  key={report.reportId}
+                  className={report.reportId === selected ? css.rowActive : css.row}
+                  onClick={() => { void select(report.reportId) }}
+                >
+                  {report.title}
+                </li>
+              ))}
+            </ul>
+            <div className={css.outlineSection}>
+              <button className={css.outlineToggle} onClick={() => setShowOutline(visible => !visible)}>
+                {t('outline')}{outline.length > 0 ? ` (${outline.length})` : ''}
+              </button>
+              {showOutline && (
+                <ul className={css.outlineList}>
+                  {outline.map(item => (
+                    <li key={item.line} className={css.outlineRow}>
+                      <button
+                        className={css.outlineItem}
+                        onClick={() => jumpOutline(item.line)}
+                      >
+                        {item.title}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </>
+        )}
       </nav>
       <main ref={editorRef} className={css.editor} style={{ gridTemplateColumns: `${split}% 6px 1fr` }}>
         <SourceEditor value={source} onChange={onSourceEdit} textareaRef={mainTextareaRef} />
