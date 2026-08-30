@@ -78,4 +78,16 @@ describe('SidebarReports', () => {
     fireEvent.click(screen.getByText('+'))
     expect(await screen.findByText('Paper')).toBeTruthy()
   })
+
+  it('resizes the report strip by dragging its handle', async () => {
+    const { container } = render(<SidebarReports {...props(inject())} />)
+    await screen.findByText('Paper')
+    const list = container.querySelector('[class*="list"]') as HTMLElement
+    const handle = container.querySelector('[class*="dragHandle"]') as HTMLElement
+    expect(list.style.height).toBe('220px')
+    fireEvent.pointerDown(handle, { clientY: 100 })
+    fireEvent.pointerMove(window, { clientY: 200 })
+    fireEvent.pointerUp(window)
+    expect(parseInt(list.style.height, 10)).toBe(120)
+  })
 })

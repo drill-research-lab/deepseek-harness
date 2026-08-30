@@ -21,6 +21,19 @@
   overflow: hidden;
 }
 
+.dragHandle {
+  flex: none;
+  height: 5px;
+  margin: -3px 0 0;
+  border-radius: 3px;
+  cursor: ns-resize;
+  background: var(--dsw-border-subtle, rgba(128, 128, 128, 0.3));
+}
+
+.dragHandle:hover {
+  background: var(--dsw-border-subtle, rgba(128, 128, 128, 0.6));
+}
+
 .listHeader {
   display: flex;
   align-items: center;

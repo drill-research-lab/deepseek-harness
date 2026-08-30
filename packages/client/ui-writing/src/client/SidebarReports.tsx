@@ -8,6 +8,12 @@ import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WritingReportsHooks, SidebarReportsInjected } from './types.ts'
 import css from './writing.module.css'
 
+/** Draggable report-panel height bounds (px). */
+const MIN_HEIGHT = 80
+const MAX_HEIGHT = 480
+const DEFAULT_HEIGHT = 220
+const COLLAPSED_HEIGHT = 36
+
 /** Props: the slots shell share, the hooks share, the inject face, and locale. */
 export type SidebarReportsProps = Omit<SidebarReportsInjected, 'hooks'> & WritingReportsHooks & PropsLocale<'writing'> & {
   readonly wide: boolean
@@ -23,6 +29,9 @@ export function SidebarReports(props: SidebarReportsProps): JSX.Element {
   selectedRef.current = selected
   const [newTitle, setNewTitle] = useState('')
   const [collapsed, setCollapsed] = useState(false)
+  const [height, setHeight] = useState(DEFAULT_HEIGHT)
+  const heightRef = useRef(DEFAULT_HEIGHT)
+  heightRef.current = height
 
   useEffect(() => {
     let active = true
@@ -37,6 +46,21 @@ export function SidebarReports(props: SidebarReportsProps): JSX.Element {
     return () => { active = false }
   }, [listReports, setReports, select])
 
+  const onResizeStart = (event: React.PointerEvent<HTMLDivElement>): void => {
+    event.preventDefault()
+    const startY = event.clientY
+    const startHeight = heightRef.current
+    const onMove = (move: PointerEvent): void => {
+      setHeight(Math.round(Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, startHeight - (move.clientY - startY)))))
+    }
+    const onUp = (): void => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+
   const onCreate = async (): Promise<void> => {
     const title = newTitle.trim()
     if (title.length === 0) return
@@ -49,7 +73,13 @@ export function SidebarReports(props: SidebarReportsProps): JSX.Element {
   }
 
   return (
-    <nav className={css.list}>
+    <nav className={css.list} style={{ height: collapsed ? COLLAPSED_HEIGHT : height }}>
+      <div
+        className={css.dragHandle}
+        title={t('resizeReports')}
+        onPointerDown={onResizeStart}
+        onDoubleClick={() => setHeight(DEFAULT_HEIGHT)}
+      />
       <div className={css.listHeader}>
         <h2 className={css.heading}>{t('title')}</h2>
         <button
