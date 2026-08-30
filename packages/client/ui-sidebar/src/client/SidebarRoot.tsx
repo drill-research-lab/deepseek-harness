@@ -178,6 +178,13 @@ export function SidebarRoot({
         })}
       </div>
 
+      {/* Feature-navigation region below the session browser (Pipelines and,
+          later, sibling feature entries); rides the same owner shares. */}
+      {renderSlot('sidebar.pipelines', {
+        wide,
+        expandSidebar: () => { if (collapsed) toggleSidebar() },
+      })}
+
       {/* Footer actions stack above Settings in both sidebar widths. */}
       <div className={css.footArea}>
         <div className={css.footerActions}>

@@ -290,6 +290,11 @@
     - id: ui-goal
       name: '@deepseek-ai/dsh-client-ui-goal'
 
+    # Pipelines surface: sidebar navigation block + the full-window editor
+    # overlay, over the pipelines Remote namespace.
+    - id: ui-pipeline
+      name: '@deepseek-ai/dsh-client-ui-pipeline'
+
     # Per-message feedback: Like/Dislike plus an optional note in the
     # assistant-message action strip, over the messageFeedback Remote.
     - id: ui-message-feedback

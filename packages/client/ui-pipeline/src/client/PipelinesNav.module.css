@@ -1,0 +1,82 @@
+.block {
+  padding: 8px 12px;
+  border-top: 1px solid var(--dsh-border, #3a3a3a);
+}
+
+.block[data-wide='false'] {
+  padding: 8px 6px;
+}
+
+.header {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.6;
+  margin-bottom: 4px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.row.open {
+  background: var(--dsh-surface, #232323);
+}
+
+.name {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  padding: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dsh-border, #555);
+  flex: none;
+}
+
+.dot[data-status='running'] {
+  background: #4c8dff;
+}
+
+.badge {
+  font-size: 10px;
+  color: #ff6b6b;
+  flex: none;
+}
+
+.toggle {
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.6;
+  padding: 0 2px;
+  flex: none;
+}
+
+.block[data-wide='false'] .name,
+.block[data-wide='false'] .toggle {
+  display: none;
+}
+
+.block[data-wide='false'] .header::after {
+  content: '⚙';
+}

@@ -1,0 +1,25 @@
+/* Canvas fills the editor body's flexible area. */
+.canvas {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Pipeline node chrome: compact card, definition-order label. */
+.node,
+.triggerNode {
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--dsh-border, #3a3a3a);
+  background: var(--dsh-surface, #232323);
+  font-size: 13px;
+  width: 208px;
+}
+
+.triggerNode {
+  border-style: dashed;
+}
+
+.selected {
+  border-color: var(--dsh-accent, #4c8dff);
+  box-shadow: 0 0 0 1px var(--dsh-accent, #4c8dff);
+}
