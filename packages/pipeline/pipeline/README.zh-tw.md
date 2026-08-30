@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh.md) | 繁體中文
 
-Pipeline 能力接縫詞彙：Drill Pipelines 的持久化 `WorkflowJSON` 定義格式、其純載入期驗證，以及標識 pipeline、run 與節點的 branded id。pipeline 引擎 provider 執行驗證過的定義；consumer 呈現它們。`ctx.pipelineEngine` Service Definition 與 `pipeline/*` 生命週期事件隨引擎 provider 落地。
+Pipeline 能力接縫：Drill Pipelines 的持久化 `WorkflowJSON` 定義格式、其純載入期驗證、branded id，以及帶僅供觀察 `pipeline/*` 生命週期事件的 `ctx.pipelineEngine` Service Definition。引擎 provider（檔案型 registry、cron 排程器、跑在 run session 上的 DAG 評估器）執行驗證過的定義；consumer 呈現它們。
 
 ## 定義格式
 
@@ -39,6 +39,21 @@ Pipeline 能力接縫詞彙：Drill Pipelines 的持久化 `WorkflowJSON` 定義
 
 `validateWorkflowJson(value)` 是載入期的 parser 邊界：純函式、無 I/O，拋出帶封閉 `PipelineSchemaErrorCode` 的 `PipelineSchemaError`，訊息指出第一個缺陷的欄位路徑（`nodes[2].prompt`）。它檢查每一層的形狀與允許鍵（未知欄位一律拒絕——對 LLM 生成定義的錯字防護）、唯一節點 id、恰一個 trigger 節點、edge 端點/重複/目標規則、無環（含自環）、五欄 cron 結構，以及經 `Intl` 檢查的 IANA 時區名。刻意不在這裡做的：cron 的範圍與步進語意屬於解析該運算式的 scheduler provider；`builtin.ref` 的解析屬於 provider registry。
 
+## 接縫
+
+`PipelineEngine`（default export、`ctx.pipelineEngine`）是引擎 provider 實作的抽象契約：
+
+| 操作 | 契約 |
+|---|---|
+| `list()` | registry 投影（`PipelineSummary`：狀態、下次/上次執行、失敗連續次數、run 總數） |
+| `get(id)` | 驗證過的定義；未知回傳 `undefined` |
+| `save({ definition })` | 在持久化 parser 邊界驗證原始 JSON、持久化、提交後發出 `pipeline/definition-changed` |
+| `delete(id)` | 移除定義；run session 與產出物保留（刪除不摧毀已記錄資料） |
+| `setEnabled(id, enabled)` | 暫停或恢復 cron 觸發 |
+| `startRun({ id, trigger })` | 套用重疊政策——每條 pipeline 同時僅一個執行中的 run；後續觸發回傳 `{ outcome: 'skipped', reason: 'already-running' }` 而非排隊；未知 id 拋出 code `'PIPELINE_UNKNOWN'` 的 `PipelineError` |
+
+生命週期事件（`pipeline/definition-changed`、`pipeline/run-start`、`pipeline/node-start`、`pipeline/node-end`、`pipeline/run-end`）是僅供觀察的資料快照，具 per-listener 隔離；不攜帶任何節點輸入或輸出值——run 資料存放在各 run 自己的 session log。
+
 ## Model Experience
 
 None, as the schema vocabulary and its validation register no prompt, tool schema, or provider request; the engine provider and its consumers own every model-visible effect.
@@ -49,6 +64,6 @@ None；本套件既不組裝也不發送 provider 請求。
 
 ## Known Limitations and Deferred Work
 
-- **尚無 Service Definition**——`ctx.pipelineEngine` 與 `pipeline/*` 生命週期事件隨引擎 provider 落地；本套件目前只提供詞彙與驗證。
+- **尚無引擎 provider**——實作此契約的檔案型 registry、cron 排程器與 DAG 評估器是下一個切片；落地前 `ctx.pipelineEngine` 沒有 provider，也不會有任何 run 啟動。
 - **僅線性圖**——schema 沒有分支或 fan-out 欄位；它們隨執行它們的引擎切片以附加選填欄位落地。
 - **cron 語意延後**——驗證只檢查結構（五欄、字元集）；範圍與步進驗證在 scheduler provider 解析運算式時進行，於註冊時 fail loud。

@@ -2,6 +2,6 @@
 # side as of the last confirmed-consistent state. All languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/pipeline/pipeline/README.md
-README.md: b345b3f7be98a8d4faa38377d4a1f52e6fac860a
-README.zh.md: ee1a8efd9f2979af2879792440f1b86192de74bc
-README.zh-tw.md: f54fc5bc6b673a2cd46d7d1175332e2b8e0bc3a2
+README.md: 65a2556330e0a249b2a7e1f26ab94c943a418ead
+README.zh.md: e345ea992698fd76a1b96f7206b086833ecec723
+README.zh-tw.md: 1692c4066a280ca2a195e55057e8a6d01da98654

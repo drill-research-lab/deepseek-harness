@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh.md) | [繁體中文](README.zh-tw.md)
 
-Pipeline capability seam vocabulary: the durable `WorkflowJSON` definition format for Drill Pipelines, its pure load-time validation, and the branded ids that identify pipelines, runs, and nodes. A pipeline engine provider executes validated definitions; consumers surface them. The `ctx.pipelineEngine` Service Definition and the `pipeline/*` lifecycle events land with the engine provider.
+Pipeline capability seam: the durable `WorkflowJSON` definition format for Drill Pipelines, its pure load-time validation, branded ids, and the `ctx.pipelineEngine` Service Definition with observe-only `pipeline/*` lifecycle events. A pipeline engine provider (file-backed registry, cron scheduler, DAG evaluator over run sessions) executes validated definitions; consumers surface them.
 
 ## The definition format
 
@@ -39,6 +39,21 @@ Every node carries a unique stable `id` (edges reference it, so display renames 
 
 `validateWorkflowJson(value)` is the load-time parser boundary: pure, no I/O, throwing `PipelineSchemaError` with a closed `PipelineSchemaErrorCode` and a message naming the first defect's field path (`nodes[2].prompt`). It checks shape and allowed keys at every level (unknown fields reject — typo protection for LLM-authored definitions), unique node ids, exactly one trigger node, edge endpoint/duplicate/target rules, acyclicity (self-edges included), the five-field cron structure, and the IANA time-zone name through `Intl`. Deliberately not here: cron range and step semantics belong to the scheduler provider that parses the expression, and `builtin.ref` resolution belongs to the provider registry.
 
+## The seam
+
+`PipelineEngine` (default export, `ctx.pipelineEngine`) is the abstract contract the engine provider implements:
+
+| operation | contract |
+|---|---|
+| `list()` | registry projections (`PipelineSummary`: status, next/last run, failure streak, run count) |
+| `get(id)` | the validated definition, or `undefined` when unknown |
+| `save({ definition })` | validates raw JSON at the durable parser boundary, persists, emits `pipeline/definition-changed` after commit |
+| `delete(id)` | removes the definition; run sessions and artifacts are kept (deletion never destroys recorded data) |
+| `setEnabled(id, enabled)` | pauses or resumes the cron trigger |
+| `startRun({ id, trigger })` | applies the overlap policy — one executing run per pipeline; a further trigger returns `{ outcome: 'skipped', reason: 'already-running' }` instead of queueing; unknown ids throw `PipelineError` with code `'PIPELINE_UNKNOWN'` |
+
+Lifecycle events (`pipeline/definition-changed`, `pipeline/run-start`, `pipeline/node-start`, `pipeline/node-end`, `pipeline/run-end`) are observe-only data snapshots with per-listener containment; they carry no node input or output values — run data lives in each run's own session log.
+
 ## Model Experience
 
 None, as the schema vocabulary and its validation register no prompt, tool schema, or provider request; the engine provider and its consumers own every model-visible effect.
@@ -49,6 +64,6 @@ None; this package neither assembles nor sends a provider request.
 
 ## Known Limitations and Deferred Work
 
-- **No Service Definition yet** — `ctx.pipelineEngine` and the `pipeline/*` lifecycle events land with the engine provider; this package currently ships vocabulary and validation only.
+- **No engine provider yet** — the file-backed registry, cron scheduler, and DAG evaluator that implement this contract are the next slice; until they land, `ctx.pipelineEngine` has no provider and nothing starts runs.
 - **Linear graphs only** — the schema has no branching or fan-out fields; they land with the execution slice that evaluates them, as additive optional fields.
 - **Cron semantics deferred** — validation checks structure only (five fields, character set); range and step validation happens when the scheduler provider parses the expression, failing loud at registration.

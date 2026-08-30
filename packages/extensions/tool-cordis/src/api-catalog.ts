@@ -1051,6 +1051,51 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'pipelineEngine',
+    summary: 'Pipeline Service Definition contract.',
+    description: 'Pipeline Service Definition contract. `save` validates at the durable parser boundary and fails loud; every mutation emits `pipeline/definition-changed` only after it commits; `startRun` applies the overlap policy and reports skips as data, never as a thrown error. Lifecycle listener failures are contained, and `pipeline/run-end` fires exactly once per accepted run.',
+    methods: [
+      {
+        signature: 'abstract list(): readonly PipelineSummary[]',
+        description: 'List every persisted pipeline\'s registry projection, in registry order.',
+        parameters: [],
+        returns: 'the summaries; empty when nothing is persisted.',
+      },
+      {
+        signature: 'abstract get(id: PipelineId): WorkflowJson | undefined',
+        description: 'Read one persisted definition.',
+        parameters: [{ name: 'id', description: 'the pipeline\'s id.' }],
+        returns: 'the validated definition, or undefined when the id is unknown.',
+      },
+      {
+        signature: 'abstract save(request: PipelineSaveRequest): Promise<WorkflowJson>',
+        description: 'Validate and persist a definition (create or replace by its id).',
+        parameters: [{ name: 'request', description: 'the candidate definition as raw JSON data; validated here on every path.' }],
+        returns: 'the validated definition that was persisted.',
+        throws: ['PipelineSchemaError when the definition fails validation.'],
+      },
+      {
+        signature: 'abstract delete(id: PipelineId): Promise<boolean>',
+        description: 'Delete a definition and its registry entry. Run sessions and output artifacts are kept (deletion never destroys recorded data).',
+        parameters: [{ name: 'id', description: 'the pipeline\'s id.' }],
+        returns: 'true when the definition existed and was deleted; false when unknown.',
+      },
+      {
+        signature: 'abstract setEnabled(id: PipelineId, enabled: boolean): Promise<boolean>',
+        description: 'Pause or resume a pipeline\'s trigger.',
+        parameters: [{ name: 'id', description: 'the pipeline\'s id.' }, { name: 'enabled', description: 'true resumes the trigger; false pauses it.' }],
+        returns: 'true when the definition existed; false when unknown.',
+      },
+      {
+        signature: 'abstract startRun(request: PipelineRunRequest): PipelineRunStart',
+        description: 'Start a run of one pipeline, applying the overlap policy: when the pipeline already has a run executing, the trigger is skipped and reported as data.',
+        parameters: [{ name: 'request', description: 'the pipeline id and the triggering lane.' }],
+        returns: 'the started run\'s handle, or the recorded skip.',
+        throws: ['PipelineError with code `\'PIPELINE_UNKNOWN\'` when the id is unknown.'],
+      },
+    ],
+  },
+  {
     key: 'planMode',
     summary: '`ctx.planMode`: owns logged plan state, applies and narrates selected state at step start, the `plan:policy` section, the `/plan` command, and the stable exit tool.',
     description: '`ctx.planMode`: owns logged plan state, applies and narrates selected state at step start, the `plan:policy` section, the `/plan` command, and the stable exit tool. UIs observe committed flips through `session/event`; there is no live mirror.',
@@ -2559,6 +2604,46 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'options', description: 'the full request. A LOOP-built request carries the process-local {@link markAgentLoopRequest} identity and arrives deep-frozen (mutation throws): its content is a pure function of the session log (the reconstructability Agent Note), so listeners read it, never rewrite it. Hand-built calls do not carry that marker; their messages already obey the immutable creation contract.' }],
   },
   {
+    name: 'pipeline/definition-changed',
+    mode: 'emit',
+    signature: '\'pipeline/definition-changed\'(change: PipelineDefinitionChange): void',
+    summary: 'A persisted definition changed — saved, deleted, paused, or resumed.',
+    description: 'A persisted definition changed — saved, deleted, paused, or resumed. Fired after the registry mutation commits.',
+    parameters: [{ name: 'change', description: 'the definition\'s id and what changed.' }],
+  },
+  {
+    name: 'pipeline/node-end',
+    mode: 'emit',
+    signature: '\'pipeline/node-end\'(info: PipelineRunInfo, node: PipelineNodeEndInfo): void',
+    summary: 'One node settled (completed, failed, or skipped).',
+    description: 'One node settled (completed, failed, or skipped). Paired with Events[\'pipeline/node-start\'] by `node.nodeId`.',
+    parameters: [{ name: 'info', description: 'the run\'s identity snapshot.' }, { name: 'node', description: 'the node\'s settlement (outcome plus failure message).' }],
+  },
+  {
+    name: 'pipeline/node-start',
+    mode: 'emit',
+    signature: '\'pipeline/node-start\'(info: PipelineRunInfo, node: PipelineNodeInfo): void',
+    summary: 'One node started executing.',
+    description: 'One node started executing. Paired with Events[\'pipeline/node-end\'] by `node.nodeId` on every stop path; a node the run never reaches emits neither event.',
+    parameters: [{ name: 'info', description: 'the run\'s identity snapshot.' }, { name: 'node', description: 'the node\'s id and type.' }],
+  },
+  {
+    name: 'pipeline/run-end',
+    mode: 'emit',
+    signature: '\'pipeline/run-end\'(info: PipelineRunInfo, result: PipelineRunResultInfo): void',
+    summary: 'A run settled (completed or failed).',
+    description: 'A run settled (completed or failed). Fired when the started run\'s `result` resolves. Paired with Events[\'pipeline/run-start\'].',
+    parameters: [{ name: 'info', description: 'the run\'s identity snapshot.' }, { name: 'result', description: 'the outcome data (status, error, node count) — deliberately WITHOUT node output values.' }],
+  },
+  {
+    name: 'pipeline/run-start',
+    mode: 'emit',
+    signature: '\'pipeline/run-start\'(info: PipelineRunInfo): void',
+    summary: 'A run started — the definition validated and accepted past the overlap policy.',
+    description: 'A run started — the definition validated and accepted past the overlap policy. Paired with Events[\'pipeline/run-end\'].',
+    parameters: [{ name: 'info', description: 'the run\'s identity snapshot.' }],
+  },
+  {
     name: 'session-telemetry/record',
     mode: 'waterfall',
     signature: '\'session-telemetry/record\'(record: SessionTelemetryRecord, next: () => SessionTelemetryRecord): SessionTelemetryRecord',
@@ -2791,6 +2876,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AgentHandle {\n    agent: Agent;\n    dispose(): Promise<void>;\n}',
   },
   {
+    name: 'AgentNode',
+    declaration: 'export interface AgentNode extends PipelineNodeBase {\n    readonly type: \'agent\';\n    readonly prompt: string;\n    readonly skills?: readonly string[];\n    readonly tools?: readonly string[];\n}',
+  },
+  {
     name: 'AgentOptions',
     declaration: 'export interface AgentOptions {\n    provider?: string;\n    model?: string;\n    maxTokens?: number;\n}',
   },
@@ -2901,6 +2990,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'Branded',
     declaration: 'export type Branded<B extends string> = string & {\n    readonly [BRAND]: B;\n};',
+  },
+  {
+    name: 'BuiltinNode',
+    declaration: 'export interface BuiltinNode extends PipelineNodeBase {\n    readonly type: \'builtin\';\n    readonly ref: string;\n    readonly config?: JsonValue;\n}',
   },
   {
     name: 'CancelOptions',
@@ -3089,6 +3182,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CredentialRef',
     declaration: 'export type CredentialRef = Branded<\'CredentialRef\'>;',
+  },
+  {
+    name: 'CronTrigger',
+    declaration: 'export interface CronTrigger {\n    readonly kind: \'cron\';\n    readonly expression: string;\n    readonly timeZone: string;\n    readonly enabled: boolean;\n}',
   },
   {
     name: 'DiffCallView',
@@ -3407,10 +3504,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type JsonSchemaType = \'object\' | \'array\' | \'string\' | \'number\' | \'integer\' | \'boolean\' | \'null\';',
   },
   {
-    name: 'JsonValue',
-    declaration: 'export type JsonValue = null | boolean | number | string | JsonValue[] | {\n    [key: string]: JsonValue;\n};',
-  },
-  {
     name: 'KnobState',
     declaration: 'export interface KnobState {\n    preset: string | null;\n    sandbox: SandboxMode | null;\n    approval: ApprovalPolicy | null;\n}',
   },
@@ -3471,8 +3564,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface LlmModelReasoningInfo {\n    efforts: readonly LlmReasoningEffortInfo[];\n    defaultEffort?: ReasoningEffortId;\n}',
   },
   {
+    name: 'LlmNode',
+    declaration: 'export interface LlmNode extends PipelineNodeBase {\n    readonly type: \'llm\';\n    readonly prompt: string;\n    readonly model?: string;\n}',
+  },
+  {
     name: 'LlmProviderInfo',
-    declaration: 'export interface LlmProviderInfo {\n    id: string;\n    name: string;\n}',
+    declaration: 'export interface LlmProviderInfo {\n    id: string;\n    name: string;\n    apiKeyEnv?: string;\n}',
   },
   {
     name: 'LlmReasoningEffortInfo',
@@ -3661,6 +3758,90 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PermissionSelect',
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
+  },
+  {
+    name: 'PipelineDefinitionChange',
+    declaration: 'export interface PipelineDefinitionChange {\n    readonly id: PipelineId;\n    readonly change: PipelineDefinitionChangeKind;\n}',
+  },
+  {
+    name: 'PipelineDefinitionChangeKind',
+    declaration: 'export type PipelineDefinitionChangeKind = \'saved\' | \'deleted\' | \'enabled\' | \'disabled\';',
+  },
+  {
+    name: 'PipelineEdge',
+    declaration: 'export interface PipelineEdge {\n    readonly from: PipelineNodeId;\n    readonly to: PipelineNodeId;\n}',
+  },
+  {
+    name: 'PipelineId',
+    declaration: 'export type PipelineId = Branded<\'PipelineId\'>;',
+  },
+  {
+    name: 'PipelineNode',
+    declaration: 'export type PipelineNode = TriggerNode | BuiltinNode | LlmNode | AgentNode;',
+  },
+  {
+    name: 'PipelineNodeBase',
+    declaration: 'export interface PipelineNodeBase {\n    readonly id: PipelineNodeId;\n    readonly disabled?: boolean;\n    readonly notes?: string;\n}',
+  },
+  {
+    name: 'PipelineNodeEndInfo',
+    declaration: 'export interface PipelineNodeEndInfo extends PipelineNodeInfo {\n    readonly outcome: PipelineNodeOutcome;\n    readonly error?: string;\n}',
+  },
+  {
+    name: 'PipelineNodeId',
+    declaration: 'export type PipelineNodeId = Branded<\'PipelineNodeId\'>;',
+  },
+  {
+    name: 'PipelineNodeInfo',
+    declaration: 'export interface PipelineNodeInfo {\n    readonly nodeId: PipelineNodeId;\n    readonly type: PipelineNodeType;\n}',
+  },
+  {
+    name: 'PipelineNodeOutcome',
+    declaration: 'export type PipelineNodeOutcome = \'completed\' | \'failed\' | \'skipped\';',
+  },
+  {
+    name: 'PipelineNodeType',
+    declaration: 'export type PipelineNodeType = PipelineNode[\'type\'];',
+  },
+  {
+    name: 'PipelineRunId',
+    declaration: 'export type PipelineRunId = Branded<\'PipelineRunId\'>;',
+  },
+  {
+    name: 'PipelineRunInfo',
+    declaration: 'export interface PipelineRunInfo {\n    readonly pipelineId: PipelineId;\n    readonly runId: PipelineRunId;\n    readonly name: string;\n    readonly trigger: PipelineRunTrigger;\n}',
+  },
+  {
+    name: 'PipelineRunRequest',
+    declaration: 'export interface PipelineRunRequest {\n    readonly id: PipelineId;\n    readonly trigger: PipelineRunTrigger;\n}',
+  },
+  {
+    name: 'PipelineRunResultInfo',
+    declaration: 'export interface PipelineRunResultInfo {\n    readonly status: PipelineRunStatus;\n    readonly error?: string;\n    readonly nodeCount: number;\n}',
+  },
+  {
+    name: 'PipelineRunStart',
+    declaration: 'export type PipelineRunStart = {\n    readonly outcome: \'started\';\n    readonly pipelineId: PipelineId;\n    readonly runId: PipelineRunId;\n    readonly result: Promise<PipelineRunResultInfo>;\n} | {\n    readonly outcome: \'skipped\';\n    readonly pipelineId: PipelineId;\n    readonly reason: \'already-running\';\n};',
+  },
+  {
+    name: 'PipelineRunStatus',
+    declaration: 'export type PipelineRunStatus = \'completed\' | \'failed\';',
+  },
+  {
+    name: 'PipelineRunTrigger',
+    declaration: 'export type PipelineRunTrigger = \'manual\' | \'scheduled\';',
+  },
+  {
+    name: 'PipelineSaveRequest',
+    declaration: 'export interface PipelineSaveRequest {\n    readonly definition: unknown;\n}',
+  },
+  {
+    name: 'PipelineSummary',
+    declaration: 'export interface PipelineSummary {\n    readonly id: PipelineId;\n    readonly name: string;\n    readonly enabled: boolean;\n    readonly status: \'idle\' | \'running\';\n    readonly nextRunAt?: string;\n    readonly lastRunAt?: string;\n    readonly lastStatus?: PipelineRunStatus;\n    readonly lastError?: string;\n    readonly failureStreak: number;\n    readonly runCount: number;\n}',
+  },
+  {
+    name: 'PipelineTrigger',
+    declaration: 'export type PipelineTrigger = CronTrigger;',
   },
   {
     name: 'PostToolDecision',
@@ -4431,6 +4612,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type TableValueOf<S extends DomainSpec, N extends keyof S[\'tables\']> = S[\'tables\'][N] extends DomainTableSpec<string, infer V> ? V : never;',
   },
   {
+    name: 'TemplateRef',
+    declaration: 'export interface TemplateRef {\n    readonly ref: string;\n    readonly inputs?: {\n        readonly [key: string]: JsonValue;\n    };\n}',
+  },
+  {
     name: 'TerminalBackend',
     declaration: 'export interface TerminalBackend {\n    readonly type: string;\n    spawn(spec: TerminalBackendSpawnSpec): Promise<TerminalBackendSession>;\n}',
   },
@@ -4639,6 +4824,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ToolSchema {\n    name: string;\n    description: string;\n    parameters: Record<string, unknown>;\n}',
   },
   {
+    name: 'TriggerNode',
+    declaration: 'export interface TriggerNode extends PipelineNodeBase {\n    readonly type: \'trigger\';\n}',
+  },
+  {
     name: 'TurnEndCancelCause',
     declaration: 'export type TurnEndCancelCause = AgentCancelCause | {\n    readonly kind: \'legacy\';\n};',
   },
@@ -4809,6 +4998,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkflowAgentOutcome',
     declaration: 'export type WorkflowAgentOutcome = \'completed\' | \'failed\' | \'cancelled\';',
+  },
+  {
+    name: 'WorkflowJson',
+    declaration: 'export interface WorkflowJson {\n    readonly version: WorkflowJsonVersion;\n    readonly id: PipelineId;\n    readonly name: string;\n    readonly description?: string;\n    readonly template?: TemplateRef;\n    readonly trigger: PipelineTrigger;\n    readonly nodes: readonly PipelineNode[];\n    readonly edges: readonly PipelineEdge[];\n}',
+  },
+  {
+    name: 'WorkflowJsonVersion',
+    declaration: 'export type WorkflowJsonVersion = 1;',
   },
   {
     name: 'WorkflowMeta',

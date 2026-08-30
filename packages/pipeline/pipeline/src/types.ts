@@ -180,3 +180,137 @@ export interface WorkflowJson {
   /** The edges; acyclic, endpoint-checked, and never into the trigger. */
   readonly edges: readonly PipelineEdge[]
 }
+
+/** How a run was triggered. */
+export type PipelineRunTrigger = 'manual' | 'scheduled'
+
+/**
+ * Identity snapshot carried by every `pipeline/*` event as borrowed immutable
+ * data — the definition's display fields beside the two ids, never a live
+ * handle.
+ */
+export interface PipelineRunInfo {
+  /** The definition's id. */
+  readonly pipelineId: PipelineId
+  /** The run's id (fresh per run). */
+  readonly runId: PipelineRunId
+  /** The definition's display name at run start. */
+  readonly name: string
+  /** Which lane triggered the run. */
+  readonly trigger: PipelineRunTrigger
+}
+
+/** One node's identity within a run (the `pipeline/node-start` payload). */
+export interface PipelineNodeInfo {
+  /** The node's id inside the definition. */
+  readonly nodeId: PipelineNodeId
+  /** The node's type discriminant. */
+  readonly type: PipelineNodeType
+}
+
+/** How one node settled. `skipped` marks a node the run never reached or a disabled node. */
+export type PipelineNodeOutcome = 'completed' | 'failed' | 'skipped'
+
+/** One node's settlement (the `pipeline/node-end` payload). */
+export interface PipelineNodeEndInfo extends PipelineNodeInfo {
+  /** How the node settled. */
+  readonly outcome: PipelineNodeOutcome
+  /** The failure message (present iff `outcome` is `'failed'`). */
+  readonly error?: string
+}
+
+/** Why a run settled. CLOSED union (engine-owned; consumers may exhaust it). */
+export type PipelineRunStatus = 'completed' | 'failed'
+
+/**
+ * A settled run's outcome as event data (the `pipeline/run-end` payload):
+ * deliberately WITHOUT any node output values — a listener observing outcomes
+ * must not receive a mutable alias of run data; node inputs and outputs live
+ * in the run's own session log.
+ */
+export interface PipelineRunResultInfo {
+  /** Why the run settled. */
+  readonly status: PipelineRunStatus
+  /** The failure message (present iff `status` is `'failed'`). */
+  readonly error?: string
+  /** How many nodes the run attempted (ends included, `skipped` excluded). */
+  readonly nodeCount: number
+}
+
+/** What changed about a persisted definition (the `pipeline/definition-changed` payload). */
+export type PipelineDefinitionChangeKind = 'saved' | 'deleted' | 'enabled' | 'disabled'
+
+/** One registry mutation (the `pipeline/definition-changed` payload). */
+export interface PipelineDefinitionChange {
+  /** The definition's id. */
+  readonly id: PipelineId
+  /** Which mutation happened. */
+  readonly change: PipelineDefinitionChangeKind
+}
+
+/** Registry list projection for UIs and queries; derived from the durable registry. */
+export interface PipelineSummary {
+  /** The definition's id. */
+  readonly id: PipelineId
+  /** Display name. */
+  readonly name: string
+  /** Paused pipelines keep their definition and schedule but fire nothing. */
+  readonly enabled: boolean
+  /** Whether a run is executing right now. */
+  readonly status: 'idle' | 'running'
+  /** Next scheduled fire (RFC 3339 UTC); absent for a paused or spent schedule. */
+  readonly nextRunAt?: string
+  /** Last run's start (RFC 3339 UTC); absent before the first run. */
+  readonly lastRunAt?: string
+  /** How the last run settled. */
+  readonly lastStatus?: PipelineRunStatus
+  /** Last run's failure message (present iff `lastStatus` is `'failed'`). */
+  readonly lastError?: string
+  /** Consecutive failed runs at the tail of the run history. */
+  readonly failureStreak: number
+  /** Total runs ever recorded for the pipeline. */
+  readonly runCount: number
+}
+
+/** What a caller asks for when starting a run. */
+export interface PipelineRunRequest {
+  /** The pipeline to run. */
+  readonly id: PipelineId
+  /** Which lane triggered the run. */
+  readonly trigger: PipelineRunTrigger
+}
+
+/**
+ * A save request. The definition arrives as raw JSON data — `save` is the
+ * durable parser boundary and validates it, whether it came from an RPC
+ * payload, an import, or already-validated in-process callers.
+ */
+export interface PipelineSaveRequest {
+  /** The candidate definition, as parsed JSON data. */
+  readonly definition: unknown
+}
+
+/**
+ * The outcome of a run start under the overlap policy: either a live handle,
+ * or a recorded skip when the pipeline already has a run executing.
+ * CLOSED union (engine-owned; consumers may exhaust it).
+ */
+export type PipelineRunStart =
+  | {
+    /** The run was accepted. */
+    readonly outcome: 'started'
+    /** The pipeline's id. */
+    readonly pipelineId: PipelineId
+    /** The fresh run's id. */
+    readonly runId: PipelineRunId
+    /** Settles when the run finishes; never rejects. */
+    readonly result: Promise<PipelineRunResultInfo>
+  }
+  | {
+    /** The trigger was skipped under the overlap policy. */
+    readonly outcome: 'skipped'
+    /** The pipeline's id. */
+    readonly pipelineId: PipelineId
+    /** Why the trigger was skipped. */
+    readonly reason: 'already-running'
+  }
