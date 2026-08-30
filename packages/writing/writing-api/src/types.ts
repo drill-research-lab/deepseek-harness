@@ -15,12 +15,15 @@ export interface ReportView {
   readonly updatedAt: string
 }
 
-/** One immutable version snapshot, projected for the browser. */
+/**
+ * One git-backed version snapshot, projected for the browser. `versionId` is
+ * the commit hash; `command` is the compile command recorded on the commit.
+ */
 export interface ReportVersionView {
   readonly versionId: string
   readonly reportId: string
   readonly label: string
-  readonly source: string
+  readonly command?: string
   readonly createdAt: string
 }
 
@@ -93,6 +96,8 @@ export interface VersionsRequest {
 export interface RestoreRequest {
   readonly reportId: string
   readonly versionId: string
+  /** Name of the new branch created from the target version. */
+  readonly branch: string
 }
 
 /** Request payload for a custom template add. */

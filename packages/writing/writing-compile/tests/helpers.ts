@@ -12,6 +12,7 @@ import type {
   SubprocessTerminalHandle,
 } from '@deepseek-ai/dsh-subprocess'
 import LatexCompileService from '../src/index.ts'
+import { createGitState, runGit, type GitState } from './git-emulator.ts'
 
 export interface TestHarness {
   readonly ctx: Context
@@ -24,6 +25,7 @@ class FakeSubprocessRuntime extends SubprocessRuntime {
   spawned: SubprocessSpawnSpec[] = []
   outcomes: SubprocessOutcome[] = []
   onSpawn: ((spec: SubprocessSpawnSpec) => void | Promise<void>) | undefined
+  private readonly gitState: GitState = createGitState()
 
   resolveExecutable(command: string): Promise<string> {
     return Promise.resolve(command === 'pdflatex' ? 'C:\\TeX\\pdflatex.exe' : command)
@@ -31,8 +33,11 @@ class FakeSubprocessRuntime extends SubprocessRuntime {
 
   spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
     this.spawned.push(spec)
+    if (spec.argv[0] === 'git') {
+      return makeHandle(spec, { exitCode: 0, signal: null }, this.onSpawn, runGit(this.gitState, spec.cwd, spec.argv.slice(1)))
+    }
     const outcome = this.outcomes.shift() ?? { exitCode: 0, signal: null }
-    return makeHandle(spec, outcome, this.onSpawn)
+    return makeHandle(spec, outcome, this.onSpawn, '')
   }
 
   spawnTerminal(_spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {
@@ -48,6 +53,7 @@ function makeHandle(
   spec: SubprocessSpawnSpec,
   outcome: SubprocessOutcome,
   onSpawn: ((spec: SubprocessSpawnSpec) => void | Promise<void>) | undefined,
+  stdout: string,
 ): SubprocessHandle {
   const done = (async () => {
     if (onSpawn !== undefined) await onSpawn(spec)
@@ -58,7 +64,7 @@ function makeHandle(
     stdin: undefined,
     stdout: undefined,
     stderr: undefined,
-    collected: { stdout: reader(''), stderr: reader('') },
+    collected: { stdout: reader(stdout), stderr: reader('') },
     done,
     terminate() {},
     waitForExit: () => Promise.resolve(true),
@@ -90,6 +96,8 @@ export async function setupHarness(
       command: 'pdflatex -interaction=nonstopmode -halt-on-error',
       timeoutMs: 1000,
       artifactRoot,
+      authorName: 'test',
+      authorEmail: 'test@deepseek.ai',
     })
   } catch (error) {
     await ctx.fiber.dispose()

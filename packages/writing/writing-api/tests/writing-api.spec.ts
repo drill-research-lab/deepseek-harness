@@ -62,7 +62,7 @@ describe('WritingGateway public contract', () => {
     expect(result.diagnostics.length).toBe(1)
     expect(result.versionCreated).toBe(false)
     expect(result.pdfUrl).toBeUndefined()
-    expect(ctx.writing.versions({ reportId: created.reportId }).length).toBe(0)
+    expect(await ctx.writing.versions({ reportId: created.reportId })).toHaveLength(0)
     // The failed compile still wrote the artifact dir under the harness root.
     expect(root).toBeTruthy()
   })
@@ -76,13 +76,13 @@ describe('WritingGateway public contract', () => {
     expect(result.ok).toBe(true)
     expect(result.versionCreated).toBe(true)
     expect(result.pdfUrl).toBe(`/writing/${created.reportId}/pdf`)
-    const versions = ctx.writing.versions({ reportId: created.reportId })
+    const versions = await ctx.writing.versions({ reportId: created.reportId })
     expect(versions.length).toBe(1)
     expect(versions[0]?.label).toMatch(/^successful compile #1$/)
 
     // Restore back to the snapshot source after a content change.
     await ctx.writing.updateContent({ reportId: created.reportId, source: 'changed' })
-    const restored = await ctx.writing.restore({ reportId: created.reportId, versionId: versions[0]!.versionId })
+    const restored = await ctx.writing.restore({ reportId: created.reportId, versionId: versions[0]!.versionId, branch: 'restore-v1' })
     expect(restored.source).toBe('v1')
   })
 
@@ -95,7 +95,7 @@ describe('WritingGateway public contract', () => {
     expect(result.ok).toBe(true)
     expect(result.versionCreated).toBe(false)
     expect(result.pdfUrl).toBe(`/writing/${created.reportId}/pdf`)
-    expect(ctx.writing.versions({ reportId: created.reportId }).length).toBe(0)
+    expect(await ctx.writing.versions({ reportId: created.reportId })).toHaveLength(0)
   })
 
   it('lists templates and adds a custom template', async () => {

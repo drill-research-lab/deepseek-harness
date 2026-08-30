@@ -91,8 +91,8 @@ export function apply(ctx: ClientContext): void {
         if (!result.ok) throw new Error(result.error.message)
         return result.value
       },
-      restore: async (reportId, versionId) => {
-        const result = await ctx.remote.writing.restore({ reportId, versionId })
+      restore: async (reportId, versionId, branch) => {
+        const result = await ctx.remote.writing.restore({ reportId, versionId, branch })
         if (!result.ok) throw new Error(result.error.message)
         return result.value.source
       },

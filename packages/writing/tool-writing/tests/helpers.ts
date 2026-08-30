@@ -19,6 +19,7 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import ReportService from '@deepseek-ai/dsh-writing'
 import LatexCompileService from '@deepseek-ai/dsh-writing-compile'
 import * as tool from '../src/index.ts'
+import { createGitState, runGit, type GitState } from '../../writing-compile/tests/git-emulator.ts'
 
 export interface TestHarness {
   readonly ctx: Context
@@ -31,6 +32,7 @@ export class FakeSubprocessRuntime extends SubprocessRuntime {
   spawned: SubprocessSpawnSpec[] = []
   outcomes: SubprocessOutcome[] = []
   onSpawn: ((spec: SubprocessSpawnSpec) => void | Promise<void>) | undefined
+  private readonly gitState: GitState = createGitState()
 
   resolveExecutable(command: string): Promise<string> {
     return Promise.resolve(command === 'pdflatex' ? 'C:\\TeX\\pdflatex.exe' : command)
@@ -38,7 +40,8 @@ export class FakeSubprocessRuntime extends SubprocessRuntime {
 
   spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
     this.spawned.push(spec)
-    const outcome = this.outcomes.shift() ?? { exitCode: 0, signal: null }
+    const stdout = spec.argv[0] === 'git' ? runGit(this.gitState, spec.cwd, spec.argv.slice(1)) : ''
+    const outcome = spec.argv[0] === 'git' ? { exitCode: 0, signal: null } : (this.outcomes.shift() ?? { exitCode: 0, signal: null })
     const onSpawn = this.onSpawn
     const done = (async () => {
       if (onSpawn !== undefined) await onSpawn(spec)
@@ -49,7 +52,7 @@ export class FakeSubprocessRuntime extends SubprocessRuntime {
       stdin: undefined,
       stdout: undefined,
       stderr: undefined,
-      collected: { stdout: reader(''), stderr: reader('') },
+      collected: { stdout: reader(stdout), stderr: reader('') },
       done,
       terminate() {},
       waitForExit: () => Promise.resolve(true),
@@ -98,6 +101,8 @@ export async function setupHarness(
       command: 'pdflatex -interaction=nonstopmode -halt-on-error',
       timeoutMs: 1000,
       artifactRoot: join(root, 'artifacts'),
+      authorName: 'test',
+      authorEmail: 'test@deepseek.ai',
     })
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)

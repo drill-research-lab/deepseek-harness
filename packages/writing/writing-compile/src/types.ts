@@ -42,3 +42,15 @@ export interface CompileOutput {
   /** Captured compiler stderr. */
   readonly stderr: string
 }
+
+/** One git-backed version snapshot of a report's compiled source. */
+export interface GitVersion {
+  /** Commit hash; the durable version id. */
+  readonly versionId: string
+  /** Commit subject, the human label. */
+  readonly label: string
+  /** Compile command recorded in the commit body, when present. */
+  readonly command?: string
+  /** ISO commit timestamp. */
+  readonly createdAt: string
+}

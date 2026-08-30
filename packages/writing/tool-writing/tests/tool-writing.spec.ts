@@ -102,7 +102,7 @@ describe('dsh-tool-writing', () => {
     expect(value.ok).toBe(false)
     expect(value.diagnostics.length).toBe(1)
     expect(value.versionCreated).toBe(false)
-    expect(ctx.reports.listVersions(ReportId(reportId)).length).toBe(0)
+    expect(await ctx.latexCompile.listVersions(reportId)).toHaveLength(0)
     expect(text(result)).toContain('failed to compile')
   })
 
@@ -118,16 +118,16 @@ describe('dsh-tool-writing', () => {
     expect(value.ok).toBe(true)
     expect(value.versionCreated).toBe(true)
     expect(text(compiled)).toContain('compiled successfully')
-    expect(ctx.reports.listVersions(ReportId(reportId)).length).toBe(1)
+    expect(await ctx.latexCompile.listVersions(reportId)).toHaveLength(1)
 
     const listed = await okValue(ctx, 'report_versions', { reportId })
     const versions = listed.versions as { id: string; label: string }[]
     expect(versions.length).toBe(1)
     expect(versions[0]?.label).toMatch(/^successful compile #1$/)
 
-    // Change content, then restore to the snapshot.
+    // Change content, then restore to the snapshot by branching.
     await okValue(ctx, 'report_write', { reportId, source: '\\documentclass{article}% v2' })
-    const restored = await okValue(ctx, 'report_restore', { reportId, versionId: versions[0]!.id })
+    const restored = await okValue(ctx, 'report_restore', { reportId, versionId: versions[0]!.id, branch: 'restore-v1' })
     expect(restored.source).toBe('v1')
   })
 })
@@ -164,7 +164,7 @@ describe('tool definitions', () => {
     expect(def('report_versions').output?.render?.({}, { versions: [{ id: 'v', label: 'l' }] })).toBeDefined()
 
     def('report_restore').presentCall?.({ reportId: 'r', versionId: 'v' })
-    expect(def('report_restore').output?.render?.({}, { reportId: 'r', source: 's' })).toBeDefined()
+    expect(def('report_restore').output?.render?.({}, { reportId: 'r', branch: 'b', source: 's' })).toBeDefined()
   })
 
   it('creates a report from a template id and an explicit source', async () => {
@@ -187,7 +187,7 @@ describe('tool definitions', () => {
     const readResult = await callTool(ctx, 'report_read', { reportId: 'missing' })
     expect(readResult.isError).toBe(true)
 
-    const restoreResult = await callTool(ctx, 'report_restore', { reportId: 'missing', versionId: 'v' })
+    const restoreResult = await callTool(ctx, 'report_restore', { reportId: 'missing', versionId: 'v', branch: 'b' })
     expect(restoreResult.isError).toBe(true)
   })
 

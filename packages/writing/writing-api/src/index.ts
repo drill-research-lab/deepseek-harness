@@ -10,8 +10,9 @@ import { stat } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import { ReportId, TemplateId, VersionId } from '@deepseek-ai/dsh-writing'
-import type { Report, ReportTemplate, ReportVersion } from '@deepseek-ai/dsh-writing'
+import { ReportId, TemplateId } from '@deepseek-ai/dsh-writing'
+import type { Report, ReportTemplate } from '@deepseek-ai/dsh-writing'
+import type { GitVersion } from '@deepseek-ai/dsh-writing-compile'
 import type {} from '@deepseek-ai/dsh-writing-compile'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-auth'
@@ -131,7 +132,7 @@ export class WritingGateway extends TypertRemoteService {
   }
 
   /**
-   * Compile a report, return diagnostics, and snapshot a version on success.
+   * Compile a report, return diagnostics, and record a git version on success.
    * @param request - report id; pass `snapshot: false` to refresh the PDF only.
    * @returns the compile outcome with a served `pdfUrl` on success.
    */
@@ -142,8 +143,8 @@ export class WritingGateway extends TypertRemoteService {
     const output = await this.ctx.latexCompile.compile({ reportId: request.reportId, source: report.source })
     let versionCreated = false
     if (output.ok && request.snapshot !== false) {
-      const count = this.ctx.reports.listVersions(report.id).length + 1
-      await this.ctx.reports.snapshot(report.id, `successful compile #${count}`)
+      const count = (await this.ctx.latexCompile.listVersions(request.reportId)).length + 1
+      await this.ctx.latexCompile.commitVersion(request.reportId, `successful compile #${count}`)
       versionCreated = true
     }
     return {
@@ -159,23 +160,25 @@ export class WritingGateway extends TypertRemoteService {
   }
 
   /**
-   * List a report's version snapshots, newest first.
+   * List a report's git-backed version snapshots, newest first.
    * @param request - report id.
    * @returns projected version views.
    */
   @Remote('versions')
-  versions(request: VersionsRequest): ReportVersionView[] {
-    return this.ctx.reports.listVersions(ReportId(request.reportId)).map(versionView)
+  async versions(request: VersionsRequest): Promise<ReportVersionView[]> {
+    return (await this.ctx.latexCompile.listVersions(request.reportId)).map(version => versionView(request.reportId, version))
   }
 
   /**
-   * Restore a report to an earlier version.
-   * @param request - report id and target version.
+   * Branch from an earlier version and switch the report to it, keeping the
+   * original branch intact.
+   * @param request - report id, target version, and the new branch name.
    * @returns the updated report view.
    */
   @Remote('restore')
   async restore(request: RestoreRequest): Promise<ReportView> {
-    return reportView(await this.ctx.reports.restoreVersion(ReportId(request.reportId), VersionId(request.versionId)))
+    const source = await this.ctx.latexCompile.restoreVersion(request.reportId, request.versionId, request.branch)
+    return reportView(await this.ctx.reports.updateContent(ReportId(request.reportId), source))
   }
 
   /**
@@ -253,13 +256,13 @@ function reportView(report: Report): ReportView {
   }
 }
 
-/** Project a version entity to its wire view. */
-function versionView(version: ReportVersion): ReportVersionView {
+/** Project a git-backed version to its wire view. */
+function versionView(reportId: string, version: GitVersion): ReportVersionView {
   return {
-    versionId: String(version.id),
-    reportId: String(version.reportId),
+    versionId: version.versionId,
+    reportId,
     label: version.label,
-    source: version.source,
+    ...(version.command === undefined ? {} : { command: version.command }),
     createdAt: version.createdAt,
   }
 }

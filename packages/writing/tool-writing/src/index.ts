@@ -8,7 +8,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { ReportId as reportId, TemplateId as templateId, VersionId as versionId } from '@deepseek-ai/dsh-writing'
+import { ReportId as reportId, TemplateId as templateId } from '@deepseek-ai/dsh-writing'
 
 export type {} from '@deepseek-ai/dsh-writing'
 export type {} from '@deepseek-ai/dsh-writing-compile'
@@ -82,7 +82,8 @@ export function apply(ctx: Context, config: Config): void {
     description:
       'Replace the ENTIRE LaTeX source of one report. The previous source is discarded. '
       + 'Use `report_read` first to see the current source, then provide the full replacement. '
-      + 'A write is autosaved but does not snapshot a version.',
+      + 'The write is persisted and then compiled automatically once; a successful compile '
+      + 'records a version.',
     parameters: {
       reportId: { type: 'string', required: true, description: TOOL_IDS },
       source: { type: 'string', required: true, description: 'The complete replacement LaTeX source.' },
@@ -95,13 +96,25 @@ export function apply(ctx: Context, config: Config): void {
           reportId: { type: 'string', required: true },
           chars: { type: 'integer', required: true },
           updatedAt: { type: 'string', required: true },
+          compiled: { type: 'boolean', required: true },
         },
       },
-      render: (_args, value) => [text(`Wrote ${value.chars} characters to report ${value.reportId}.`)],
+      render: (_args, value) => [text(`Wrote ${value.chars} characters to report ${value.reportId} and compiled ${value.compiled ? 'successfully' : 'with errors'}.`)],
     },
-    execute: async (args) => {
+    execute: async (args, exec) => {
       const report = await ctx.reports.updateContent(reportId(args.reportId), args.source)
-      return { reportId: String(report.id), chars: report.source.length, updatedAt: report.updatedAt }
+      const output = await ctx.latexCompile.compile({
+        reportId: args.reportId,
+        source: report.source,
+        ...(exec.signal === undefined ? {} : { signal: exec.signal }),
+      })
+      let compiled = false
+      if (output.ok) {
+        const count = (await ctx.latexCompile.listVersions(args.reportId)).length + 1
+        await ctx.latexCompile.commitVersion(args.reportId, `successful compile #${count}`)
+        compiled = true
+      }
+      return { reportId: String(report.id), chars: report.source.length, updatedAt: report.updatedAt, compiled }
     },
     // Pure UI-intent presentation: only the UI presentation layer invokes it,
     // not the headless tools-registry execution path these unit tests drive.
@@ -139,7 +152,7 @@ export function apply(ctx: Context, config: Config): void {
         reportId: String(report.id),
         source: clipped,
         truncated,
-        versionCount: ctx.reports.listVersions(report.id).length,
+        versionCount: (await ctx.latexCompile.listVersions(args.reportId)).length,
       }
     },
     presentCall: args => ({ card: 'generic', title: 'Read report source', kind: 'read', rawInput: args.reportId }),
@@ -149,7 +162,7 @@ export function apply(ctx: Context, config: Config): void {
     name: 'report_compile',
     description:
       'Compile the current source of one report to PDF. Compiler errors and warnings are '
-      + 'returned as diagnostics. On a successful compile a version snapshot is created '
+      + 'returned as diagnostics. On a successful compile a version snapshot is recorded '
       + 'automatically. Keep calling `report_compile` after `report_write` until it reports '
       + 'success.',
     parameters: {
@@ -194,8 +207,8 @@ export function apply(ctx: Context, config: Config): void {
       }))
       let versionCreated = false
       if (output.ok) {
-        const count = ctx.reports.listVersions(report.id).length + 1
-        await ctx.reports.snapshot(report.id, `successful compile #${count}`)
+        const count = (await ctx.latexCompile.listVersions(args.reportId)).length + 1
+        await ctx.latexCompile.commitVersion(args.reportId, `successful compile #${count}`)
         versionCreated = true
       }
       return { reportId: String(report.id), ok: output.ok, diagnostics, versionCreated }
@@ -206,8 +219,8 @@ export function apply(ctx: Context, config: Config): void {
   ctx.tools.register(defineTool({
     name: 'report_versions',
     description:
-      'List the version snapshots of one report, newest first. Each snapshot was captured at a '
-      + 'point its source compiled successfully (or was snapshotted explicitly).',
+      'List the version snapshots of one report, newest first. Each snapshot was recorded at a '
+      + 'point its source compiled successfully.',
     parameters: {
       reportId: { type: 'string', required: true, description: TOOL_IDS },
     },
@@ -225,6 +238,7 @@ export function apply(ctx: Context, config: Config): void {
               properties: {
                 id: { type: 'string', required: true },
                 label: { type: 'string', required: true },
+                command: { type: 'string' },
                 createdAt: { type: 'string', required: true },
               },
             },
@@ -234,9 +248,14 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [text(versionsText(value.versions))],
     },
     execute: async (args) => {
-      const versions = ctx.reports.listVersions(reportId(args.reportId))
+      const versions = await ctx.latexCompile.listVersions(args.reportId)
       return {
-        versions: versions.map(version => ({ id: String(version.id), label: version.label, createdAt: version.createdAt })),
+        versions: versions.map(version => ({
+          id: version.versionId,
+          label: version.label,
+          ...(version.command === undefined ? {} : { command: version.command }),
+          createdAt: version.createdAt,
+        })),
       }
     },
     presentCall: args => ({ card: 'generic', title: 'List report versions', kind: 'other', rawInput: args.reportId }),
@@ -245,11 +264,13 @@ export function apply(ctx: Context, config: Config): void {
   ctx.tools.register(defineTool({
     name: 'report_restore',
     description:
-      'Restore one report to an earlier version snapshot. The current source is replaced by the '
-      + 'snapshot source; recompile afterwards.',
+      'Restore one report to an earlier version by branching from it. A new branch named by you '
+      + 'is created from that version and the report switches to it, keeping the current branch '
+      + 'and history intact. Recompile afterwards.',
     parameters: {
       reportId: { type: 'string', required: true, description: TOOL_IDS },
       versionId: { type: 'string', required: true, description: 'A version id from `report_versions`.' },
+      branch: { type: 'string', required: true, description: 'Name for the new branch created from the target version.' },
     },
     output: {
       schema: {
@@ -257,14 +278,17 @@ export function apply(ctx: Context, config: Config): void {
         additionalProperties: false,
         properties: {
           reportId: { type: 'string', required: true },
+          branch: { type: 'string', required: true },
           source: { type: 'string', required: true },
         },
       },
-      render: (_args, value) => [text(`Restored report ${value.reportId}.\n\nSource:\n${value.source}`)],
+      render: (_args, value) => [text(`Restored report ${value.reportId} onto branch ${value.branch}.\n\nSource:\n${value.source}`)],
     },
     execute: async (args) => {
-      const report = await ctx.reports.restoreVersion(reportId(args.reportId), versionId(args.versionId))
-      return { reportId: String(report.id), source: report.source }
+      const id = reportId(args.reportId)
+      const source = await ctx.latexCompile.restoreVersion(args.reportId, args.versionId, args.branch)
+      const report = await ctx.reports.updateContent(id, source)
+      return { reportId: String(report.id), branch: args.branch, source: report.source }
     },
     presentCall: args => ({ card: 'generic', title: `Restore report ${args.reportId}`, kind: 'edit', rawInput: args.versionId }),
   }))

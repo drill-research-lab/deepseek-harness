@@ -79,7 +79,6 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     if (id === undefined) return
     await updateSource(id, sourceRef.current)
     setMessage(t('saved'))
-    await compileSelected()
   }
 
   const scheduleAutosave = useCallback((): void => {
@@ -135,6 +134,26 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     void compileSelected()
   }, [compileSelected])
 
+  const onSave = useCallback(async (): Promise<void> => {
+    if (autosaveTimer.current !== undefined) clearTimeout(autosaveTimer.current)
+    const id = selectedRef.current
+    if (id === undefined) return
+    await updateSource(id, sourceRef.current)
+    setMessage(t('saved'))
+    await compileSelected()
+  }, [updateSource, compileSelected, t])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault()
+        void onSave()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onSave])
+
   const onDownload = useCallback((): void => {
     const name = (selectedTitle.trim() || 'report').replace(/[\\/:*?"<>|]/g, '_')
     const href = `data:text/plain;charset=utf-8,${encodeURIComponent(sourceRef.current)}`
@@ -150,7 +169,9 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     if (autosaveTimer.current !== undefined) clearTimeout(autosaveTimer.current)
     const id = selectedRef.current
     if (id === undefined) return
-    const restored = await restore(id, versionId)
+    const branch = window.prompt(t('branchPrompt'), `restore-${versionId.slice(0, 7)}`)
+    if (branch === null || branch.trim().length === 0) return
+    const restored = await restore(id, versionId, branch.trim())
     sourceRef.current = restored
     setSource(restored)
     setMessage(t('restored'))
@@ -289,6 +310,7 @@ export function WritingView(props: WritingViewProps): JSX.Element {
       </main>
       <footer className={css.footer}>
         <div className={css.actions}>
+          <button className={css.button} onClick={() => { void onSave() }}>{t('save')}</button>
           <button className={css.button} onClick={() => { void onCompile() }}>{t('compile')}</button>
           <button className={css.button} onClick={openPreview}>{t('openPreview')}</button>
           <button className={css.button} onClick={onDownload}>{t('download')}</button>
@@ -345,6 +367,7 @@ export function WritingView(props: WritingViewProps): JSX.Element {
                 }
               }}
             />
+            <button className={css.modalAction} onClick={() => { void onSave() }}>{t('save')}</button>
             <button className={css.modalAction} onClick={() => { void onCompile() }}>{t('compile')}</button>
             <button className={css.modalAction} onClick={onDownload}>{t('download')}</button>
             <span className={css.modalStatus}>{headerStatus}</span>

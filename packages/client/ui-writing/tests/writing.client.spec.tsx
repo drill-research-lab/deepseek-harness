@@ -71,7 +71,23 @@ describe('WritingView', () => {
     expect(await screen.findByText(/Undefined control sequence/)).toBeTruthy()
   })
 
-  it('auto-saves and recompiles after a one-second edit pause', async () => {
+  it('auto-saves on an edit but does not recompile until a manual save', async () => {
+    const actions = view()
+    const { container } = render(<WritingView {...props(actions)} />)
+    fireEvent.click(await screen.findByText('Paper'))
+    await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
+    const compileBefore = vi.mocked(actions.compile).mock.calls.length
+
+    vi.useFakeTimers()
+    const textarea = container.querySelector('textarea')
+    fireEvent.change(textarea as Element, { target: { value: '\\documentclass{article}% edited' } })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(actions.updateSource).toHaveBeenCalledWith('r1', '\\documentclass{article}% edited')
+    expect(vi.mocked(actions.compile).mock.calls.length).toBe(compileBefore)
+    vi.useRealTimers()
+  })
+
+  it('saves and compiles when the save button is pressed', async () => {
     const actions = view()
     const { container } = render(<WritingView {...props(actions)} />)
     fireEvent.click(await screen.findByText('Paper'))
@@ -79,9 +95,10 @@ describe('WritingView', () => {
 
     vi.useFakeTimers()
     const textarea = container.querySelector('textarea')
-    fireEvent.change(textarea as Element, { target: { value: '\\documentclass{article}% edited' } })
-    await vi.advanceTimersByTimeAsync(1000)
-    expect(actions.updateSource).toHaveBeenCalledWith('r1', '\\documentclass{article}% edited')
+    fireEvent.change(textarea as Element, { target: { value: '\\documentclass{article}% save' } })
+    fireEvent.click(screen.getByText('save'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(actions.updateSource).toHaveBeenCalledWith('r1', '\\documentclass{article}% save')
     expect(actions.compile).toHaveBeenCalledWith('r1')
     vi.useRealTimers()
   })
@@ -217,12 +234,13 @@ describe('WritingView', () => {
     expect(textarea).toBeTruthy()
   })
 
-  it('auto-saves and recompiles from the full-screen editor', async () => {
+  it('auto-saves from the full-screen editor without recompiling', async () => {
     const actions = view()
     const { container } = render(<WritingView {...props(actions)} />)
     fireEvent.click(await screen.findByText('Paper'))
     await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
     fireEvent.click(screen.getByText('openPreview'))
+    const compileBefore = vi.mocked(actions.compile).mock.calls.length
 
     vi.useFakeTimers()
     const modalEditor = container.querySelector('[class*="modalEditor"]')
@@ -230,7 +248,7 @@ describe('WritingView', () => {
     fireEvent.change(textarea as Element, { target: { value: '\\documentclass{article}% modal' } })
     await vi.advanceTimersByTimeAsync(1000)
     expect(actions.updateSource).toHaveBeenCalledWith('r1', '\\documentclass{article}% modal')
-    expect(actions.compile).toHaveBeenCalledWith('r1')
+    expect(vi.mocked(actions.compile).mock.calls.length).toBe(compileBefore)
     vi.useRealTimers()
   })
 
@@ -295,19 +313,21 @@ describe('WritingView', () => {
     spy.mockRestore()
   })
 
-  it('restores a version by refreshing the PDF without snapshotting a new version', async () => {
+  it('restores a version onto a new branch by refreshing the PDF without snapshotting', async () => {
     const actions = view({
       versions: vi.fn().mockResolvedValue([
-        { versionId: 'v2', reportId: 'r1', label: 'successful compile #2', source: 's', createdAt: 't2' },
-        { versionId: 'v1', reportId: 'r1', label: 'successful compile #1', source: 's', createdAt: 't1' },
+        { versionId: 'v2', reportId: 'r1', label: 'successful compile #2', createdAt: 't2' },
+        { versionId: 'v1', reportId: 'r1', label: 'successful compile #1', createdAt: 't1' },
       ]),
     })
+    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('restore-v1')
     render(<WritingView {...props(actions)} />)
     fireEvent.click(await screen.findByText('Paper'))
     await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
     fireEvent.click(screen.getByText(/successful compile #2/))
     fireEvent.click(screen.getByText(/successful compile #1/))
-    await waitFor(() => expect(actions.restore).toHaveBeenCalledWith('r1', 'v1'))
+    await waitFor(() => expect(actions.restore).toHaveBeenCalledWith('r1', 'v1', 'restore-v1'))
     await waitFor(() => expect(actions.compile).toHaveBeenCalledWith('r1', { snapshot: false }))
+    prompt.mockRestore()
   })
 })

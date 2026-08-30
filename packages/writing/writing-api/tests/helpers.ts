@@ -20,6 +20,7 @@ import ReportService from '@deepseek-ai/dsh-writing'
 import LatexCompileService from '@deepseek-ai/dsh-writing-compile'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import WritingGateway from '../src/index.ts'
+import { createGitState, runGit, type GitState } from '../../writing-compile/tests/git-emulator.ts'
 
 export interface TestHarness {
   readonly ctx: Context
@@ -46,6 +47,7 @@ export class FakeSubprocessRuntime extends SubprocessRuntime {
   spawned: SubprocessSpawnSpec[] = []
   outcomes: SubprocessOutcome[] = []
   onSpawn: ((spec: SubprocessSpawnSpec) => void | Promise<void>) | undefined
+  private readonly gitState: GitState = createGitState()
 
   resolveExecutable(command: string): Promise<string> {
     return Promise.resolve(command === 'pdflatex' ? 'C:\\TeX\\pdflatex.exe' : command)
@@ -53,6 +55,24 @@ export class FakeSubprocessRuntime extends SubprocessRuntime {
 
   spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
     this.spawned.push(spec)
+    if (spec.argv[0] === 'git') {
+      const stdout = runGit(this.gitState, spec.cwd, spec.argv.slice(1))
+      const onSpawn = this.onSpawn
+      const done = (async () => {
+        if (onSpawn !== undefined) await onSpawn(spec)
+        return { exitCode: 0, signal: null }
+      })()
+      return {
+        pid: 1,
+        stdin: undefined,
+        stdout: undefined,
+        stderr: undefined,
+        collected: { stdout: reader(stdout), stderr: reader('') },
+        done,
+        terminate() {},
+        waitForExit: () => Promise.resolve(true),
+      }
+    }
     const outcome = this.outcomes.shift() ?? { exitCode: 0, signal: null }
     const onSpawn = this.onSpawn
     const done = (async () => {
@@ -120,6 +140,8 @@ export async function setupHarness(
       command: 'pdflatex -interaction=nonstopmode -halt-on-error',
       timeoutMs: 1000,
       artifactRoot: join(root, 'artifacts'),
+      authorName: 'test',
+      authorEmail: 'test@deepseek.ai',
     })
     if (options.withWebServer === true) {
       await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 })
