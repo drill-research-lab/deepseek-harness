@@ -11,6 +11,7 @@ import type { WorkflowJson } from '@deepseek-ai/dsh-pipeline/types'
 import type { PipelineEditorProps } from './slots.ts'
 import { PipelineCanvas } from './PipelineCanvas.tsx'
 import { CreateView } from './CreateView.tsx'
+import { Inspector } from './Inspector.tsx'
 import styles from './PipelineEditor.module.css'
 
 /**
@@ -26,14 +27,20 @@ export function PipelineEditor({ useStore, actions, api, t }: PipelineEditorProp
   const [runs, setRuns] = useState<readonly PipelineRunRecord[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [draft, setDraft] = useState<WorkflowJson | undefined>(undefined)
+  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     if (openId === null) return
     let live = true
     void api.get(openId).then((result) => {
       if (!live) return
-      if (result.ok && result.value !== undefined) setDefinition(result.value)
-      else setError(t('error.load'))
+      if (result.ok && result.value !== undefined) {
+        setDefinition(result.value)
+        setDraft(result.value)
+      } else {
+        setError(t('error.load'))
+      }
     })
     return () => {
       live = false
@@ -48,6 +55,17 @@ export function PipelineEditor({ useStore, actions, api, t }: PipelineEditorProp
   }, [openId, api])
 
   useEffect(refreshRuns, [refreshRuns])
+
+  const commitDraft = useCallback(() => {
+    /* v8 ignore next -- the load effect seeds the draft, so the inspector is
+     * never mounted with an empty draft; the guard only guards a race. */
+    if (draft === undefined) return
+    setBusy(true)
+    void api.save(draft).then((result) => {
+      setBusy(false)
+      if (result.ok) setDefinition(result.value)
+    })
+  }, [draft, api])
 
   const onRunNow = useCallback(() => {
     /* v8 ignore next -- the Run-now button renders only while a pipeline is open,
@@ -84,9 +102,17 @@ export function PipelineEditor({ useStore, actions, api, t }: PipelineEditorProp
         <button type="button" className={styles.close} onClick={onClose} aria-label={t('action.close')}>×</button>
       </header>
       {error !== null && <div className={styles.error}>{error}</div>}
-      {definition !== undefined && (
+      {definition !== undefined && draft !== undefined && (
         <div className={styles.body}>
           <PipelineCanvas definition={definition} selectedId={selectedId} onSelect={setSelectedId} />
+          <Inspector
+            definition={draft}
+            selectedId={selectedId}
+            onChange={setDraft}
+            onCommit={commitDraft}
+            busy={busy}
+            t={t}
+          />
           <aside className={styles.runs}>
             <h3>{t('editor.runs')}</h3>
             {runs.length === 0 && <p className={styles.noRuns}>{t('editor.noRuns')}</p>}

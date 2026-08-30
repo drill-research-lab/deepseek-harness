@@ -17,5 +17,5 @@
 ## Known Limitations and Deferred Work
 
 - **模板画廊仅覆盖 Scheduled Search** —— 创建视图承载 Scheduled Search 表单（名称、检索词、cron、时区、抓取上限、LLM 摘要开关）与粘贴 JSON 导入；更多模板随后续切片交付。
-- **检查器仅支持选中** —— 点击画布节点会高亮它，但检查器的各窗格（每节点的配置 / 输入 / 输出）与溯源视图随检查器切片交付。
+- **检查器仅编辑节点配置** —— 检查器提供按类型的配置编辑（trigger 的 cron、llm 的提示词/模型、builtin 的只读 ref）、下游边改接，以及经 `save` 的整份定义提交；输入/输出窗格与溯源视图随运行会话切片交付。
 - **LLM 节点依赖引擎配置** —— 编辑器无法按节点选择模型；LLM 节点依赖引擎的 `llmProvider`/`llmModel` 默认值，否则以 `LLM_NODE_UNCONFIGURED` 大声失败。

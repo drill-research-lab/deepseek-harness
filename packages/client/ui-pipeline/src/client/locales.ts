@@ -31,6 +31,11 @@ export const zh = {
   'create.import': '导入 JSON',
   'create.importPlaceholder': '粘贴 WorkflowJSON 文档…',
   'create.invalidJson': 'JSON 无效',
+  'inspector.prompt': '提示词',
+  'inspector.model': '模型（留空用默认）',
+  'inspector.downstream': '下游连接',
+  'inspector.noDownstream': '无下游节点',
+  'inspector.commit': '保存修改',
   'error.load': '加载流水线失败',
 } satisfies Record<string, string>
 
@@ -65,6 +70,11 @@ export const zhTw = {
   'create.import': '匯入 JSON',
   'create.importPlaceholder': '貼上 WorkflowJSON 文件…',
   'create.invalidJson': 'JSON 無效',
+  'inspector.prompt': '提示詞',
+  'inspector.model': '模型（留空用預設）',
+  'inspector.downstream': '下游連接',
+  'inspector.noDownstream': '無下游節點',
+  'inspector.commit': '儲存修改',
   'error.load': '載入流水線失敗',
 } satisfies Record<keyof typeof zh, string>
 
@@ -102,5 +112,10 @@ export const en = {
   'create.import': 'Import JSON',
   'create.importPlaceholder': 'Paste a WorkflowJSON document…',
   'create.invalidJson': 'Invalid JSON',
+  'inspector.prompt': 'Prompt',
+  'inspector.model': 'Model (blank = default)',
+  'inspector.downstream': 'Downstream edges',
+  'inspector.noDownstream': 'No downstream nodes',
+  'inspector.commit': 'Save changes',
   'error.load': 'Failed to load pipelines',
 } satisfies Record<keyof typeof zh, string>

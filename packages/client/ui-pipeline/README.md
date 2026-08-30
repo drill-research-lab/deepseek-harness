@@ -17,5 +17,5 @@ None.
 ## Known Limitations and Deferred Work
 
 - **Template gallery covers Scheduled Search only** — the create view hosts the Scheduled Search form (name, query, cron, time zone, fetch cap, LLM-summary toggle) and the paste-JSON import; more templates arrive with later slices.
-- **Inspector is selection-only** — clicking a canvas node highlights it, but the inspector panes (config / input / output per node) and provenance views land with the inspector slice.
+- **Inspector edits node config only** — the inspector offers per-type config editing (trigger cron, llm prompt/model, builtin read-only ref), downstream-edge retargeting, and whole-definition commit via `save`; the input/output panes and provenance views land with the run-session slice.
 - **LLM nodes need engine config** — the editor cannot pick a model per node; llm nodes rely on the engine's `llmProvider`/`llmModel` defaults and fail loud with `LLM_NODE_UNCONFIGURED` otherwise.

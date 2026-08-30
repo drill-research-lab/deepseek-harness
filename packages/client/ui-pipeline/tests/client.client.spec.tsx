@@ -83,8 +83,9 @@ function definition(): WorkflowJson {
     nodes: [
       { id: nid('trigger'), type: 'trigger' },
       { id: nid('collect'), type: 'builtin', ref: 'scheduled-search/search', config: {} },
+      { id: nid('ask'), type: 'llm', prompt: 'Summarize.' },
     ],
-    edges: [{ from: nid('trigger'), to: nid('collect') }],
+    edges: [{ from: nid('trigger'), to: nid('collect') }, { from: nid('collect'), to: nid('ask') }],
   }
 }
 
@@ -405,6 +406,70 @@ describe('PipelineEditor', () => {
     void onCreated
   })
 
+  it('inspects a builtin node and shows its read-only ref', async () => {
+    const { api } = makeApi()
+    const share = makeStoreShare()
+    share.actions.open('sch-search')
+    render(<PipelineEditor useSessions={neverHook} useWorkspaces={neverHook} {...share} api={api} t={t} />)
+    await screen.findByTestId('pipeline-canvas')
+    await waitFor(() => { expect(screen.getByTestId('rf__node-collect')).toBeTruthy() })
+    fireEvent.click(screen.getByTestId('rf__node-collect'))
+    expect(screen.getByTestId('pipeline-inspector').textContent).toContain('scheduled-search/search')
+  })
+
+  it('edits the trigger cron through the inspector and commits via save', async () => {
+    const { api, calls } = makeApi()
+    const share = makeStoreShare()
+    share.actions.open('sch-search')
+    render(<PipelineEditor useSessions={neverHook} useWorkspaces={neverHook} {...share} api={api} t={t} />)
+    await screen.findByTestId('pipeline-canvas')
+    await waitFor(() => { expect(screen.getByTestId('rf__node-trigger')).toBeTruthy() })
+    fireEvent.click(screen.getByTestId('rf__node-trigger'))
+    fireEvent.change(screen.getByTestId('inspector-cron'), { target: { value: '0 12 * * *' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存修改' }))
+    await waitFor(() => { expect(calls).toEqual(['get', 'runs', 'save']) })
+  })
+
+  it('edits llm node config and downstream edges through the inspector draft', async () => {
+    const { api, calls } = makeApi()
+    const share = makeStoreShare()
+    share.actions.open('sch-search')
+    render(<PipelineEditor useSessions={neverHook} useWorkspaces={neverHook} {...share} api={api} t={t} />)
+    await screen.findByTestId('pipeline-canvas')
+    await waitFor(() => { expect(screen.getByTestId('rf__node-ask')).toBeTruthy() })
+    // The llm node exposes prompt + model fields.
+    fireEvent.click(screen.getByTestId('rf__node-ask'))
+    fireEvent.change(screen.getByTestId('inspector-prompt'), { target: { value: 'Summarize for me.' } })
+    fireEvent.blur(screen.getByTestId('inspector-prompt'))
+    fireEvent.change(screen.getByTestId('inspector-model'), { target: { value: 'deepseek-v4-pro' } })
+    fireEvent.blur(screen.getByTestId('inspector-model'))
+    // Clearing the model removes the override.
+    fireEvent.change(screen.getByTestId('inspector-model'), { target: { value: '' } })
+    fireEvent.blur(screen.getByTestId('inspector-model'))
+    // The trigger node manages its downstream edge target.
+    fireEvent.click(screen.getByTestId('rf__node-trigger'))
+    const edgeSelect = screen.getByTestId('inspector-edge-0') as HTMLSelectElement
+    expect(edgeSelect.value).toBe('collect')
+    fireEvent.change(edgeSelect, { target: { value: 'ask' } })
+    // Commit sends the edited draft; the engine validates (or rejects) it.
+    fireEvent.click(screen.getByRole('button', { name: '保存修改' }))
+    await waitFor(() => { expect(calls).toEqual(['get', 'runs', 'save']) })
+  })
+
+  it('keeps the definition when the commit save fails', async () => {
+    const { api, calls } = makeApi({ save: () => Promise.resolve({ ok: false, error: { code: 'x', message: 'boom', details: {}, retryable: false } }) })
+    const share = makeStoreShare()
+    share.actions.open('sch-search')
+    render(<PipelineEditor useSessions={neverHook} useWorkspaces={neverHook} {...share} api={api} t={t} />)
+    await screen.findByTestId('pipeline-canvas')
+    await waitFor(() => { expect(screen.getByTestId('rf__node-trigger')).toBeTruthy() })
+    fireEvent.click(screen.getByTestId('rf__node-trigger'))
+    fireEvent.change(screen.getByTestId('inspector-cron'), { target: { value: '0 12 * * *' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存修改' }))
+    // The failed save is sent but never lands as a definition change.
+    await waitFor(() => { expect(calls).toEqual(['get', 'runs']) })
+  })
+
   it('shows the empty runs list when no run has settled', async () => {
     const { api } = makeApi({ runs: () => Promise.resolve({ ok: true, value: [] }) })
     const share = makeStoreShare()
@@ -486,9 +551,9 @@ describe('PipelineCanvas', () => {
 })
 
 describe('layoutDag', () => {
-  it('computes layered positions with the trigger above its child', async () => {
+  it('computes layered positions with the trigger above its children', async () => {
     const laid = await layoutDag(definition())
-    expect(laid.map(node => node.id)).toEqual(['trigger', 'collect'])
+    expect(laid.map(node => node.id)).toEqual(['trigger', 'collect', 'ask'])
     const trigger = laid.find(node => node.id === 'trigger') as { y: number; isTrigger: boolean }
     const collect = laid.find(node => node.id === 'collect') as { y: number }
     expect(trigger.isTrigger).toBe(true)
