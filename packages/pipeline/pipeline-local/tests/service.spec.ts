@@ -92,6 +92,19 @@ describe('PipelineRpcService', () => {
     expect(rpc.runs('sch-d').map(record => record.runId)).toEqual(['sch-d-run-1', 'sch-d-run-2'])
   })
 
+  it('creates a Scheduled Search pipeline from template inputs, minting a unique id', async () => {
+    const { rpc } = await setup()
+    const saved = await rpc.createFromTemplate({ name: 'Lab Digest', inputs: { query: 'LLM agents', cron: '0 8 * * *', timeZone: 'Asia/Taipei', maxResults: 7, summary: true } })
+    expect(saved.id).toBe('lab-digest')
+    expect(saved.trigger).toMatchObject({ kind: 'cron', expression: '0 8 * * *', timeZone: 'Asia/Taipei' })
+    expect(saved.nodes.map(node => String(node.id))).toEqual(['trigger', 'search', 'normalize', 'dedupe', 'persist', 'summarize'])
+    // A second create with the same name deduplicates the id.
+    const second = await rpc.createFromTemplate({ name: 'Lab Digest', inputs: { query: 'LLM agents' } })
+    expect(second.id).toMatch(/^lab-digest-[a-z0-9]+$/)
+    expect(second.trigger).toMatchObject({ expression: '0 9 * * 1', timeZone: 'UTC' })
+    expect(rpc.list()).toHaveLength(2)
+  })
+
   it('reports the overlap skip instead of queueing a second run', async () => {
     const { engine, rpc } = await setup()
     let release: (() => void) | undefined

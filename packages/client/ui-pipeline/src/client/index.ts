@@ -50,6 +50,8 @@ export function apply(ctx: ClientContext): void {
 
   const api: PipelineApi = {
     list: () => ctx.remote.pipelines.list(),
+    createFromTemplate: request => ctx.remote.pipelines.createFromTemplate(request),
+    save: definition => ctx.remote.pipelines.save(definition),
     get: id => ctx.remote.pipelines.get(id),
     setEnabled: (id, enabled) => ctx.remote.pipelines.setEnabled(id, enabled),
     remove: id => ctx.remote.pipelines.delete(id),

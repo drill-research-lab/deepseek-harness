@@ -31,7 +31,7 @@ vi.stubGlobal('ResizeObserver', ResizeObserverStub)
 import { PipelinesNav } from '../src/client/PipelinesNav.tsx'
 import { PipelineEditor } from '../src/client/PipelineEditor.tsx'
 import { layoutDag } from '../src/client/PipelineCanvas.tsx'
-import { createPipelineUiStore, type PipelineApi } from '../src/client/slots.ts'
+import { createPipelineUiStore, type PipelineApi, type PipelinesNavProps } from '../src/client/slots.ts'
 import { zh } from '../src/client/locales.ts'
 
 // The framework-injected t seat, stubbed over the zh dictionaries (the default locale).
@@ -110,6 +110,8 @@ function makeApi(over: Partial<Parameters<typeof PipelinesNav>[0]['api']> = {}) 
     remove: ok('remove')(true),
     triggerNow: ok('triggerNow')({ outcome: 'started', runId: 'sch-search-run-3', result: { status: 'completed', nodeCount: 2 } } as const),
     runs: ok('runs')([runRecord(1, 'completed'), runRecord(2, 'failed')]),
+    createFromTemplate: ok('createFromTemplate')(definition()),
+    save: ok('save')(definition()),
     ...over,
   }
   return { api, calls }
@@ -134,6 +136,8 @@ function makeRemoteFake() {
       delete: ok('delete')(true),
       triggerNow: ok('triggerNow')({ outcome: 'started', runId: 'sch-search-run-3', result: { status: 'completed', nodeCount: 2 } } as const),
       runs: ok('runs')([runRecord(1, 'completed'), runRecord(2, 'failed')]),
+      createFromTemplate: ok('createFromTemplate')(definition()),
+      save: ok('save')(definition()),
     },
   }
 }
@@ -179,7 +183,9 @@ describe('ui-pipeline browser plugin', () => {
     await navInject.api.remove('sch-search')
     await navInject.api.triggerNow('sch-search')
     await navInject.api.runs('sch-search')
-    expect(calls).toEqual(['list', 'get', 'setEnabled', 'delete', 'triggerNow', 'runs'])
+    await navInject.api.createFromTemplate({ name: 'Lab Digest', inputs: { query: 'LLM agents', cron: '0 9 * * 1', timeZone: 'UTC', maxResults: 20, summary: false } })
+    await navInject.api.save(definition())
+    expect(calls).toEqual(['list', 'get', 'setEnabled', 'delete', 'triggerNow', 'runs', 'createFromTemplate', 'save'])
     navInject.openEditor('sch-search')
     expect(openedId).toBe('sch-search')
 
@@ -243,6 +249,15 @@ describe('PipelinesNav', () => {
     await screen.findByText('arXiv digest')
     fireEvent.click(screen.getByRole('button', { name: '暂停' }))
     await waitFor(() => { expect(calls).toEqual(['list', 'setEnabled', 'list']) })
+  })
+
+  it('opens the create view from the New-pipeline button', async () => {
+    const { api } = makeApi()
+    const share = makeStoreShare()
+    render(<PipelinesNav {...navProps(api, share)} />)
+    await screen.findByText('arXiv digest')
+    fireEvent.click(screen.getByTestId('pipeline-new'))
+    expect(share.instance.getSnapshot().view).toBe('create')
   })
 
   it('shows the empty state when no pipelines exist', async () => {
@@ -324,6 +339,72 @@ describe('PipelineEditor', () => {
     await screen.findByText('加载流水线失败')
   })
 
+  it('shows the load error when createFromTemplate fails', async () => {
+    const { api } = makeApi({ createFromTemplate: () => Promise.resolve({ ok: false, error: { code: 'x', message: 'boom', details: {}, retryable: false } }) })
+    const share = makeStoreShare()
+    share.actions.openCreate()
+    render(<PipelineEditor useSessions={neverHook} useWorkspaces={neverHook} {...share} api={api} t={t} />)
+    await screen.findByTestId('pipeline-create')
+    fireEvent.change(screen.getByTestId('create-name'), { target: { value: 'Lab Digest' } })
+    fireEvent.change(screen.getByTestId('create-query'), { target: { value: 'LLM agents' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建' }))
+    await screen.findByText('加载流水线失败')
+  })
+
+  it('shows the load error when the imported definition is rejected', async () => {
+    const { api } = makeApi({ save: () => Promise.resolve({ ok: false, error: { code: 'x', message: 'boom', details: {}, retryable: false } }) })
+    const share = makeStoreShare()
+    share.actions.openCreate()
+    render(<PipelineEditor useSessions={neverHook} useWorkspaces={neverHook} {...share} api={api} t={t} />)
+    await screen.findByTestId('pipeline-create')
+    fireEvent.change(screen.getByTestId('create-import'), { target: { value: JSON.stringify(definition()) } })
+    fireEvent.click(screen.getByRole('button', { name: '导入 JSON' }))
+    await screen.findByText('加载流水线失败')
+  })
+
+  it('renders the create view and submits the template form', async () => {
+    const { api, calls } = makeApi()
+    const onCreated = vi.fn()
+    const share = makeStoreShare()
+    share.actions.openCreate()
+    render(<PipelineEditor useSessions={neverHook} useWorkspaces={neverHook} {...share} api={api} t={t} />)
+    await screen.findByTestId('pipeline-create')
+    fireEvent.change(screen.getByTestId('create-name'), { target: { value: 'Lab Digest' } })
+    fireEvent.change(screen.getByTestId('create-query'), { target: { value: 'LLM agents' } })
+    fireEvent.change(screen.getByTestId('create-cron'), { target: { value: '0 8 * * *' } })
+    fireEvent.change(screen.getByTestId('create-timezone'), { target: { value: 'Asia/Taipei' } })
+    fireEvent.change(screen.getByTestId('create-max'), { target: { value: '7' } })
+    fireEvent.click(screen.getByTestId('create-summary'))
+    fireEvent.click(screen.getByRole('button', { name: '创建' }))
+    await waitFor(() => {
+      expect(calls).toEqual(['createFromTemplate'])
+    })
+    expect(onCreated).not.toHaveBeenCalled()
+    // The editor opened on the created pipeline through the shared store.
+    expect(share.instance.getSnapshot().openId).toBe('sch-search')
+    expect(share.instance.getSnapshot().view).toBe('editor')
+  })
+
+  it('imports a pasted WorkflowJSON document and reports invalid JSON', async () => {
+    const { api, calls } = makeApi()
+    const onCreated = vi.fn()
+    const share = makeStoreShare()
+    share.actions.openCreate()
+    render(<PipelineEditor useSessions={neverHook} useWorkspaces={neverHook} {...share} api={api} t={t} />)
+    await screen.findByTestId('pipeline-create')
+    // Invalid JSON first: the error row shows and nothing is sent.
+    fireEvent.change(screen.getByTestId('create-import'), { target: { value: '{not json' } })
+    fireEvent.click(screen.getByRole('button', { name: '导入 JSON' }))
+    await screen.findByText('JSON 无效')
+    expect(calls).toEqual([])
+    // Then a valid document goes through save and opens the pipeline.
+    fireEvent.change(screen.getByTestId('create-import'), { target: { value: JSON.stringify(definition()) } })
+    fireEvent.click(screen.getByRole('button', { name: '导入 JSON' }))
+    await waitFor(() => { expect(calls).toEqual(['save']) })
+    expect(share.instance.getSnapshot().openId).toBe('sch-search')
+    void onCreated
+  })
+
   it('shows the empty runs list when no run has settled', async () => {
     const { api } = makeApi({ runs: () => Promise.resolve({ ok: true, value: [] }) })
     const share = makeStoreShare()
@@ -395,7 +476,7 @@ describe('PipelineCanvas', () => {
         { from: nid('collect'), to: nid('ask') },
         { from: nid('ask'), to: nid('verify') },
       ],
-    }
+    } as WorkflowJson
     render(<PipelineCanvas definition={withKinds} selectedId="collect" onSelect={() => {}} />)
     await screen.findByTestId('pipeline-canvas')
     await waitFor(() => { expect(screen.getByTestId('rf__node-ask').textContent).toContain('llm · ask') })

@@ -10,6 +10,7 @@ import type { PipelineRunRecord } from '@deepseek-ai/dsh-pipeline-local/types'
 import type { WorkflowJson } from '@deepseek-ai/dsh-pipeline/types'
 import type { PipelineEditorProps } from './slots.ts'
 import { PipelineCanvas } from './PipelineCanvas.tsx'
+import { CreateView } from './CreateView.tsx'
 import styles from './PipelineEditor.module.css'
 
 /**
@@ -20,6 +21,7 @@ import styles from './PipelineEditor.module.css'
  */
 export function PipelineEditor({ useStore, actions, api, t }: PipelineEditorProps): React.JSX.Element | null {
   const openId = useStore(state => state.openId)
+  const view = useStore(state => state.view)
   const [definition, setDefinition] = useState<WorkflowJson | undefined>(undefined)
   const [runs, setRuns] = useState<readonly PipelineRunRecord[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -62,7 +64,18 @@ export function PipelineEditor({ useStore, actions, api, t }: PipelineEditorProp
     setError(null)
   }, [actions])
 
-  if (openId === null) return null
+  if (openId === null && view !== 'create') return null
+  if (view === 'create') {
+    return (
+      <div className={styles.overlay} data-testid="pipeline-create">
+        <header className={styles.header}>
+          <span className={styles.title}>{t('nav.new')}</span>
+          <button type="button" className={styles.close} onClick={onClose} aria-label={t('action.close')}>×</button>
+        </header>
+        <CreateView api={api} onCreated={(id) => { actions.open(id) }} t={t} />
+      </div>
+    )
+  }
   return (
     <div className={styles.overlay} data-testid="pipeline-editor">
       <header className={styles.header}>

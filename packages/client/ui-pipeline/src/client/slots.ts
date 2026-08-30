@@ -11,15 +11,18 @@ import type { PipelineSummary, WorkflowJson } from '@deepseek-ai/dsh-pipeline/ty
 import type { PipelineRunRecord, TriggerNowResult } from '@deepseek-ai/dsh-pipeline-local/types'
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
 
-/** Shared viewing state: which pipeline (if any) the overlay editor shows. */
+/** Shared viewing state: which pipeline (if any) the overlay editor shows, and which mode. */
 export interface PipelineUiState {
-  /** The open pipeline's id, or `null` when the editor is closed. */
+  /** The open pipeline's id, or `null` when no editor is open. */
   openId: string | null
+  /** Whether the overlay shows the template gallery (`create`) or an open pipeline (`editor`). */
+  view: 'editor' | 'create'
 }
 
 /** Declared action shape of the pipeline UI store. */
 export type PipelineUiActions = {
   open: (draft: PipelineUiState, id: string) => void
+  openCreate: (draft: PipelineUiState) => void
   close: (draft: PipelineUiState) => void
 }
 
@@ -29,18 +32,51 @@ export type PipelineUiActions = {
  */
 export function createPipelineUiStore(): EngineStoreHandle<PipelineUiState, PipelineUiActions> {
   return defineStore({
-    init: (): PipelineUiState => ({ openId: null }),
+    init: (): PipelineUiState => ({ openId: null, view: 'editor' }),
     actions: {
-      open: (d, id: string) => { d.openId = id },
-      close: (d) => { d.openId = null },
+      open: (d, id: string) => {
+        d.openId = id
+        d.view = 'editor'
+      },
+      openCreate: (d) => {
+        d.openId = null
+        d.view = 'create'
+      },
+      close: (d) => {
+        d.openId = null
+        d.view = 'editor'
+      },
     },
   })
+}
+
+/** Template inputs for the Scheduled Search creation form (wire shape). */
+export interface ScheduledSearchForm {
+  /** The new pipeline's display name. */
+  name: string
+  /** The Scheduled Search inputs. */
+  inputs: {
+    /** The free-text arXiv query. */
+    query: string
+    /** Cron expression. */
+    cron: string
+    /** IANA time zone. */
+    timeZone: string
+    /** Fetch cap per run. */
+    maxResults: number
+    /** Whether runs append an LLM summary. */
+    summary: boolean
+  }
 }
 
 /** The pipelines wire verbs the surface needs, over the generated Remote API. */
 export interface PipelineApi {
   /** List every pipeline's projection with live run status. */
   list: () => Promise<RemoteResult<readonly PipelineSummary[]>>
+  /** Create one Scheduled Search pipeline from template inputs. */
+  createFromTemplate: (request: ScheduledSearchForm) => Promise<RemoteResult<WorkflowJson>>
+  /** Validate and persist one pasted WorkflowJSON document. */
+  save: (definition: WorkflowJson) => Promise<RemoteResult<WorkflowJson>>
   /** Read one definition. */
   get: (id: string) => Promise<RemoteResult<WorkflowJson | undefined>>
   /** Pause (`false`) or resume (`true`) one pipeline's scheduled triggers. */

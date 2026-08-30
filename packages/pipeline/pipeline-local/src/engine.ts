@@ -34,6 +34,7 @@ import type {
   WorkflowJson,
 } from '@deepseek-ai/dsh-pipeline'
 import { PipelineFileRegistry } from './registry.ts'
+import { registerScheduledSearch } from './steps/scheduled-search.ts'
 import { PipelineRpcService } from './service.ts'
 import type { PipelineRunRecord } from './registry.ts'
 
@@ -135,6 +136,7 @@ export class PipelineLocalEngine extends PipelineEngine {
     this.llmProvider = config.llmProvider
     this.llmModel = config.llmModel
     ctx.plugin(PipelineRpcService)
+    registerScheduledSearch(this)
     const tickMs = (config.tickSeconds ?? 60) * 1000
     if (config.scheduler ?? true) {
       this.ctx.effect(() => {
@@ -169,6 +171,11 @@ export class PipelineLocalEngine extends PipelineEngine {
 
   get(id: PipelineId): WorkflowJson | undefined {
     return this.registry.get(id)
+  }
+
+  /** Whether one pipeline id is already taken. */
+  hasPipeline(id: PipelineId): boolean {
+    return this.registry.get(id) !== undefined
   }
 
   /** List one pipeline's settled run records, oldest first. */

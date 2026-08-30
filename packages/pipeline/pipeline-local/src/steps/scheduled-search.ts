@@ -15,16 +15,9 @@ import { normalizeStep, searchStep } from './arxiv.ts'
 export { normalizeStep, searchStep } from './arxiv.ts'
 
 /** Inputs accepted by the Scheduled Search template. */
-export interface ScheduledSearchInputs {
-  /** The free-text search query sent to arXiv on every run. */
-  query: string
-  /** Fetch cap per run (default 20). */
-  maxResults?: number
-  /** Absolute artifact directory; defaults to the engine's per-pipeline artifacts. */
-  destination?: string
-  /** Whether every run appends an LLM summary of the new records (D14 toggle, default false). */
-  summary?: boolean
-}
+import type { ScheduledSearchInputs } from '../types.ts'
+
+export type { ScheduledSearchInputs } from '../types.ts'
 
 /** Output of the `scheduled-search/dedupe` step. */
 export type DedupeResult = {
@@ -125,6 +118,12 @@ export const persistStep = async (config: JsonValue | undefined, input: JsonValu
  * @returns the definition, ready for `engine.save`.
  */
 export function expandScheduledSearch(id: string, name: string, inputs: ScheduledSearchInputs): Record<string, unknown> {
+  const trigger = {
+    kind: 'cron',
+    expression: inputs.cron ?? '0 9 * * 1',
+    timeZone: inputs.timeZone ?? 'UTC',
+    enabled: true,
+  }
   const nodes: Array<Record<string, unknown>> = [
     { id: 'trigger', type: 'trigger' },
     { id: 'search', type: 'builtin', ref: 'scheduled-search/search', config: { query: inputs.query, ...(inputs.maxResults !== undefined ? { maxResults: inputs.maxResults } : {}) } },
@@ -146,8 +145,16 @@ export function expandScheduledSearch(id: string, name: string, inputs: Schedule
     version: 1,
     id,
     name,
-    template: { ref: 'scheduled-search', inputs: { query: inputs.query, ...(inputs.maxResults !== undefined ? { maxResults: inputs.maxResults } : {}) } },
-    trigger: { kind: 'cron', expression: '0 9 * * 1', timeZone: 'UTC', enabled: true },
+    template: {
+      ref: 'scheduled-search',
+      inputs: {
+        query: inputs.query,
+        ...(inputs.cron !== undefined ? { cron: inputs.cron } : {}),
+        ...(inputs.timeZone !== undefined ? { timeZone: inputs.timeZone } : {}),
+        ...(inputs.maxResults !== undefined ? { maxResults: inputs.maxResults } : {}),
+      },
+    },
+    trigger,
     nodes,
     edges,
   }

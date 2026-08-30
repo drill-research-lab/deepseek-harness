@@ -49,7 +49,12 @@ export function PipelinesNav({ wide, expandSidebar, useStore, actions, api, open
 
   return (
     <div className={styles.block} data-wide={wide}>
-      <div className={styles.header}>{t('nav.title')}</div>
+      <div className={styles.header}>
+        {t('nav.title')}
+        <button type="button" className={styles.new} data-testid="pipeline-new" onClick={() => { actions.openCreate() }}>
+          {t('nav.new')}
+        </button>
+      </div>
       {error && <div className={styles.row}>{t('error.load')}</div>}
       {!error && pipelines !== null && pipelines.length === 0 && (
         <div className={styles.row}>{t('nav.empty')}</div>

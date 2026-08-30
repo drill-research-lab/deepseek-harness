@@ -8,6 +8,22 @@
 
 import type { PipelineRunResultInfo, PipelineRunStatus } from '@deepseek-ai/dsh-pipeline/types'
 
+/** The template inputs a Scheduled Search pipeline is created from. */
+export interface ScheduledSearchInputs {
+  /** The free-text search query sent to arXiv on every run. */
+  query: string
+  /** Cron expression for the trigger (default weekly Monday 09:00 UTC). */
+  cron?: string
+  /** IANA time zone for the trigger (default `UTC`). */
+  timeZone?: string
+  /** Fetch cap per run (default 20). */
+  maxResults?: number
+  /** Absolute artifact directory; defaults to the engine's per-pipeline artifacts. */
+  destination?: string
+  /** Whether every run appends an LLM summary of the new records (D14 toggle, default false). */
+  summary?: boolean
+}
+
 /** One settled run's durable record (`runs/<pipelineId>/<ordinal>.json`). */
 export interface PipelineRunRecord {
   /** The run's id (`<pipelineId>-run-<ordinal>`). */

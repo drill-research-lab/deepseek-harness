@@ -10,6 +10,7 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { PipelineId } from '@deepseek-ai/dsh-pipeline'
 import type { PipelineSummary, WorkflowJson } from '@deepseek-ai/dsh-pipeline/types'
 import type { PipelineRunRecord, TriggerNowResult } from './types.ts'
+import { expandScheduledSearch, type ScheduledSearchInputs } from './steps/scheduled-search.ts'
 import type { PipelineLocalEngine } from './engine.ts'
 
 /**
@@ -91,6 +92,23 @@ export class PipelineRpcService extends TypertRemoteService {
     const started = this.engine.startRun({ id: PipelineId(id), trigger: 'manual' })
     if (started.outcome === 'skipped') return { outcome: 'skipped', reason: started.reason }
     return { outcome: 'started', runId: started.runId, result: await started.result }
+  }
+
+  /**
+   * Create one Scheduled Search pipeline from template inputs: the id is
+   * minted from the name (deduplicated with a suffix when taken), the
+   * definition is expanded server-side, and the validated result is
+   * persisted. The template-gallery submit path.
+   * @param request - the display name plus the Scheduled Search inputs.
+   * @returns the stored definition.
+   */
+  @Remote('createFromTemplate')
+  createFromTemplate(request: { name: string; inputs: ScheduledSearchInputs }): Promise<WorkflowJson> {
+    /* v8 ignore next 2 -- the second disjunct covers a name with no slug-safe
+     * characters; the shipped template gallery always submits a real name. */
+    const base = request.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'sch-pipeline'
+    const id = this.engine.hasPipeline(PipelineId(base)) ? `${base}-${Date.now().toString(36)}` : base
+    return this.save(expandScheduledSearch(id, request.name, request.inputs) as unknown as WorkflowJson)
   }
 
   /**

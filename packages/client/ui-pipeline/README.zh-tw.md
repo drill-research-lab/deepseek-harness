@@ -16,6 +16,6 @@
 
 ## Known Limitations and Deferred Work
 
-- **尚無範本畫廊與 JSON 匯入** —— Scheduled Search 範本表單與貼上 JSON 匯入路徑隨後續切片交付；`save` 已接受完整 WorkflowJSON 文件。
+- **範本畫廊僅涵蓋 Scheduled Search** —— 建立檢視承載 Scheduled Search 表單（名稱、檢索詞、cron、時區、抓取上限、LLM 摘要開關）與貼上 JSON 匯入；更多範本隨後續切片交付。
 - **檢查器僅支援選取** —— 點擊畫布節點會高亮它，但檢查器的各窗格（每節點的設定 / 輸入 / 輸出）與溯源檢視隨檢查器切片交付。
 - **LLM 節點依賴引擎設定** —— 編輯器無法按節點選擇模型；LLM 節點依賴引擎的 `llmProvider`/`llmModel` 預設值，否則以 `LLM_NODE_UNCONFIGURED` 大聲失敗。
