@@ -184,6 +184,12 @@ describe('validateWorkflowJson', () => {
       expectRejection(definition, 'CRON_EXPRESSION_INVALID')
     })
 
+    it('rejects cron expressions the scheduler cannot compute', () => {
+      const definition = validDefinition()
+      definition.trigger = { ...validDefinition().trigger as Record<string, unknown>, expression: '99 99 * * *' }
+      expectRejection(definition, 'CRON_EXPRESSION_INVALID', 'Invalid value for minute')
+    })
+
     it('rejects unknown time zones', () => {
       const definition = validDefinition()
       definition.trigger = { ...validDefinition().trigger as Record<string, unknown>, timeZone: 'Mars/Olympus' }

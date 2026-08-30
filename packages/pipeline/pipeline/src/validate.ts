@@ -6,6 +6,7 @@
  * @module @deepseek-ai/dsh-pipeline/validate
  */
 
+import { Cron } from 'croner'
 import { PipelineSchemaError } from './errors.ts'
 import type { PipelineSchemaErrorCode } from './errors.ts'
 import type { PipelineEdge, PipelineNode, PipelineTrigger, WorkflowJson } from './types.ts'
@@ -79,6 +80,14 @@ function validateTrigger(value: unknown): PipelineTrigger {
   const timeZone = requireString(trigger.timeZone, 'trigger.timeZone', 'TIME_ZONE_INVALID')
   if (!isValidTimeZone(timeZone)) {
     fail('TIME_ZONE_INVALID', `trigger.timeZone must be an IANA zone name, got ${JSON.stringify(timeZone)}`)
+  }
+  try {
+    // Semantic validation through the scheduler's own pattern engine: a
+    // structurally well-formed expression croner cannot compute still fails
+    // here, at the load boundary.
+    new Cron(expression, { timezone: timeZone })
+  } catch (cause) {
+    fail('CRON_EXPRESSION_INVALID', `trigger.expression: ${String(cause)}`)
   }
   if (typeof trigger.enabled !== 'boolean') fail('TRIGGER_INVALID', 'trigger.enabled must be a boolean')
   return trigger as unknown as PipelineTrigger

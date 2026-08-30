@@ -22,6 +22,10 @@ Every write is atomic (temp file + rename); every load validates through `valida
 
 `registerBuiltin(ref, step)` mounts the named pure transformations `builtin` nodes reference; unknown refs fail loud at execution (`STEP_UNKNOWN`). LLM nodes call the mounted `ctx.llm` runtime with `llmProvider`/`llmModel` config defaults (a node-level `model` overrides the model); an unconfigured route fails loud (`LLM_NODE_UNCONFIGURED`).
 
+## Scheduling
+
+The engine mounts a cron tick loop (interval via `ctx.effect`, disposed with the fiber). Each pass initializes missing fire times through croner, fires due schedules through `startRun` with the `'scheduled'` lane (overlap skips increment the summary's `skippedCount`), and recomputes the next fire strictly from now — latest-only catch-up, never a missed backlog. Resuming a paused pipeline recomputes from now instead of firing retroactively; saving a definition clears the projection so the next tick recomputes it.
+
 ## Config
 
 | key | required | meaning |
@@ -30,6 +34,8 @@ Every write is atomic (temp file + rename); every load validates through `valida
 | `retainedRuns` | no | run records kept per pipeline (default 50) |
 | `llmProvider` | no | provider route for llm nodes |
 | `llmModel` | no | model for llm nodes without a node-level override |
+| `scheduler` | no | mounts the tick loop (default true) |
+| `tickSeconds` | no | tick interval in seconds (default 60) |
 
 ## Model Experience
 

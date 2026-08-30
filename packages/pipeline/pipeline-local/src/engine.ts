@@ -7,6 +7,7 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
+import { Cron } from 'croner'
 import z from '@deepseek-ai/schemastery'
 import type Schema from '@deepseek-ai/schemastery'
 import { createMessage } from '@deepseek-ai/dsh-llm'
@@ -28,6 +29,7 @@ import type {
   PipelineRunStatus,
   PipelineSaveRequest,
   PipelineSummary,
+  PipelineTrigger,
   WorkflowJson,
 } from '@deepseek-ai/dsh-pipeline'
 import { PipelineFileRegistry } from './registry.ts'
@@ -62,6 +64,10 @@ export interface Config {
   llmProvider?: string
   /** Model for llm nodes that carry no own `model` override. */
   llmModel?: string
+  /** Whether the engine drives the cron scheduler's tick loop. Defaults to true. */
+  scheduler?: boolean
+  /** Scheduler tick interval in seconds. Defaults to 60. */
+  tickSeconds?: number
 }
 
 /**
@@ -105,6 +111,8 @@ export class PipelineLocalEngine extends PipelineEngine {
     retainedRuns: z.number().default(50),
     llmProvider: z.string(),
     llmModel: z.string(),
+    scheduler: z.boolean().default(true),
+    tickSeconds: z.number().default(60),
   })
 
   /** The file-backed registry this provider owns (exposed for the invariant companion). */
@@ -120,6 +128,16 @@ export class PipelineLocalEngine extends PipelineEngine {
     this.registry = new PipelineFileRegistry(config.storageDir, config.retainedRuns)
     this.llmProvider = config.llmProvider
     this.llmModel = config.llmModel
+    const tickMs = (config.tickSeconds ?? 60) * 1000
+    if (config.scheduler ?? true) {
+      this.ctx.effect(() => {
+        const timer = setInterval(() => { void this.tick() }, tickMs)
+        timer.unref()
+        return () => {
+          clearInterval(timer)
+        }
+      }, 'pipeline-local: cron scheduler')
+    }
   }
 
   /**
@@ -151,6 +169,8 @@ export class PipelineLocalEngine extends PipelineEngine {
     // call's rejection (async seam semantics).
     const definition = validateWorkflowJson(request.definition)
     await this.registry.save(definition)
+    // The trigger may have changed; the scheduler recomputes the fire time.
+    await this.registry.setNextRunAt(definition.id, undefined)
     this.emitPipelineEvent('pipeline/definition-changed', { id: definition.id, change: 'saved' })
     return definition
   }
@@ -165,6 +185,11 @@ export class PipelineLocalEngine extends PipelineEngine {
     const before = this.registry.enabledOf(id)
     if (before === undefined) return false
     await this.registry.setEnabled(id, enabled)
+    if (enabled) {
+      // Resuming recomputes the fire time from now: a paused pipeline does not
+      // fire retroactively on its first tick back.
+      await this.registry.setNextRunAt(id, undefined)
+    }
     if (before !== enabled) {
       this.emitPipelineEvent('pipeline/definition-changed', { id, change: enabled ? 'enabled' : 'disabled' })
     }
@@ -230,7 +255,6 @@ export class PipelineLocalEngine extends PipelineEngine {
       }
     }
     const result: PipelineRunResultInfo = { status, ...error !== undefined ? { error } : {}, nodeCount }
-    this.emitPipelineEvent('pipeline/run-end', info, result)
     const record: Omit<PipelineRunRecord, 'runId'> = {
       startedAt,
       finishedAt: Date.now(),
@@ -238,8 +262,11 @@ export class PipelineLocalEngine extends PipelineEngine {
       ...error !== undefined ? { error } : {},
       nodeCount,
     }
+    // Metrics commit before the run-end publish: observers of the event read
+    // settled state, never a projection still catching up.
     await this.registry.recordRun(definition.id, ordinal, record)
     this.running.delete(String(definition.id))
+    this.emitPipelineEvent('pipeline/run-end', info, result)
     return result
   }
 
@@ -335,4 +362,49 @@ export class PipelineLocalEngine extends PipelineEngine {
     }
     return { text }
   }
+
+  /**
+   * Run one scheduler pass: initialize missing fire times, fire due cron
+   * triggers through the seam's overlap policy, and record overlap skips.
+   * Called by the mounted interval; tests call it directly with controlled
+   * fire times instead of a clock.
+   */
+  async tick(): Promise<void> {
+    const now = Date.now()
+    for (const summary of this.list()) {
+      if (!summary.enabled) continue
+      // list() only yields indexed ids, so the definition always resolves.
+      const definition = this.registry.get(summary.id) as WorkflowJson
+      try {
+        let nextRunAt = this.registry.nextRunAtOf(summary.id)
+        if (nextRunAt === undefined) {
+          nextRunAt = computeNextRunAt(definition.trigger, now)
+          await this.registry.setNextRunAt(summary.id, nextRunAt)
+        }
+        if (Date.parse(nextRunAt) > now) continue
+        const start = this.startRun({ id: summary.id, trigger: 'scheduled' })
+        if (start.outcome === 'skipped') {
+          await this.registry.incrementSkipped(summary.id)
+          continue
+        }
+        // Latest-only catch-up: the next fire recomputes from now, never
+        // replaying the missed backlog. The run settles on its own; lifecycle
+        // events carry the observation.
+        await this.registry.setNextRunAt(summary.id, computeNextRunAt(definition.trigger, Date.now()))
+        void start.result.catch(() => {})
+      } catch (cause) {
+        /* v8 ignore next -- defensive: cron semantics are validated at load, so the try cannot throw today */
+        this.ctx.logger.warn(`pipeline scheduler: tick failed for ${JSON.stringify(String(summary.id))}: ${String(cause)}`)
+      }
+    }
+  }
+}
+
+/** Compute the first fire of one cron trigger strictly after `afterMs`. */
+function computeNextRunAt(trigger: Extract<PipelineTrigger, { kind: 'cron' }>, afterMs: number): string {
+  const cron = new Cron(trigger.expression, { timezone: trigger.timeZone })
+  const next = cron.nextRun(new Date(afterMs))
+  /* v8 ignore next -- a five-field cron expression always has a future fire */
+  if (next === null) throw new Error(`cron pattern ${JSON.stringify(trigger.expression)} produced no next run`)
+  return next.toISOString()
 }

@@ -270,6 +270,8 @@ export interface PipelineSummary {
   readonly failureStreak: number
   /** Total runs ever recorded for the pipeline. */
   readonly runCount: number
+  /** Triggers skipped under the overlap policy (one executing run per pipeline). */
+  readonly skippedCount: number
 }
 
 /** What a caller asks for when starting a run. */

@@ -22,6 +22,10 @@ pipeline 能力接縫（`ctx.pipelineEngine`）的檔案型 provider：在設定
 
 `registerBuiltin(ref, step)` 掛載 `builtin` 節點引用的具名純轉換；未知的 ref 在執行時 fail loud（`STEP_UNKNOWN`）。LLM 節點呼叫掛載的 `ctx.llm` runtime，使用 `llmProvider`/`llmModel` 設定預設（節點層級 `model` 覆寫模型）；未設定的路由 fail loud（`LLM_NODE_UNCONFIGURED`）。
 
+## 排程
+
+引擎掛載 cron tick 迴圈（interval 經 `ctx.effect`、隨 fiber 銷毀）。每輪先以 croner 補齊缺漏的下一次觸發時間，對到期的排程以 `'scheduled'` lane 走 `startRun`（重疊跳過計入摘要的 `skippedCount`），並嚴格以當下時間重算下一次觸發——latest-only 補跑，永不重播積壓。恢復已暫停的 pipeline 以當下重算、不追溯觸發；儲存定義會清掉投影，下一輪 tick 重算。
+
 ## Config
 
 | key | 必填 | 意義 |
@@ -30,6 +34,8 @@ pipeline 能力接縫（`ctx.pipelineEngine`）的檔案型 provider：在設定
 | `retainedRuns` | 否 | 每條 pipeline 保留的 run 紀錄數（預設 50） |
 | `llmProvider` | 否 | llm 節點的 provider 路由 |
 | `llmModel` | 否 | 無節點層級覆寫時 llm 節點的模型 |
+| `scheduler` | 否 | 是否掛載 tick 迴圈（預設 true） |
+| `tickSeconds` | 否 | tick 間隔秒數（預設 60） |
 
 ## Model Experience
 

@@ -577,3 +577,182 @@ describe('PipelineLocalEngine runs', () => {
     expect(warn).toHaveBeenCalled()
   })
 })
+
+describe('PipelineLocalEngine scheduler', () => {
+  it('initializes the next fire time without firing a future schedule', async () => {
+    const { engine } = await setup()
+    engine.registerBuiltin('test/search', () => ({ hits: [] }))
+    await engine.save({
+      definition: definition({
+        nodes: [
+          { id: 'trigger', type: 'trigger' },
+          { id: 'collect', type: 'builtin', ref: 'test/search' },
+        ],
+        edges: [{ from: 'trigger', to: 'collect' }],
+      }),
+    })
+    await engine.tick()
+    const nextRunAt = engine.registry.nextRunAtOf(PipelineId('sch-search-test'))
+    expect(nextRunAt).toBeDefined()
+    expect(Date.parse(nextRunAt as string)).toBeGreaterThan(Date.now())
+    expect(engine.list()[0]).toMatchObject({ runCount: 0 })
+  })
+
+  it('fires a due schedule and recomputes the next fire time', async () => {
+    const { ctx, engine } = await setup()
+    const { shapes } = trackEvents(ctx)
+    engine.registerBuiltin('test/search', () => ({ hits: [] }))
+    await engine.save({
+      definition: definition({
+        nodes: [
+          { id: 'trigger', type: 'trigger' },
+          { id: 'collect', type: 'builtin', ref: 'test/search' },
+        ],
+        edges: [{ from: 'trigger', to: 'collect' }],
+      }),
+    })
+    await engine.tick()
+    await engine.registry.setNextRunAt(PipelineId('sch-search-test'), new Date(Date.now() - 1000).toISOString())
+    const ended = new Promise<void>((resolve) => {
+      ctx.on('pipeline/run-end', () => {
+        resolve()
+      })
+    })
+    await engine.tick()
+    await ended
+    expect(shapes).toContain('run-start:sch-search-test-run-1|scheduled')
+    const nextRunAt = engine.registry.nextRunAtOf(PipelineId('sch-search-test')) as string
+    expect(Date.parse(nextRunAt)).toBeGreaterThan(Date.now())
+    expect(engine.list()[0]).toMatchObject({ runCount: 1, lastStatus: 'completed' })
+  })
+
+  it('records an overlap skip when the pipeline is already running', async () => {
+    const { engine } = await setup()
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    engine.registerBuiltin('test/search', async () => {
+      await gate
+      return { hits: [] }
+    })
+    await engine.save({
+      definition: definition({
+        nodes: [
+          { id: 'trigger', type: 'trigger' },
+          { id: 'collect', type: 'builtin', ref: 'test/search' },
+        ],
+        edges: [{ from: 'trigger', to: 'collect' }],
+      }),
+    })
+    await engine.tick()
+    await engine.registry.setNextRunAt(PipelineId('sch-search-test'), new Date(Date.now() - 1000).toISOString())
+    await engine.tick()
+    await engine.registry.setNextRunAt(PipelineId('sch-search-test'), new Date(Date.now() - 1000).toISOString())
+    await engine.tick()
+    expect(engine.list()[0]).toMatchObject({ skippedCount: 1 })
+    release?.()
+  })
+
+  it('does not fire a paused pipeline', async () => {
+    const { engine } = await setup()
+    let fired = false
+    engine.registerBuiltin('test/search', () => {
+      fired = true
+      return { hits: [] }
+    })
+    await engine.save({
+      definition: definition({
+        nodes: [
+          { id: 'trigger', type: 'trigger' },
+          { id: 'collect', type: 'builtin', ref: 'test/search' },
+        ],
+        edges: [{ from: 'trigger', to: 'collect' }],
+      }),
+    })
+    await engine.setEnabled(PipelineId('sch-search-test'), false)
+    await engine.registry.setNextRunAt(PipelineId('sch-search-test'), new Date(Date.now() - 1000).toISOString())
+    await engine.tick()
+    expect(fired).toBe(false)
+  })
+
+  it('recomputes the fire time after resume instead of firing retroactively', async () => {
+    const { engine } = await setup()
+    let fired = false
+    engine.registerBuiltin('test/search', () => {
+      fired = true
+      return { hits: [] }
+    })
+    await engine.save({
+      definition: definition({
+        nodes: [
+          { id: 'trigger', type: 'trigger' },
+          { id: 'collect', type: 'builtin', ref: 'test/search' },
+        ],
+        edges: [{ from: 'trigger', to: 'collect' }],
+      }),
+    })
+    await engine.setEnabled(PipelineId('sch-search-test'), false)
+    await engine.setEnabled(PipelineId('sch-search-test'), true)
+    expect(engine.registry.nextRunAtOf(PipelineId('sch-search-test'))).toBeUndefined()
+    await engine.tick()
+    expect(fired).toBe(false)
+    const nextRunAt = engine.registry.nextRunAtOf(PipelineId('sch-search-test')) as string
+    expect(Date.parse(nextRunAt)).toBeGreaterThan(Date.now())
+  })
+
+  it('clears the fire time on save so the scheduler recomputes it', async () => {
+    const { engine } = await setup()
+    engine.registerBuiltin('test/search', () => ({ hits: [] }))
+    await engine.save({
+      definition: definition({
+        nodes: [
+          { id: 'trigger', type: 'trigger' },
+          { id: 'collect', type: 'builtin', ref: 'test/search' },
+        ],
+        edges: [{ from: 'trigger', to: 'collect' }],
+      }),
+    })
+    await engine.tick()
+    expect(engine.registry.nextRunAtOf(PipelineId('sch-search-test'))).toBeDefined()
+    await engine.save({
+      definition: definition({
+        nodes: [
+          { id: 'trigger', type: 'trigger' },
+          { id: 'collect', type: 'builtin', ref: 'test/search' },
+        ],
+        edges: [{ from: 'trigger', to: 'collect' }],
+      }),
+    })
+    expect(engine.registry.nextRunAtOf(PipelineId('sch-search-test'))).toBeUndefined()
+  })
+
+  it('can mount with the scheduler disabled', async () => {
+    const { engine } = await setup({ scheduler: false, tickSeconds: 5 })
+    expect(engine.registry).toBeDefined()
+  })
+
+  it('applies scheduler defaults on a raw construction', () => {
+    // A raw construction bypasses the plugin's Config resolution: both ?? fallbacks fire.
+    const engine = new PipelineLocalEngine(new Context(), { storageDir: tempStorage() })
+    expect(engine.registry).toBeDefined()
+  })
+})
+
+describe('PipelineLocalEngine scheduler lifecycle', () => {
+  it('drives ticks from the mounted interval and stops on dispose', async () => {
+    const ctx = new Context()
+    let ticks = 0
+    const fiber = await ctx.plugin(PipelineLocalEngine, { storageDir: tempStorage(), tickSeconds: 0.001 })
+    const engine = ctx.pipelineEngine as PipelineLocalEngine
+    const originalTick = engine.tick.bind(engine)
+    engine.tick = async () => {
+      ticks += 1
+      await originalTick()
+    }
+    await new Promise((resolve) => { setTimeout(resolve, 30) })
+    expect(ticks).toBeGreaterThan(0)
+    const before = ticks
+    await fiber.dispose()
+    await new Promise((resolve) => { setTimeout(resolve, 30) })
+    expect(ticks).toBe(before)
+  })
+})

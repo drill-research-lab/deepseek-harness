@@ -20,11 +20,15 @@ interface IndexEntry {
   name: string
   /** Paused pipelines keep their definition and schedule but fire nothing. */
   enabled: boolean
+  /** Next scheduled fire (RFC 3339 UTC); undefined until the scheduler computes it. */
+  nextRunAt: string | undefined
   lastRunAt: string | undefined
   lastStatus: PipelineRunStatus | undefined
   lastError: string | undefined
   failureStreak: number
   runCount: number
+  /** Triggers skipped under the overlap policy. */
+  skippedCount: number
   /** Next run ordinal; monotonic even across retention pruning. */
   nextOrdinal: number
 }
@@ -126,11 +130,13 @@ export class PipelineFileRegistry {
     return {
       name,
       enabled: true,
+      nextRunAt: undefined,
       lastRunAt: undefined,
       lastStatus: undefined,
       lastError: undefined,
       failureStreak: 0,
       runCount: 0,
+      skippedCount: 0,
       nextOrdinal: 1,
     }
   }
@@ -163,11 +169,13 @@ export class PipelineFileRegistry {
       name: entry.name,
       enabled: entry.enabled,
       status: 'idle',
+      ...entry.nextRunAt !== undefined ? { nextRunAt: entry.nextRunAt } : {},
       ...entry.lastRunAt !== undefined ? { lastRunAt: entry.lastRunAt } : {},
       ...entry.lastStatus !== undefined ? { lastStatus: entry.lastStatus } : {},
       ...entry.lastError !== undefined ? { lastError: entry.lastError } : {},
       failureStreak: entry.failureStreak,
       runCount: entry.runCount,
+      skippedCount: entry.skippedCount,
     }
   }
 
@@ -226,6 +234,27 @@ export class PipelineFileRegistry {
   nextOrdinal(id: PipelineId): number {
     // Only the engine calls this, and only after resolving the definition.
     return (this.index.get(String(id)) as IndexEntry).nextOrdinal
+  }
+
+  /** The persisted next-scheduled-fire projection, or undefined when unset. */
+  nextRunAtOf(id: PipelineId): string | undefined {
+    return this.index.get(String(id))?.nextRunAt
+  }
+
+  /** Store or clear the next-scheduled-fire projection. */
+  async setNextRunAt(id: PipelineId, nextRunAt: string | undefined): Promise<void> {
+    // Only the engine calls this, and only for a persisted pipeline.
+    const entry = this.index.get(String(id)) as IndexEntry
+    entry.nextRunAt = nextRunAt
+    await this.flushIndex()
+  }
+
+  /** Count one trigger skipped under the overlap policy. */
+  async incrementSkipped(id: PipelineId): Promise<void> {
+    // Only the engine calls this, and only for a persisted pipeline.
+    const entry = this.index.get(String(id)) as IndexEntry
+    entry.skippedCount += 1
+    await this.flushIndex()
   }
 
   /**
