@@ -9,6 +9,11 @@
 import { PipelineLocalEngine } from './engine.ts'
 
 export { PipelineLocalEngine, topoOrder } from './engine.ts'
+export { arxivIdFromEntryUrl, buildArxivQueryUrl, canonicalUrlFor, normalizeAtom } from './steps/arxiv.ts'
+export type { ArxivRecord, NormalizedResult, SearchConfig, SearchResult } from './steps/arxiv.ts'
+export { dedupeKeyFor, expandScheduledSearch, registerScheduledSearch } from './steps/scheduled-search.ts'
+export { dedupeStep, normalizeStep, persistStep, searchStep } from './steps/scheduled-search.ts'
+export type { DedupeResult, PersistResult, ScheduledSearchInputs } from './steps/scheduled-search.ts'
 export type { BuiltinStep, BuiltinStepContext, Config } from './engine.ts'
 export { PipelineFileRegistry } from './registry.ts'
 export type { PipelineRunRecord } from './registry.ts'

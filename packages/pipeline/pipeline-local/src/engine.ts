@@ -6,6 +6,7 @@
  * @module @deepseek-ai/dsh-pipeline-local/engine
  */
 
+import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { Cron } from 'croner'
 import z from '@deepseek-ai/schemastery'
@@ -46,8 +47,12 @@ export type BuiltinStep = (
 export interface BuiltinStepContext {
   /** The running pipeline's id. */
   readonly pipelineId: PipelineId
+  /** The executing run's id. */
+  readonly runId: PipelineRunId
   /** Per-pipeline directory for cross-run state (dedupe indexes and similar). */
   readonly stateDir: string
+  /** Per-pipeline directory the step's durable outputs (records, artifacts) land in. */
+  readonly artifactsDir: string
 }
 
 /** Configuration for the file-backed engine provider. */
@@ -324,7 +329,12 @@ export class PipelineLocalEngine extends PipelineEngine {
       if (step === undefined) {
         throw new PipelineError(`builtin step ${JSON.stringify(node.ref)} is not registered`, 'STEP_UNKNOWN')
       }
-      return step(node.config, input, { pipelineId: info.pipelineId, stateDir: this.registry.stateDirFor(info.pipelineId) })
+      return step(node.config, input, {
+        pipelineId: info.pipelineId,
+        runId: info.runId,
+        stateDir: this.registry.stateDirFor(info.pipelineId),
+        artifactsDir: join(this.registry.rootDir, 'artifacts', String(info.pipelineId)),
+      })
     }
     if (node.type === 'llm') return this.executeLlm(node, input)
     throw new PipelineError(

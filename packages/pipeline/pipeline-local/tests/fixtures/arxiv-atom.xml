@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>ArXiv Query: search_query=all:"LLM agents"</title>
+  <entry>
+    <id>http://arxiv.org/abs/2401.00001v2</id>
+    <updated>2026-08-29T10:00:00Z</updated>
+    <published>2026-08-28T10:00:00Z</published>
+    <title>Agents That Plan Together</title>
+    <summary>We study multi-agent planning with LLMs.</summary>
+    <author><name>Ada Lovelace</name></author>
+    <author><name>Alan Turing</name></author>
+    <link href="http://arxiv.org/abs/2401.00001v2" rel="alternate" type="text/html"/>
+    <link title="doi" href="http://dx.doi.org/10.1000/demo" rel="related"/>
+    <arxiv:doi xmlns:arxiv="http://arxiv.org/schemas/atom">10.1000/demo</arxiv:doi>
+    <arxiv:primary_category xmlns:arxiv="http://arxiv.org/schemas/atom" term="cs.AI"/>
+    <category term="cs.AI"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2402.00003v1</id>
+    <updated>2026-08-29T09:00:00Z</updated>
+    <published>2026-08-29T09:00:00Z</published>
+    <title>Tool Use Without Tools</title>
+    <summary>A survey of tool-less agent evaluation.</summary>
+    <author><name>Grace Hopper</name></author>
+    <link href="http://arxiv.org/abs/2402.00003v1" rel="alternate" type="text/html"/>
+    <category term="cs.CL"/>
+  </entry>
+</feed>

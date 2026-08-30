@@ -5827,6 +5827,10 @@ importers:
         version: 2026.7.10(zod@4.4.3)
 
   packages/pipeline/pipeline:
+    dependencies:
+      croner:
+        specifier: ^10.0.1
+        version: 10.0.1
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -5846,6 +5850,12 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
+      croner:
+        specifier: ^10.0.1
+        version: 10.0.1
+      fast-xml-parser:
+        specifier: ^5.7.3
+        version: 5.7.3
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -12240,6 +12250,10 @@ packages:
   cose-base@2.2.0:
     resolution: {integrity: sha512-AzlgcsCbUMymkADOJtQm3wO9S3ltPfYOFD5033keQn9NJzIbtnZj+UdBJe7DYml/8TdbtHJW3j58SOnKhWY/5g==}
 
+  croner@10.0.1:
+    resolution: {integrity: sha512-ixNtAJndqh173VQ4KodSdJEI6nuioBWI0V1ITNKhZZsO0pEMoDxz539T4FTTbSZ/xIOSuDnzxLVRqBVSvPNE2g==}
+    engines: {node: '>=18.0'}
+
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
     engines: {node: '>= 8'}
@@ -17363,6 +17377,8 @@ snapshots:
   cose-base@2.2.0:
     dependencies:
       layout-base: 2.0.1
+
+  croner@10.0.1: {}
 
   cross-spawn@7.0.6:
     dependencies:
