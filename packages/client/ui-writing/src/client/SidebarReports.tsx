@@ -1,25 +1,24 @@
 /**
  * Sidebar report panel for the Writing feature: a `sidebar.reports` contribution
- * that lists the reports, lets the user create one, and selects the active
- * report into the shared store that the Writing editor view reads.
+ * that lists the reports, lets the user create one, and writes the active report
+ * into the shared report-selection source the Writing editor view reads.
  */
 import { useEffect, useRef, useState } from 'react'
-import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-import type { WritingReportsStore } from './reportStore.ts'
-import type { SidebarReportsInjected } from './types.ts'
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import type { WritingReportsHooks, SidebarReportsInjected } from './types.ts'
 import css from './writing.module.css'
 
-/** Props: the slots shell share, the store share, the inject face, and locale. */
-export type SidebarReportsProps = PropsStore<WritingReportsStore> & SidebarReportsInjected & PropsLocale<'writing'> & {
+/** Props: the slots shell share, the hooks share, the inject face, and locale. */
+export type SidebarReportsProps = Omit<SidebarReportsInjected, 'hooks'> & WritingReportsHooks & PropsLocale<'writing'> & {
   readonly wide: boolean
   readonly expandSidebar: () => void
 }
 
 /** The report picker strip mounted below the workspace list in the sidebar. */
 export function SidebarReports(props: SidebarReportsProps): JSX.Element {
-  const { listReports, createReport, t, useStore, actions } = props
-  const reports = useStore(state => state.reports)
-  const selected = useStore(state => state.selectedReportId)
+  const { listReports, createReport, setReports, select, t, useReportSelection } = props
+  const reports = useReportSelection(state => state.reports)
+  const selected = useReportSelection(state => state.selectedReportId)
   const selectedRef = useRef(selected)
   selectedRef.current = selected
   const [newTitle, setNewTitle] = useState('')
@@ -30,13 +29,13 @@ export function SidebarReports(props: SidebarReportsProps): JSX.Element {
     void (async () => {
       const listed = await listReports()
       if (!active) return
-      actions.setReports(listed)
+      setReports(listed)
       if (listed.length > 0 && selectedRef.current === undefined) {
-        actions.select(listed[0]!.reportId)
+        select(listed[0]!.reportId)
       }
     })()
     return () => { active = false }
-  }, [listReports, actions])
+  }, [listReports, setReports, select])
 
   const onCreate = async (): Promise<void> => {
     const title = newTitle.trim()
@@ -44,9 +43,9 @@ export function SidebarReports(props: SidebarReportsProps): JSX.Element {
     await createReport(title)
     setNewTitle('')
     const listed = await listReports()
-    actions.setReports(listed)
+    setReports(listed)
     const created = listed[0]
-    if (created !== undefined) actions.select(created.reportId)
+    if (created !== undefined) select(created.reportId)
   }
 
   return (
@@ -78,7 +77,7 @@ export function SidebarReports(props: SidebarReportsProps): JSX.Element {
             <li
               key={report.reportId}
               className={report.reportId === selected ? css.rowActive : css.row}
-              onClick={() => actions.select(report.reportId)}
+              onClick={() => select(report.reportId)}
             >
               {report.title}
             </li>

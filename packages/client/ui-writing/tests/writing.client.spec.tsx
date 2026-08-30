@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { useSyncExternalStore } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { WritingView, type WritingViewProps } from '../src/client/WritingView.tsx'
-import type { WritingReportsState } from '../src/client/reportStore.ts'
+import type { WritingReportsState } from '../src/client/reportSelection.ts'
 import type { ReportSummaryView, WritingViewInjected } from '../src/client/types.ts'
 
-afterEach(() => { cleanup(); store = defaultStore() })
+afterEach(() => { cleanup(); state = defaultState() })
 
 const conv = {} as unknown as ConvViewProps
 const t = (key: string): string => key
@@ -16,23 +17,30 @@ const DEFAULT_REPORTS: ReportSummaryView[] = [
   { reportId: 'r2', title: 'Another', updatedAt: '2026-01-02' },
 ]
 
-function defaultStore(): WritingReportsState {
+function defaultState(): WritingReportsState {
   return { reports: [...DEFAULT_REPORTS], selectedReportId: 'r1' }
 }
 
-let store: WritingReportsState = defaultStore()
-
-const useStore = <S,>(selector: (state: WritingReportsState) => S): S => selector(store)
-
-const storeActions = {
-  setReports: (reports: ReportSummaryView[]) => { store = { ...store, reports } },
-  select: (reportId: string) => { store = { ...store, selectedReportId: reportId } },
-  renameReport: (reportId: string, title: string) => {
-    store = { ...store, reports: store.reports.map(r => r.reportId === reportId ? { ...r, title } : r) }
-  },
+let state: WritingReportsState = defaultState()
+const listeners = new Set<() => void>()
+const subscribe = (listener: () => void): (() => void) => {
+  listeners.add(listener)
+  return () => { listeners.delete(listener) }
 }
+const getSnapshot = (): WritingReportsState => state
+const setState = (updater: (current: WritingReportsState) => WritingReportsState): void => {
+  state = updater(state)
+  listeners.forEach(listener => listener())
+}
+const useReportSelection = <S,>(selector: (current: WritingReportsState) => S): S => selector(useSyncExternalStore(subscribe, getSnapshot))
 
-/** The editor inject face; selection flows through the shared store. */
+const select = (reportId: string): void => setState(current => ({ ...current, selectedReportId: reportId }))
+const renameReport = (reportId: string, title: string): void => setState(current => ({
+  ...current,
+  reports: current.reports.map(r => r.reportId === reportId ? { ...r, title } : r),
+}))
+
+/** The editor inject face; selection flows through the shared source. */
 function view(over: Partial<WritingViewInjected> = {}): WritingViewInjected {
   return {
     rename: vi.fn().mockResolvedValue(undefined),
@@ -41,13 +49,16 @@ function view(over: Partial<WritingViewInjected> = {}): WritingViewInjected {
     compile: vi.fn().mockResolvedValue({ ok: true, diagnostics: [], versionCreated: true, pdfUrl: '/writing/r1/pdf' }),
     versions: vi.fn().mockResolvedValue([]),
     restore: vi.fn().mockResolvedValue('\\documentclass{article}'),
+    select,
+    renameReport,
+    hooks: { reportSelection: { getSnapshot, subscribe } },
     ...over,
   }
 }
 
-/** Assemble the component props with the store share, inject face, and locale. */
+/** Assemble the component props with the hooks share, inject face, and locale. */
 function props(injected: WritingViewInjected): WritingViewProps {
-  return { ...conv, useStore, actions: storeActions, ...injected, t } as WritingViewProps
+  return { ...conv, useReportSelection, ...injected, t } as unknown as WritingViewProps
 }
 
 describe('WritingView', () => {

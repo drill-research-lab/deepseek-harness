@@ -2,16 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { CompileResultView, ReportVersionView } from '@deepseek-ai/dsh-writing-api/types'
 import { SourceEditor } from './SourceEditor.tsx'
 import { buildOutline, jumpToLine } from './outline.ts'
-import type { WritingReportsStore } from './reportStore.ts'
-import type { WritingViewInjected } from './types.ts'
+import type { WritingReportsHooks, WritingViewInjected } from './types.ts'
 import css from './writing.module.css'
 
-/** Props of the Writing view: the conversation.view runtime + store + inject face + locale. */
-export type WritingViewProps = ConvViewProps & PropsStore<WritingReportsStore> & WritingViewInjected & PropsLocale<'writing'>
+/** Props of the Writing view: the conversation.view runtime + hooks + inject face + locale. */
+export type WritingViewProps = ConvViewProps & Omit<WritingViewInjected, 'hooks'> & WritingReportsHooks & PropsLocale<'writing'>
 
 /** Pause (ms) before an edit is auto-saved and recompiled. */
 const AUTOSAVE_DELAY_MS = 1000
@@ -19,11 +18,11 @@ const AUTOSAVE_DELAY_MS = 1000
 /** Served prefix for a compiled report's PDF; matches the writing-api route. */
 const PDF_PATH_PREFIX = '/writing'
 
-/** The Writing editor surface. Report selection arrives from the shared store. */
+/** The Writing editor surface. Report selection arrives from the shared source via `useReportSelection`. */
 export function WritingView(props: WritingViewProps): JSX.Element {
-  const { rename, getSource, updateSource, compile, versions, restore, t, useStore, actions } = props
-  const selectedReportId = useStore(state => state.selectedReportId)
-  const reports = useStore(state => state.reports)
+  const { rename, getSource, updateSource, compile, versions, restore, renameReport, t, useReportSelection } = props
+  const selectedReportId = useReportSelection(state => state.selectedReportId)
+  const reports = useReportSelection(state => state.reports)
   const [selectedTitle, setSelectedTitle] = useState('')
   const [source, setSource] = useState('')
   const [compileResult, setCompileResult] = useState<CompileResultView | undefined>(undefined)
@@ -176,8 +175,8 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     await rename(id, trimmed)
     setSelectedTitle(trimmed)
     committedTitleRef.current = trimmed
-    actions.renameReport(id, trimmed)
-  }, [selectedTitle, rename, actions])
+    renameReport(id, trimmed)
+  }, [selectedTitle, rename, renameReport])
 
   const openPreview = useCallback((): void => {
     // Opening the window never recompiles: selection already resolved to the

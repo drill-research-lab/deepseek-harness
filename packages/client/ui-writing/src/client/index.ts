@@ -17,7 +17,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { SidebarReportsInjected, WritingViewInjected } from './types.ts'
 import { WritingView } from './WritingView.tsx'
 import { SidebarReports } from './SidebarReports.tsx'
-import { createWritingReportsStore } from './reportStore.ts'
+import { createWritingReportsSource } from './reportSelection.ts'
 import { en, NS, zh, zhTw, type WritingKey } from './locales.ts'
 
 export type { SidebarReportsInjected, WritingViewInjected } from './types.ts'
@@ -43,7 +43,7 @@ export const inject = ['slots', 'conversationViews', 'sessions', 'locale', 'remo
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, 'zh-TW': zhTw, en }), 'ui-writing: dictionaries')
   const t = ctx.locale.bind(NS)
-  const reportsStore = createWritingReportsStore()
+  const reportsSource = createWritingReportsSource()
 
   ctx.slots.inject('conversation.view', () => ctx.slots.register({
     name: 'conversation.view',
@@ -51,7 +51,6 @@ export function apply(ctx: ClientContext): void {
     order: 30,
     locale: NS,
     label: () => t('view.writing'),
-    store: reportsStore,
     inject: (_sessionId: SessionId): WritingViewInjected => ({
       rename: async (reportId, title) => {
         const result = await ctx.remote.writing.rename({ reportId, title })
@@ -90,13 +89,15 @@ export function apply(ctx: ClientContext): void {
         if (!result.ok) throw new Error(result.error.message)
         return result.value.source
       },
+      select: reportId => reportsSource.select(reportId),
+      renameReport: (reportId, title) => reportsSource.renameReport(reportId, title),
+      hooks: { reportSelection: reportsSource },
     }),
   }, WritingView))
 
   ctx.slots.inject('sidebar.reports', () => ctx.slots.register({
     name: 'sidebar.reports',
     locale: NS,
-    store: reportsStore,
     inject: (): SidebarReportsInjected => ({
       listReports: async () => {
         const result = await ctx.remote.writing.list()
@@ -111,6 +112,9 @@ export function apply(ctx: ClientContext): void {
         const result = await ctx.remote.writing.create({ title })
         if (!result.ok) throw new Error(result.error.message)
       },
+      setReports: reports => reportsSource.setReports(reports),
+      select: reportId => reportsSource.select(reportId),
+      hooks: { reportSelection: reportsSource },
     }),
   }, SidebarReports))
 }
