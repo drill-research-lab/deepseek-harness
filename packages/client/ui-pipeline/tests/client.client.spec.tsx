@@ -90,7 +90,14 @@ function definition(): WorkflowJson {
 }
 
 function runRecord(ordinal: number, status: 'completed' | 'failed'): PipelineRunRecord {
-  return { runId: `sch-search-run-${ordinal}`, startedAt: 1, finishedAt: 2, status, nodeCount: 2 }
+  return {
+    runId: `sch-search-run-${ordinal}`,
+    startedAt: 1,
+    finishedAt: 2,
+    status,
+    nodeCount: 2,
+    ...(status === 'failed' ? { error: 'boom: builtin step failed' } : {}),
+  }
 }
 
 /** Build one Remote method: records its name, answers `value` through the ok envelope. */
@@ -468,6 +475,21 @@ describe('PipelineEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: '保存修改' }))
     // The failed save is sent but never lands as a definition change.
     await waitFor(() => { expect(calls).toEqual(['get', 'runs']) })
+  })
+
+  it('expands a run row into its duration and error detail, and toggles it closed', async () => {
+    const { api } = makeApi()
+    const share = makeStoreShare()
+    share.actions.open('sch-search')
+    render(<PipelineEditor useSessions={neverHook} useWorkspaces={neverHook} {...share} api={api} t={t} />)
+    await screen.findByTestId('pipeline-canvas')
+    await waitFor(() => { expect(screen.getByTestId('run-sch-search-run-2')).toBeTruthy() })
+    fireEvent.click(screen.getByTestId('run-sch-search-run-2'))
+    expect(screen.getByTestId('run-detail').textContent).toContain('1 ms')
+    expect(screen.getByTestId('run-detail').textContent).toContain('boom')
+    // Clicking the same row collapses the detail.
+    fireEvent.click(screen.getByTestId('run-sch-search-run-2'))
+    expect(screen.queryByTestId('run-detail')).toBeNull()
   })
 
   it('shows the empty runs list when no run has settled', async () => {

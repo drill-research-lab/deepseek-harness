@@ -29,6 +29,7 @@ export function PipelineEditor({ useStore, actions, api, t }: PipelineEditorProp
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState<WorkflowJson | undefined>(undefined)
   const [busy, setBusy] = useState(false)
+  const [selectedRun, setSelectedRun] = useState<PipelineRunRecord | null>(null)
 
   useEffect(() => {
     if (openId === null) return
@@ -78,6 +79,7 @@ export function PipelineEditor({ useStore, actions, api, t }: PipelineEditorProp
     actions.close()
     setDefinition(undefined)
     setRuns([])
+    setSelectedRun(null)
     setSelectedId(null)
     setError(null)
   }, [actions])
@@ -117,11 +119,32 @@ export function PipelineEditor({ useStore, actions, api, t }: PipelineEditorProp
             <h3>{t('editor.runs')}</h3>
             {runs.length === 0 && <p className={styles.noRuns}>{t('editor.noRuns')}</p>}
             {[...runs].reverse().map(run => (
-              <div key={run.runId} className={styles.run} data-status={run.status}>
+              <button
+                key={run.runId}
+                type="button"
+                className={selectedRun?.runId === run.runId ? `${styles.run} ${styles.runOpen}` : styles.run}
+                data-status={run.status}
+                data-testid={`run-${run.runId}`}
+                onClick={() => { setSelectedRun(selectedRun?.runId === run.runId ? null : run) }}
+              >
                 <span>{run.runId}</span>
                 <span>{run.status === 'completed' ? t('run.completed') : t('run.failed')}</span>
-              </div>
+              </button>
             ))}
+            {selectedRun !== null && (
+              <dl className={styles.runDetail} data-testid="run-detail">
+                <dt>{t('run.duration')}</dt>
+                <dd>{Math.max(0, selectedRun.finishedAt - selectedRun.startedAt)} ms</dd>
+                <dt>{t('editor.runs')}</dt>
+                <dd>{selectedRun.nodeCount}</dd>
+                {selectedRun.error !== undefined && (
+                  <>
+                    <dt>{t('run.error')}</dt>
+                    <dd className={styles.runError}>{selectedRun.error}</dd>
+                  </>
+                )}
+              </dl>
+            )}
           </aside>
         </div>
       )}

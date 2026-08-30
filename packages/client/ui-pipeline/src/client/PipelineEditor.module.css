@@ -70,3 +70,28 @@
 .run[data-status='failed'] {
   color: #ff6b6b;
 }
+
+.runOpen {
+  background: var(--dsh-surface, #232323);
+}
+
+.runDetail {
+  margin: 4px 0;
+  font-size: 11px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+}
+
+.runDetail dt {
+  opacity: 0.6;
+}
+
+.runDetail dd {
+  margin: 0;
+}
+
+.runError {
+  color: #ff6b6b;
+  word-break: break-all;
+}

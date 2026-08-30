@@ -36,6 +36,8 @@ export const zh = {
   'inspector.downstream': '下游连接',
   'inspector.noDownstream': '无下游节点',
   'inspector.commit': '保存修改',
+  'run.duration': '耗时',
+  'run.error': '错误',
   'error.load': '加载流水线失败',
 } satisfies Record<string, string>
 
@@ -75,6 +77,8 @@ export const zhTw = {
   'inspector.downstream': '下游連接',
   'inspector.noDownstream': '無下游節點',
   'inspector.commit': '儲存修改',
+  'run.duration': '耗時',
+  'run.error': '錯誤',
   'error.load': '載入流水線失敗',
 } satisfies Record<keyof typeof zh, string>
 
@@ -117,5 +121,7 @@ export const en = {
   'inspector.downstream': 'Downstream edges',
   'inspector.noDownstream': 'No downstream nodes',
   'inspector.commit': 'Save changes',
+  'run.duration': 'Duration',
+  'run.error': 'Error',
   'error.load': 'Failed to load pipelines',
 } satisfies Record<keyof typeof zh, string>
