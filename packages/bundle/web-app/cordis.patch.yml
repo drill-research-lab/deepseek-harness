@@ -206,6 +206,9 @@
     - id: api-remotes
       name: '@deepseek-ai/dsh-api-remotes'
 
+    - id: library-api
+      name: '@deepseek-ai/dsh-library-api'
+
     - id: client-runtime
       name: '@deepseek-ai/dsh-client-runtime'
 
@@ -281,6 +284,11 @@
     # Goal surface: GoalBar in the input dock over the goal session projection.
     - id: ui-goal
       name: '@deepseek-ai/dsh-client-ui-goal'
+
+    # Library surface: sidebar notebook list + the full-page knowledge-base
+    # view (upload, preview, grounded Q&A) over the library Remote contract.
+    - id: ui-library
+      name: '@deepseek-ai/dsh-client-ui-library'
 
     # Per-message feedback: Like/Dislike plus an optional note in the
     # assistant-message action strip, over the messageFeedback Remote.

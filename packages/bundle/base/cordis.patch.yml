@@ -394,6 +394,19 @@
       config:
         allowParallelInProgress: true
 
+    # Library capability: the librarian knowledge base (notebooks, document
+    # conversion, grounded answers), the library_* model-facing tools, and the
+    # librarian subagent. The browser Remote/data-plane surface
+    # (dsh-library-api) is web-only and mounts in the web-app layer.
+    - id: library
+      name: '@deepseek-ai/dsh-library'
+
+    - id: tool-library
+      name: '@deepseek-ai/dsh-tool-library'
+
+    - id: agent-librarian
+      name: '@deepseek-ai/dsh-agent-librarian'
+
     # Persisted same-session goals reach the model and the slash menu here; the
     # domain, driver, and `/goal` command are above.
     - id: tool-goal

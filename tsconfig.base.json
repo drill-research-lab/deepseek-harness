@@ -75,6 +75,7 @@
       "@deepseek-ai/dsh-goal/types": ["./packages/goal/goal/src/types.ts"],
       "@deepseek-ai/dsh-goal/client": ["./packages/goal/goal/src/client.ts"],
       "@deepseek-ai/dsh-llm/types": ["./packages/llm/llm/src/types.ts"],
+      "@deepseek-ai/dsh-library-api/types": ["./packages/library/library-api/src/types.ts"],
       "@deepseek-ai/dsh-llm/brand": ["./packages/llm/llm/src/brand.ts"],
       "@deepseek-ai/dsh-llm-retry/types": ["./packages/llm/llm-retry/src/types.ts"],
       "@deepseek-ai/dsh-workflow/types": ["./packages/workflow/workflow/src/types.ts"],
@@ -142,6 +143,7 @@
         "./packages/util/*/src/invariant.ts",
         "./packages/mcp/*/src/invariant.ts",
         "./packages/identity/*/src/invariant.ts",
+        "./packages/library/*/src/invariant.ts",
         "./packages/test-support/*/src/invariant.ts"
       ],
       // host/client package names prefix the group dir (dsh-client-<dir>), so
@@ -274,6 +276,7 @@
         "./packages/util/*/src",
         "./packages/mcp/*/src",
         "./packages/identity/*/src",
+        "./packages/library/*/src",
         "./packages/test-support/*/src",
         "./packages/host/*/src",
         "./packages/client/*/src"
