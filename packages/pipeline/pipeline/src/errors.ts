@@ -53,13 +53,19 @@ export class PipelineSchemaError extends HarnessError {
  * union (engine-owned; consumers may exhaust it); it grows only with an
  * operation that can fail that way today.
  */
-export type PipelineErrorCode = 'PIPELINE_UNKNOWN'
+export type PipelineErrorCode =
+  | 'PIPELINE_UNKNOWN'
+  | 'STEP_UNKNOWN'
+  | 'LLM_NODE_UNCONFIGURED'
+  | 'AGENT_NODE_RUNTIME_UNAVAILABLE'
 
 /**
  * Typed error for pipeline-seam operations. Extends
  * {@link HarnessError}, so the `code` is machine-routable taxonomy. Schema
  * failures use {@link PipelineSchemaError}; this class covers the operations
- * around it (an unknown pipeline id on `startRun`).
+ * around it (an unknown pipeline id on `startRun`, an unregistered builtin
+ * step or an unconfigured LLM route at node execution, and an agent node met
+ * before the background-agent runtime slice lands).
  */
 export class PipelineError extends HarnessError {
   constructor(message: string, code: PipelineErrorCode, options?: ErrorOptions) {

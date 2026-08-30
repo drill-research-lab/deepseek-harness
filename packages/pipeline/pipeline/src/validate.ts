@@ -35,7 +35,9 @@ export function validateWorkflowJson(value: unknown): WorkflowJson {
   rejectUnknownKeys(def, DEFINITION_KEYS, '', 'DEFINITION_INVALID')
   if (def.version !== 1) fail('VERSION_UNSUPPORTED', `version must be 1, got ${String(def.version)}`)
   const id = requireString(def.id, 'id', 'ID_INVALID')
-  if (id.length === 0) fail('ID_INVALID', 'id must be a non-empty string')
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) {
+    fail('ID_INVALID', 'id must be lowercase kebab-case ([a-z0-9-], no leading hyphen)')
+  }
   const name = requireString(def.name, 'name', 'NAME_INVALID')
   if (name.length === 0) fail('NAME_INVALID', 'name must be a non-empty string')
   if (def.description !== undefined && typeof def.description !== 'string') {

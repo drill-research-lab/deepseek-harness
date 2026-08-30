@@ -87,7 +87,12 @@ describe('validateWorkflowJson', () => {
     for (const id of ['', 7, null]) {
       const definition = validDefinition()
       definition.id = id
-      expectRejection(definition, 'ID_INVALID')
+      expectRejection(definition, 'ID_INVALID', 'id must be')
+    }
+    for (const id of ['Upscaled', 'with.dot', 'with_underscore', 'with/slash', '-leading-hyphen', 'unclé']) {
+      const definition = validDefinition()
+      definition.id = id
+      expectRejection(definition, 'ID_INVALID', 'kebab-case')
     }
   })
 

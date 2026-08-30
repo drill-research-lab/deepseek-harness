@@ -62,6 +62,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/client/ui-agent-preset': { kind: 'indirect', reason: 'Browser-side settings row; the preset it selects owns every model-facing effect.' },
   'packages/core/agent-default-model': { kind: 'indirect', reason: 'The service supplies a ModelSelection; request assembly and adapters own the model-visible request.' },
   'packages/pipeline/pipeline': { kind: 'none', reason: 'The schema vocabulary and its validation register no prompt, tool schema, or provider request; the engine provider and its consumers own every model-visible effect.' },
+  'packages/pipeline/pipeline-local': { kind: 'none', reason: 'The engine provider registers no prompt or tool schema of its own; llm nodes issue their own model requests through the llm seam, and the model-facing consumer owns every other model-visible effect.' },
   'packages/preset/agent-presets': { kind: 'indirect', reason: 'The mount installs a preset\'s own plugins, which own every model-facing registration it makes visible.' },
   'packages/typert/registry': { kind: 'none', reason: 'Runtime type registry; consumers (cordis_inspect, wire faces, gates) own any model-visible projection of registry contents.' },
   'packages/typert/loader': { kind: 'none', reason: 'Loader integration only registers generated artifacts; consumers own any model-visible projection.' },
