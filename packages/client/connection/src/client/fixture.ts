@@ -3015,7 +3015,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         ok: true,
         value: [...pipelines.entries()].map(([id, state]) => ({
           id,
-          name: String((state.definition as { name?: string }).name ?? id),
+          name: (state.definition as { name?: string }).name ?? id,
           enabled: state.enabled,
           status: 'idle',
           failureStreak: 0,

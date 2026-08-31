@@ -1141,7 +1141,7 @@ describe('FixtureApiClient (protocol-level fake carrier)', () => {
   it('serves the pipelines Remote face over the in-memory store', async () => {
     const { rpc } = createFixtureFaces()
     const call = async (endpoint: string, args: Record<string, unknown>): Promise<{ ok: boolean; value?: unknown }> => {
-      return await rpc.call('/api', endpoint, { args } as never) as { ok: boolean; value?: unknown }
+      return await rpc.call('/api', endpoint, { args })
     }
 
     // Empty store lists nothing.
@@ -1184,7 +1184,7 @@ describe('FixtureApiClient (protocol-level fake carrier)', () => {
     expect((await call('pipelines/list', {})).value).toEqual([])
 
     // Unknown endpoints still reject loudly.
-    await expect(rpc.call('/api', 'pipelines/nope', { args: {} } as never))
+    await expect(rpc.call('/api', 'pipelines/nope', { args: {} }))
       .rejects.toThrow('pipelines/nope')
   })
 })
