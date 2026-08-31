@@ -112,6 +112,7 @@ interface DetachHolder {
   current?: () => void
 }
 
+/** One pipeline run's background session: node lifecycle events, settle-time detach, log flush. */
 export class PipelineRunSession {
   private constructor(
     private readonly scope: Scope,

@@ -526,7 +526,7 @@ Source: [`packages/interaction/permission-presets/src/index.ts:50`](../packages/
 'pipeline/node-settled': PipelineNodeSettledData
 ```
 
-Source: [`packages/pipeline/pipeline-local/src/run-session.ts:95`](../packages/pipeline/pipeline-local/src/run-session.ts)
+Source: [`packages/pipeline/pipeline-local/src/run-session.ts:96`](../packages/pipeline/pipeline-local/src/run-session.ts)
 
 <a id="pipelinenode-started--log-only"></a>
 
@@ -540,7 +540,7 @@ Source: [`packages/pipeline/pipeline-local/src/run-session.ts:95`](../packages/p
 'pipeline/node-started': PipelineNodeStartedData
 ```
 
-Source: [`packages/pipeline/pipeline-local/src/run-session.ts:90`](../packages/pipeline/pipeline-local/src/run-session.ts)
+Source: [`packages/pipeline/pipeline-local/src/run-session.ts:91`](../packages/pipeline/pipeline-local/src/run-session.ts)
 
 <a id="pipelinerun-descriptor--log-only"></a>
 
@@ -555,7 +555,7 @@ Source: [`packages/pipeline/pipeline-local/src/run-session.ts:90`](../packages/p
 'pipeline/run-descriptor': PipelineRunDescriptorData
 ```
 
-Source: [`packages/pipeline/pipeline-local/src/run-session.ts:85`](../packages/pipeline/pipeline-local/src/run-session.ts)
+Source: [`packages/pipeline/pipeline-local/src/run-session.ts:86`](../packages/pipeline/pipeline-local/src/run-session.ts)
 
 <a id="pipelinerun-settled--log-only"></a>
 
@@ -569,7 +569,7 @@ Source: [`packages/pipeline/pipeline-local/src/run-session.ts:85`](../packages/p
 'pipeline/run-settled': PipelineRunSettledData
 ```
 
-Source: [`packages/pipeline/pipeline-local/src/run-session.ts:100`](../packages/pipeline/pipeline-local/src/run-session.ts)
+Source: [`packages/pipeline/pipeline-local/src/run-session.ts:101`](../packages/pipeline/pipeline-local/src/run-session.ts)
 
 ### `plan/*`
 

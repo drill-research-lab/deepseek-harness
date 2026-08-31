@@ -572,6 +572,12 @@ importers:
       '@deepseek-ai/dsh-permission-presets':
         specifier: workspace:*
         version: link:../packages/interaction/permission-presets
+      '@deepseek-ai/dsh-pipeline':
+        specifier: workspace:*
+        version: link:../packages/pipeline/pipeline
+      '@deepseek-ai/dsh-pipeline-local':
+        specifier: workspace:*
+        version: link:../packages/pipeline/pipeline-local
       '@deepseek-ai/dsh-plan-mode':
         specifier: workspace:*
         version: link:../packages/plan/plan-mode
