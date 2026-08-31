@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionId, WorkspaceId } from '../src/client/api.ts'
 import { RpcId } from '../src/client/api.ts'
 import type { HostFrame, MuxFrame, RpcMessage, RpcRequest } from '../src/client/api.ts'
-import { FixtureApiClient, createFixtureApi } from '../src/client/fixture.ts'
+import { FixtureApiClient, createFixtureApi, createFixtureFaces } from '../src/client/fixture.ts'
 
 const sid = (id: string): SessionId => id as SessionId
 const req = <P>(payload: P): RpcRequest<P> => ({ rpcId: RpcId(`t-${Math.abs(Math.sin(reqCount++)).toString(36).slice(2, 10)}`), payload })
@@ -1135,5 +1135,56 @@ describe('FixtureApiClient (protocol-level fake carrier)', () => {
     expect(hostOrder).toEqual(['open']) // established even though the host stream stays silent
     habort.abort()
     if (raced === 'idle') await hostIterator.return?.(undefined)
+  })
+
+
+  it('serves the pipelines Remote face over the in-memory store', async () => {
+    const { rpc } = createFixtureFaces()
+    const call = async (endpoint: string, args: Record<string, unknown>): Promise<{ ok: boolean; value?: unknown }> => {
+      return await rpc.call('/api', endpoint, { args } as never) as { ok: boolean; value?: unknown }
+    }
+
+    // Empty store lists nothing.
+    expect(await call('pipelines/list', {})).toEqual({ ok: true, value: [] })
+    expect(await call('pipelines/runs', { id: 'fx-pipeline-1' })).toEqual({ ok: true, value: [] })
+    expect(await call('pipelines/get', { id: 'fx-pipeline-1' })).toEqual({ ok: true, value: undefined })
+
+    // createFromTemplate persists an expanded definition honoring the inputs.
+    const created = await call('pipelines/createFromTemplate', {
+      request: { name: 'Lab Digest', inputs: { query: 'LLM agents', cron: '0 8 * * *', timeZone: 'Asia/Taipei', maxResults: 7, summary: true } },
+    })
+    expect(created.ok).toBe(true)
+    const definition = created.value as { id: string; nodes: Array<{ id: string }>; trigger: { expression: string; timeZone: string } }
+    expect(definition.id).toBe('fx-pipeline-1')
+    expect(definition.trigger).toEqual({ kind: 'cron', expression: '0 8 * * *', timeZone: 'Asia/Taipei', enabled: true })
+    expect(definition.nodes.map(node => node.id)).toEqual(['trigger', 'search', 'normalize', 'dedupe', 'persist', 'summarize'])
+
+    expect((await call('pipelines/list', {})).value).toHaveLength(1)
+    expect(await call('pipelines/get', { id: 'fx-pipeline-1' })).toEqual({ ok: true, value: definition })
+
+    // triggerNow settles a completed record sized to the node list.
+    const triggered = await call('pipelines/triggerNow', { id: 'fx-pipeline-1' })
+    expect(triggered).toMatchObject({ ok: true, value: { outcome: 'started', result: { status: 'completed', nodeCount: 6 } } })
+    const runs = await call('pipelines/runs', { id: 'fx-pipeline-1' })
+    expect((runs.value as Array<Record<string, unknown>>)).toHaveLength(1)
+    expect(await call('pipelines/run', { id: 'fx-pipeline-1', ordinal: 1 })).toMatchObject({ ok: true, value: { nodeCount: 6 } })
+    expect(await call('pipelines/run', { id: 'fx-pipeline-1', ordinal: 9 })).toEqual({ ok: true, value: undefined })
+
+    // save replaces the definition; setEnabled flips only existing pipelines.
+    const saved = await call('pipelines/save', { definition: { ...definition, name: 'Lab Digest v2' } })
+    expect(saved).toMatchObject({ ok: true, value: { name: 'Lab Digest v2' } })
+    expect(await call('pipelines/setEnabled', { id: 'fx-pipeline-1', enabled: false })).toEqual({ ok: true, value: true })
+    expect(await call('pipelines/setEnabled', { id: 'missing', enabled: false })).toEqual({ ok: true, value: false })
+    const listed = await call('pipelines/list', {})
+    expect((listed.value as Array<Record<string, unknown>>)[0]).toMatchObject({ name: 'Lab Digest v2', enabled: false })
+
+    // delete removes the pipeline and everything behind it.
+    expect(await call('pipelines/delete', { id: 'fx-pipeline-1' })).toEqual({ ok: true, value: true })
+    expect(await call('pipelines/delete', { id: 'fx-pipeline-1' })).toEqual({ ok: true, value: false })
+    expect((await call('pipelines/list', {})).value).toEqual([])
+
+    // Unknown endpoints still reject loudly.
+    await expect(rpc.call('/api', 'pipelines/nope', { args: {} } as never))
+      .rejects.toThrow('pipelines/nope')
   })
 })
