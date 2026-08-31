@@ -9,7 +9,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { PipelineId } from '@deepseek-ai/dsh-pipeline'
 import type { PipelineSummary, WorkflowJson } from '@deepseek-ai/dsh-pipeline/types'
-import type { PipelineRunRecord, TriggerNowResult } from './types.ts'
+import type { PipelineRunDetail, PipelineRunRecord, TriggerNowResult } from './types.ts'
 import { expandScheduledSearch, type ScheduledSearchInputs } from './steps/scheduled-search.ts'
 import type { PipelineLocalEngine } from './engine.ts'
 
@@ -122,13 +122,13 @@ export class PipelineRpcService extends TypertRemoteService {
   }
 
   /**
-   * Read one settled run record.
+   * Read one settled run with its node projection.
    * @param id - the pipeline's id.
    * @param ordinal - the run's ordinal.
-   * @returns the record, or `undefined` when unknown.
+   * @returns the run detail, or `undefined` when unknown.
    */
   @Remote('run')
-  run(id: string, ordinal: number): PipelineRunRecord | undefined {
-    return this.engine.readRun(PipelineId(id), ordinal)
+  run(id: string, ordinal: number): Promise<PipelineRunDetail | undefined> {
+    return this.engine.readRunDetail(PipelineId(id), ordinal)
   }
 }

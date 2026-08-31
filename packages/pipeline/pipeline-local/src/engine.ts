@@ -20,6 +20,7 @@ import {
   PipelineRunId,
   validateWorkflowJson,
 } from '@deepseek-ai/dsh-pipeline'
+import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import type {
   JsonValue,
   PipelineNode,
@@ -33,6 +34,9 @@ import type {
   PipelineTrigger,
   WorkflowJson,
 } from '@deepseek-ai/dsh-pipeline'
+import type { PipelineRunDetail } from './types.ts'
+import { foldRunNodes, PipelineRunSession, RUN_SESSION_DESCRIPTOR_VERSION } from './run-session.ts'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import { PipelineFileRegistry } from './registry.ts'
 import { registerScheduledSearch } from './steps/scheduled-search.ts'
 import { PipelineRpcService } from './service.ts'
@@ -105,6 +109,11 @@ export function topoOrder(nodes: readonly PipelineNode[], edges: ReadonlyMap<str
     }
   }
   return ordered
+}
+
+/** The persisted-session reader the run-detail projection folds logs from. */
+function runLogReader(ctx: Context): SessionPersistence | undefined {
+  return ctx.get('sessionPersistence')
 }
 
 /**
@@ -188,6 +197,28 @@ export class PipelineLocalEngine extends PipelineEngine {
     return this.registry.readRun(id, ordinal)
   }
 
+  /**
+   * Read one settled run with its node projection folded from the run session
+   * log, or `undefined` when the pipeline or ordinal is unknown.
+   * @param id - the pipeline's id.
+   * @param ordinal - the run's ordinal.
+   * @returns the run detail; `nodes` is empty when the run has no readable log.
+   */
+  async readRunDetail(id: PipelineId, ordinal: number): Promise<PipelineRunDetail | undefined> {
+    const record = this.registry.readRun(id, ordinal)
+    if (record === undefined) return undefined
+    const persistence = runLogReader(this.ctx)
+    if (record.sessionId === undefined || persistence === undefined) return { ...record, nodes: [] }
+    try {
+      const inspection = await persistence.inspect(SessionId(record.sessionId))
+      return { ...record, nodes: foldRunNodes(inspection.events) }
+    } catch {
+      // The log may be gone (retention pruned it) or the record predates the
+      // projection; the record's metrics stay the authoritative summary.
+      return { ...record, nodes: [] }
+    }
+  }
+
   async save(request: PipelineSaveRequest): Promise<WorkflowJson> {
     // Validation happens before the await: its synchronous throw becomes this
     // call's rejection (async seam semantics).
@@ -251,40 +282,74 @@ export class PipelineLocalEngine extends PipelineEngine {
     let status: PipelineRunStatus = 'completed'
     let error: string | undefined
     let nodeCount = 0
+    let runSession: PipelineRunSession | undefined
+    try {
+      runSession = PipelineRunSession.open(this.ctx, {
+        version: RUN_SESSION_DESCRIPTOR_VERSION,
+        pipelineId: String(definition.id),
+        runId: String(info.runId),
+        pipelineName: definition.name,
+        trigger: info.trigger,
+      })
+    } catch (cause) {
+      // Without the run session there is no node projection; the run still
+      // settles so the metrics record and run-end publish stay exactly-once.
+      error = cause instanceof Error ? cause.message : String(cause)
+      status = 'failed'
+    }
     const outputs = new Map<string, JsonValue>()
     const edges = new Map<string, readonly string[]>()
-    for (const edge of definition.edges) {
-      edges.set(String(edge.from), [...(edges.get(String(edge.from)) ?? []), String(edge.to)])
+    if (error === undefined) {
+      for (const edge of definition.edges) {
+        edges.set(String(edge.from), [...(edges.get(String(edge.from)) ?? []), String(edge.to)])
+      }
     }
-    const order = topoOrder(definition.nodes, edges)
-    const reachable = this.reachableFromTrigger(definition, edges)
+    const order = error === undefined ? topoOrder(definition.nodes, edges) : []
+    const reachable = error === undefined ? this.reachableFromTrigger(definition, edges) : new Set<string>()
     for (const node of order) {
       const nodeInfo = { nodeId: node.id, type: node.type }
       this.emitPipelineEvent('pipeline/node-start', info, nodeInfo)
+      runSession?.nodeStarted(String(node.id), node.type)
       if (node.disabled === true || !reachable.has(String(node.id))) {
         this.emitPipelineEvent('pipeline/node-end', info, { ...nodeInfo, outcome: 'skipped' })
+        runSession?.nodeSettled(String(node.id), node.type, 'skipped', 0)
         continue
       }
+      const nodeStartedAt = Date.now()
       try {
         const output = await this.executeNode(node, this.nodeInput(node, outputs, definition), info)
         outputs.set(String(node.id), output)
         nodeCount += 1
         this.emitPipelineEvent('pipeline/node-end', info, { ...nodeInfo, outcome: 'completed' })
+        runSession?.nodeSettled(String(node.id), node.type, 'completed', Date.now() - nodeStartedAt, output)
       } catch (cause) {
         nodeCount += 1
         error = cause instanceof Error ? cause.message : String(cause)
         status = 'failed'
         this.emitPipelineEvent('pipeline/node-end', info, { ...nodeInfo, outcome: 'failed', error })
+        runSession?.nodeSettled(String(node.id), node.type, 'failed', Date.now() - nodeStartedAt, undefined, error)
         break
       }
     }
     const result: PipelineRunResultInfo = { status, ...error !== undefined ? { error } : {}, nodeCount }
+    if (runSession !== undefined) {
+      // Flush and retire the run log before the metrics commit so a reader of
+      // the detail projection always sees the complete log.
+      try {
+        await runSession.settled(status, Date.now() - startedAt, nodeCount, error)
+      } catch (cause) {
+        // The projection is informational: a failed flush keeps the run's
+        // settled outcome and metrics authoritative.
+        this.ctx.logger.warn(`pipeline run "${String(info.runId)}": run-log flush failed: ${String(cause)}`)
+      }
+    }
     const record: Omit<PipelineRunRecord, 'runId'> = {
       startedAt,
       finishedAt: Date.now(),
       status,
       ...error !== undefined ? { error } : {},
       nodeCount,
+      sessionId: String(info.runId),
     }
     // Metrics commit before the run-end publish: observers of the event read
     // settled state, never a projection still catching up.

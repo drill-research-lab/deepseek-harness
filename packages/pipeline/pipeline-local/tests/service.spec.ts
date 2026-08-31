@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { SessionStore } from '@deepseek-ai/dsh-session'
+import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { PipelineId, validateWorkflowJson } from '@deepseek-ai/dsh-pipeline'
 import PipelineLocalEngine, { PipelineRpcService } from '@deepseek-ai/dsh-pipeline-local'
 import type { BuiltinStepContext, Config } from '@deepseek-ai/dsh-pipeline-local'
@@ -34,6 +36,8 @@ const ECHO_STEP = async (_config: unknown, _input: unknown, _context: BuiltinSte
 
 async function setup(config: Partial<Config> = {}): Promise<{ ctx: Context; engine: PipelineLocalEngine; rpc: PipelineRpcService }> {
   const ctx = new Context()
+  await ctx.plugin(SessionStore)
+  await ctx.plugin(JsonlSessionPersistence, { root: tempStorage(), compression: 'none' })
   await ctx.plugin(PipelineLocalEngine, { storageDir: tempStorage(), scheduler: false, ...config })
   const engine = ctx.pipelineEngine as PipelineLocalEngine
   engine.registerBuiltin('test/echo', ECHO_STEP)
@@ -84,8 +88,8 @@ describe('PipelineRpcService', () => {
     if (outcome.outcome !== 'started') throw new Error('unreachable')
     expect(outcome.runId).toBe('sch-d-run-1')
     expect(rpc.runs('sch-d')).toHaveLength(1)
-    expect(rpc.run('sch-d', 1)?.status).toBe('completed')
-    expect(rpc.run('sch-d', 99)).toBeUndefined()
+    expect((await rpc.run('sch-d', 1))?.status).toBe('completed')
+    expect(await rpc.run('sch-d', 99)).toBeUndefined()
     expect(rpc.runs('sch-missing')).toEqual([])
     // A second run lands after the first; records list oldest first.
     await rpc.triggerNow('sch-d')

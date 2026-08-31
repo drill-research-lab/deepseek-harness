@@ -21,6 +21,15 @@
       "path": "../../util/brand"
     },
     {
+      "path": "../../core/scope"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
+      "path": "../../session/session-persistence"
+    },
+    {
       "path": "../../llm/llm"
     },
     {

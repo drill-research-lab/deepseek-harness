@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { SessionStore } from '@deepseek-ai/dsh-session'
+import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import LlmRuntime, { LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { PipelineId, validateWorkflowJson } from '@deepseek-ai/dsh-pipeline'
@@ -80,6 +82,8 @@ describe('Scheduled Search template', () => {
     await ctx.plugin(LlmRuntime)
     const storageDir = tempDir()
     vi.stubGlobal('fetch', vi.fn(async () => new Response(FIXTURE, { status: 200 })))
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(JsonlSessionPersistence, { root: tempDir(), compression: 'none' })
     await ctx.plugin(PipelineLocalEngine, { storageDir, llmProvider: 'p', llmModel: 'm' })
     const engine = ctx.pipelineEngine as InstanceType<typeof PipelineLocalEngine>
     registerScheduledSearch(engine)
@@ -105,6 +109,8 @@ describe('Scheduled Search template', () => {
     await ctx.plugin(LlmRuntime)
     const storageDir = tempDir()
     vi.stubGlobal('fetch', vi.fn(async () => new Response('gateway timeout', { status: 503 })))
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(JsonlSessionPersistence, { root: tempDir(), compression: 'none' })
     await ctx.plugin(PipelineLocalEngine, { storageDir, llmProvider: 'p', llmModel: 'm' })
     const engine = ctx.pipelineEngine as InstanceType<typeof PipelineLocalEngine>
     registerScheduledSearch(engine)
@@ -149,6 +155,8 @@ describe('summary toggle', () => {
     ctx.llm.registerAdapter(['p'], new LlmAdapterStub())
     const storageDir = tempDir()
     vi.stubGlobal('fetch', vi.fn(async () => new Response(FIXTURE, { status: 200 })))
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(JsonlSessionPersistence, { root: tempDir(), compression: 'none' })
     await ctx.plugin(PipelineLocalEngine, { storageDir, llmProvider: 'p', llmModel: 'm' })
     const engine = ctx.pipelineEngine as InstanceType<typeof PipelineLocalEngine>
     registerScheduledSearch(engine)

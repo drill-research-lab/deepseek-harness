@@ -63,6 +63,9 @@
     "@deepseek-ai/dsh-pipeline": "workspace:^"
   },
   "dependencies": {
+    "@deepseek-ai/dsh-scope": "workspace:^",
+    "@deepseek-ai/dsh-session": "workspace:^",
+    "@deepseek-ai/dsh-session-persistence": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^",
     "croner": "^10.0.1",
     "fast-xml-parser": "^5.7.3",

@@ -3,11 +3,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { SessionStore } from '@deepseek-ai/dsh-session'
+import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import LlmRuntime, { LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { PipelineError, PipelineId, validateWorkflowJson } from '@deepseek-ai/dsh-pipeline'
 import type { PipelineDefinitionChange, PipelineRunInfo } from '@deepseek-ai/dsh-pipeline'
 import PipelineLocalEngine, { PipelineFileRegistry } from '@deepseek-ai/dsh-pipeline-local'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Config } from '@deepseek-ai/dsh-pipeline-local'
 
 class ScriptedAdapter extends LlmAdapter {
@@ -66,13 +69,24 @@ async function setup(config: Partial<Config> = {}, adapter?: LlmAdapter): Promis
   ctx: Context
   engine: PipelineLocalEngine
   storageDir: string
+  sessionRoot: string
 }> {
   const ctx = new Context()
   await ctx.plugin(LlmRuntime)
   ctx.llm.registerAdapter(['test-provider'], adapter ?? new ScriptedAdapter(LLML_SCRIPT))
   const storageDir = tempStorage()
+  // Run sessions persist under their own root so the log survives the run scope's teardown.
+  const sessionRoot = tempStorage()
+  await ctx.plugin(SessionStore)
+  await ctx.plugin(JsonlSessionPersistence, { root: sessionRoot, compression: 'none' })
   await ctx.plugin(PipelineLocalEngine, { storageDir, llmProvider: 'test-provider', llmModel: 'test-model', ...config })
-  return { ctx, engine: ctx.pipelineEngine as PipelineLocalEngine, storageDir }
+  return { ctx, engine: ctx.pipelineEngine as PipelineLocalEngine, storageDir, sessionRoot }
+}
+
+/** Mount the session vocabulary pipeline runs project their logs into. */
+async function mountSessionStore(ctx: Context): Promise<void> {
+  await ctx.plugin(SessionStore)
+  await ctx.plugin(JsonlSessionPersistence, { root: tempStorage(), compression: 'none' })
 }
 
 /** Record the pipeline/* event stream as compact tuples for sequence assertions. */
@@ -238,8 +252,85 @@ describe('PipelineLocalEngine runs', () => {
     expect((promptText as { text: string }).text).toContain('"hits"')
     expect((promptText as { text: string }).text).toContain('Summarize.')
     expect(engine.list()[0]).toMatchObject({ status: 'idle', runCount: 1, lastStatus: 'completed', failureStreak: 0 })
-    const record = JSON.parse(readFileSync(join(storageDir, 'runs', 'sch-search-test', '1.json'), 'utf8')) as { runId: string; status: string; nodeCount: number }
-    expect(record).toMatchObject({ runId: 'sch-search-test-run-1', status: 'completed', nodeCount: 3 })
+    const record = JSON.parse(readFileSync(join(storageDir, 'runs', 'sch-search-test', '1.json'), 'utf8')) as { runId: string; status: string; nodeCount: number; sessionId?: string }
+    expect(record).toMatchObject({ runId: 'sch-search-test-run-1', status: 'completed', nodeCount: 3, sessionId: 'sch-search-test-run-1' })
+
+    // The run's session log carries the full node projection; the detail RPC
+    // folds it back out after the run scope's teardown flushed persistence.
+    const detail = await engine.readRunDetail(PipelineId('sch-search-test'), 1)
+    expect(detail?.nodes).toHaveLength(3)
+    expect(detail?.nodes[0]).toMatchObject({ nodeId: 'trigger', outcome: 'completed', output: { trigger: 'manual' } })
+    expect(detail?.nodes[1]).toMatchObject({ nodeId: 'collect', outcome: 'completed', output: { hits: ['fixture'] } })
+    expect(detail?.nodes[2]).toMatchObject({ nodeId: 'ask', nodeType: 'llm', outcome: 'completed', output: { text: 'summary: ok' } })
+    expect(detail?.nodes.every(node => typeof node.durationMs === 'number' && node.durationMs >= 0)).toBe(true)
+  })
+
+  it('opens the run session with an ignorable descriptor and closes it with the settled facts', async () => {
+    const { engine, sessionRoot } = await setup()
+    engine.registerBuiltin('test/search', () => ({ hits: 1 }))
+    const short: Record<string, unknown> = definition()
+    ;(short as { nodes: unknown[] }).nodes = [
+      { id: 'trigger', type: 'trigger' },
+      { id: 'collect', type: 'builtin', ref: 'test/search' },
+    ]
+    ;(short as { edges: unknown[] }).edges = [{ from: 'trigger', to: 'collect' }]
+    await engine.save({ definition: short })
+    const started = engine.startRun({ id: PipelineId('sch-search-test'), trigger: 'scheduled' })
+    if (started.outcome !== 'started') throw new Error('expected a started run')
+    await started.result
+
+    // The persisted log: descriptor opens, both nodes settle, the run settles.
+    const logLines = readFileSync(join(sessionRoot, '_no-cwd', 'sch-search-test-run-1', 'session.jsonl'), 'utf8').trim().split('\n')
+    const events = logLines.map(line => JSON.parse(line) as { type: string; ignorable?: true; data: Record<string, unknown> })
+    expect(events.map(event => event.type)).toEqual([
+      'session', 'pipeline/run-descriptor', 'pipeline/node-started', 'pipeline/node-settled',
+      'pipeline/node-started', 'pipeline/node-settled', 'pipeline/run-settled',
+    ])
+    for (const event of events.filter(event => event.type.startsWith('pipeline/'))) {
+      expect(event.ignorable).toBe(true)
+    }
+    expect(events[1]?.data).toMatchObject({
+      version: 1, pipelineId: 'sch-search-test', runId: 'sch-search-test-run-1',
+      pipelineName: 'Test pipeline', trigger: 'scheduled',
+    })
+    expect(events.at(-1)?.data).toMatchObject({ status: 'completed', nodeCount: 2 })
+  })
+
+  it('fails the run loudly when the run session cannot be created', async () => {
+    const { ctx, engine } = await setup()
+    await engine.save({ definition: definition() })
+    // A live session owning the deterministic run id makes the open throw.
+    ctx.sessions.create(SessionId('sch-search-test-run-1'))
+    const started = engine.startRun({ id: PipelineId('sch-search-test'), trigger: 'manual' })
+    if (started.outcome !== 'started') throw new Error('expected a started run')
+    const result = await started.result
+    expect(result).toMatchObject({ status: 'failed', nodeCount: 0 })
+    expect(result.error).toContain('already exists')
+    expect(engine.list()[0]).toMatchObject({ status: 'idle', lastStatus: 'failed' })
+  })
+
+  it('keeps the record metrics when the run session log is unreadable', async () => {
+    const { ctx, engine, storageDir, sessionRoot } = await setup()
+    engine.registerBuiltin('test/search', () => ({ hits: 1 }))
+    await engine.save({ definition: definition() })
+    const started = engine.startRun({ id: PipelineId('sch-search-test'), trigger: 'manual' })
+    if (started.outcome !== 'started') throw new Error('expected a started run')
+    await started.result
+    // Simulate retention or loss: the record points at a log that does not
+    // exist, and the detail projection keeps the record's metrics.
+    const stale = JSON.parse(readFileSync(join(storageDir, 'runs', 'sch-search-test', '1.json'), 'utf8')) as Record<string, unknown>
+    stale.sessionId = 'sch-search-test-run-99'
+    writeFileSync(join(storageDir, 'runs', 'sch-search-test', '1.json'), JSON.stringify(stale))
+    const detail = await engine.readRunDetail(PipelineId('sch-search-test'), 1)
+    expect(detail).toMatchObject({ status: 'completed', nodeCount: 3, nodes: [] })
+    // Legacy records without a sessionId project an empty node list too.
+    const legacy = JSON.parse(readFileSync(join(storageDir, 'runs', 'sch-search-test', '1.json'), 'utf8')) as Record<string, unknown>
+    delete legacy.sessionId
+    writeFileSync(join(storageDir, 'runs', 'sch-search-test', '1.json'), JSON.stringify(legacy))
+    const detailWithoutLog = await engine.readRunDetail(PipelineId('sch-search-test'), 1)
+    expect(detailWithoutLog).toMatchObject({ status: 'completed', nodes: [] })
+    void ctx
+    void sessionRoot
   })
 
   it('reports already-running as a data skip and keeps one executing run', async () => {
@@ -331,6 +422,7 @@ describe('PipelineLocalEngine runs', () => {
   it('fails an llm node when no llm runtime is mounted', async () => {
     const ctx = new Context()
     const storageDir = tempStorage()
+    await mountSessionStore(ctx)
     await ctx.plugin(PipelineLocalEngine, { storageDir, llmProvider: 'test-provider', llmModel: 'test-model' })
     const engine = ctx.pipelineEngine as PipelineLocalEngine
     await engine.save({
@@ -373,6 +465,7 @@ describe('PipelineLocalEngine runs', () => {
   it('fails loud on an unknown builtin ref', async () => {
     const ctx = new Context()
     const storageDir = tempStorage()
+    await mountSessionStore(ctx)
     await ctx.plugin(PipelineLocalEngine, { storageDir })
     const engine = ctx.pipelineEngine as PipelineLocalEngine
     await engine.save({
@@ -394,6 +487,7 @@ describe('PipelineLocalEngine runs', () => {
   it('fails an llm node when no provider default is configured', async () => {
     const ctx = new Context()
     const storageDir = tempStorage()
+    await mountSessionStore(ctx)
     await ctx.plugin(PipelineLocalEngine, { storageDir })
     const engine = ctx.pipelineEngine as PipelineLocalEngine
     await engine.save({

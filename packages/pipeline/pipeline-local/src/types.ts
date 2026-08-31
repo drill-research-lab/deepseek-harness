@@ -6,7 +6,7 @@
  * @module @deepseek-ai/dsh-pipeline-local/types
  */
 
-import type { PipelineRunResultInfo, PipelineRunStatus } from '@deepseek-ai/dsh-pipeline/types'
+import type { JsonValue, PipelineRunResultInfo, PipelineRunStatus } from '@deepseek-ai/dsh-pipeline/types'
 
 /** The template inputs a Scheduled Search pipeline is created from. */
 export interface ScheduledSearchInputs {
@@ -28,6 +28,8 @@ export interface ScheduledSearchInputs {
 export interface PipelineRunRecord {
   /** The run's id (`<pipelineId>-run-<ordinal>`). */
   runId: string
+  /** The id of the run's session log (`<runId>`); absent for records written before the projection. */
+  sessionId?: string
   /** Epoch milliseconds when the run started. */
   startedAt: number
   /** Epoch milliseconds when the run settled. */
@@ -38,6 +40,28 @@ export interface PipelineRunRecord {
   error?: string
   /** How many nodes produced an outcome (skipped nodes excluded). */
   nodeCount: number
+}
+
+/** One node's settled outcome, projected from the run session log. */
+export interface PipelineRunNodeOutcome {
+  /** The node's id within the definition. */
+  nodeId: string
+  /** The node's type (`trigger`, `builtin`, or `llm`). */
+  nodeType: string
+  /** How the node settled: executed, failed, or skipped (disabled or unreachable). */
+  outcome: 'completed' | 'failed' | 'skipped'
+  /** Wall-clock execution time; `0` for skipped nodes. */
+  durationMs: number
+  /** The node's JSON output (present iff `outcome` is `'completed'`). */
+  output?: JsonValue
+  /** The failure message (present iff `outcome` is `'failed'`). */
+  error?: string
+}
+
+/** One settled run's record plus its node projection, read from the run session log. */
+export interface PipelineRunDetail extends PipelineRunRecord {
+  /** The nodes' settled outcomes in execution order; empty when the run has no session log. */
+  nodes: readonly PipelineRunNodeOutcome[]
 }
 
 /** One "run now" request's outcome: the awaited run facts, or the overlap skip. */
