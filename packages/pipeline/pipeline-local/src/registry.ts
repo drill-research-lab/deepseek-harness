@@ -274,8 +274,10 @@ export class PipelineFileRegistry {
    * @param id - the pipeline's id.
    * @param ordinal - the run's ordinal (from {@link nextOrdinal}, which this advances).
    * @param record - the settled run's durable record.
+   * @returns the pruned records' session ids, oldest first; the engine
+   *   retires their run-session logs (D13 retention).
    */
-  async recordRun(id: PipelineId, ordinal: number, record: Omit<PipelineRunRecord, 'runId'>): Promise<void> {
+  async recordRun(id: PipelineId, ordinal: number, record: Omit<PipelineRunRecord, 'runId'>): Promise<readonly string[]> {
     const key = String(id)
     // Only the engine calls this, and only for a pipeline it just ran.
     const entry = this.index.get(key) as IndexEntry
@@ -291,9 +293,13 @@ export class PipelineFileRegistry {
     entry.failureStreak = record.status === 'failed' ? entry.failureStreak + 1 : 0
     await this.flushIndex()
     const records = readdirSync(runDir).filter(file => file.endsWith('.json')).sort((left, right) => Number(left.slice(0, -5)) - Number(right.slice(0, -5)))
+    const prunedSessionIds: string[] = []
     for (const file of records.slice(0, Math.max(0, records.length - this.retainedRuns))) {
+      const sessionId = (readJsonFile(join(runDir, file)) as { sessionId?: string } | undefined)?.sessionId
       rmSync(join(runDir, file))
+      if (sessionId !== undefined) prunedSessionIds.push(sessionId)
     }
+    return prunedSessionIds
   }
 
   /** The per-pipeline state directory a builtin step may use for cross-run data (created on demand). */

@@ -353,7 +353,16 @@ export class PipelineLocalEngine extends PipelineEngine {
     }
     // Metrics commit before the run-end publish: observers of the event read
     // settled state, never a projection still catching up.
-    await this.registry.recordRun(definition.id, ordinal, record)
+    const prunedSessionIds = await this.registry.recordRun(definition.id, ordinal, record)
+    const persistence = runLogReader(this.ctx)
+    for (const sessionId of prunedSessionIds) {
+      // D13 retention: the pruned record's run-session log retires with it.
+      try {
+        await persistence?.forget(SessionId(sessionId))
+      } catch (cause) {
+        this.ctx.logger.warn(`pipeline "${String(definition.id)}": run-log forget failed for "${sessionId}": ${String(cause)}`)
+      }
+    }
     this.running.delete(String(definition.id))
     this.emitPipelineEvent('pipeline/run-end', info, result)
     return result

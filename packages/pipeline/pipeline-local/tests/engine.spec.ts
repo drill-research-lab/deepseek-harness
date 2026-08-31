@@ -296,6 +296,31 @@ describe('PipelineLocalEngine runs', () => {
     expect(events.at(-1)?.data).toMatchObject({ status: 'completed', nodeCount: 2 })
   })
 
+  it('retires pruned run-session logs with their records (D13 retention)', async () => {
+    const { ctx, engine, sessionRoot } = await setup({ retainedRuns: 1 })
+    engine.registerBuiltin('test/search', () => ({ hits: 1 }))
+    const short: Record<string, unknown> = definition()
+    ;(short as { nodes: unknown[] }).nodes = [
+      { id: 'trigger', type: 'trigger' },
+      { id: 'collect', type: 'builtin', ref: 'test/search' },
+    ]
+    ;(short as { edges: unknown[] }).edges = [{ from: 'trigger', to: 'collect' }]
+    await engine.save({ definition: short })
+    const first = engine.startRun({ id: PipelineId('sch-search-test'), trigger: 'manual' })
+    if (first.outcome !== 'started') throw new Error('expected a started run')
+    await first.result
+    expect(existsSync(join(sessionRoot, '_no-cwd', 'sch-search-test-run-1', 'session.jsonl'))).toBe(true)
+
+    const second = engine.startRun({ id: PipelineId('sch-search-test'), trigger: 'manual' })
+    if (second.outcome !== 'started') throw new Error('expected a started run')
+    await second.result
+    // The pruned record's run log retired with it; the retained run's log stays.
+    expect(existsSync(join(sessionRoot, '_no-cwd', 'sch-search-test-run-1'))).toBe(false)
+    expect(existsSync(join(sessionRoot, '_no-cwd', 'sch-search-test-run-2', 'session.jsonl'))).toBe(true)
+    expect(engine.listRuns(PipelineId('sch-search-test')).map(r => r.runId)).toEqual(['sch-search-test-run-2'])
+    void ctx
+  })
+
   it('fails the run loudly when the run session cannot be created', async () => {
     const { ctx, engine } = await setup()
     await engine.save({ definition: definition() })
