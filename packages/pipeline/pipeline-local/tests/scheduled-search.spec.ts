@@ -77,6 +77,24 @@ describe('Scheduled Search template', () => {
     expect(() => validateWorkflowJson(withSummary)).not.toThrow()
   })
 
+  it('carries no explicit-undefined members: the wire JSON-safety boundary rejects them', () => {
+    for (const inputs of [{ query: 'LLM agents' }, { query: 'LLM agents', summary: true, destination: '/tmp/wherever', maxResults: 5 }]) {
+      const expanded = expandScheduledSearch('sch-search-x', 'Weekly scan', inputs)
+      const violations: string[] = []
+      const walk = (value: unknown, path: string): void => {
+        if (value === undefined) {
+          violations.push(path)
+          return
+        }
+        if (value !== null && typeof value === 'object') {
+          for (const [key, item] of Object.entries(value)) walk(item, `${path}.${key}`)
+        }
+      }
+      walk(expanded, 'definition')
+      expect(violations).toEqual([])
+    }
+  })
+
   it('runs the whole template twice: new records persist once, the rerun dedupes', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)

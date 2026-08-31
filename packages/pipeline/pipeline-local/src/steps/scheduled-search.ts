@@ -135,7 +135,7 @@ export function expandScheduledSearch(id: string, name: string, inputs: Schedule
     { id: 'search', type: 'builtin', ref: 'scheduled-search/search', config: { query: inputs.query, ...(inputs.maxResults !== undefined ? { maxResults: inputs.maxResults } : {}) } },
     { id: 'normalize', type: 'builtin', ref: 'scheduled-search/normalize' },
     { id: 'dedupe', type: 'builtin', ref: 'scheduled-search/dedupe' },
-    { id: 'persist', type: 'builtin', ref: 'scheduled-search/persist', config: inputs.destination !== undefined ? { destination: inputs.destination } : undefined },
+    { id: 'persist', type: 'builtin', ref: 'scheduled-search/persist', ...(inputs.destination !== undefined ? { config: { destination: inputs.destination } } : {}) },
   ]
   if (inputs.summary === true) {
     nodes.push({ id: 'summarize', type: 'llm', prompt: 'Summarize the newly collected records for the researcher.' })
