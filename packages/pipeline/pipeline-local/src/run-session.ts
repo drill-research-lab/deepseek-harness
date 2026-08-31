@@ -12,6 +12,7 @@
  * @module @deepseek-ai/dsh-pipeline-local/run-session
  */
 
+import { randomBytes } from 'node:crypto'
 import { createScope, type Scope } from '@deepseek-ai/dsh-scope'
 import { type Session, SessionId, type SessionStore } from '@deepseek-ai/dsh-session'
 import type { Context } from '@deepseek-ai/cordis'
@@ -106,9 +107,15 @@ declare module '@deepseek-ai/dsh-session/types' {
  * teardown rides {@link settled}: disposing the scope detaches the session,
  * which flushes the write-behind persistence and retires the live entry.
  */
+/** The detach handle captured by the scope effect; read back at settle. */
+interface DetachHolder {
+  current?: () => void
+}
+
 export class PipelineRunSession {
   private constructor(
     private readonly scope: Scope,
+    private readonly detachHolder: DetachHolder,
     readonly id: SessionId,
     private readonly session: Session,
   ) {}
@@ -125,20 +132,24 @@ export class PipelineRunSession {
     if (sessions === undefined) {
       throw new Error('no session store is mounted: pipeline run sessions need ctx.sessions')
     }
-    const session = sessions.prepare(SessionId(descriptor.runId), { meta: { origin: 'pipeline' } })
+    // The session id extends the run id with a random suffix: deleting and
+    // re-creating a pipeline resets its ordinal sequence, so bare run ids
+    // recur across the deployment's lifetime, and the persistence layer
+    // (correctly) refuses a second live session colliding with a stored log.
+    const session = sessions.prepare(SessionId(`${descriptor.runId}-${randomBytes(4).toString('base64url')}`), { meta: { origin: 'pipeline' } })
     // Fold the store attachment into the per-run scope: create() would pin the
     // detach disposer to the session store's own fiber (never unloaded mid-process),
-    // leaking every run session as a live store entry. Here the scope disposal
-    // detaches, flushing the write-behind and retiring the live entry.
+    // leaking every run session as a live store entry. The detach also rides the
+    // scope's unwind as a backstop; settled() reads the holder directly so the
+    // retirement never depends on the disposal timing.
+    const detachHolder: DetachHolder = {}
     scope.ctx.effect(function* (this: SessionStore) {
-      // Yielding the detach rides the scope's unwind: disposing the scope
-      // detaches the session, flushing the write-behind and retiring the
-      // live entry.
-      yield this.enter(session)
+      detachHolder.current = this.enter(session)
       this.announce(session)
+      yield detachHolder.current
     }.bind(sessions), 'pipeline-run-session')
     session.append('pipeline/run-descriptor', descriptor, { ignorable: true })
-    return new PipelineRunSession(scope, session.id, session)
+    return new PipelineRunSession(scope, detachHolder, session.id, session)
   }
 
   /**
@@ -186,18 +197,23 @@ export class PipelineRunSession {
    * @param error - the failure message; only carried when failed.
    */
   async settled(status: PipelineRunStatus, durationMs: number, nodeCount: number, error?: string): Promise<void> {
-    this.session.append('pipeline/run-settled', {
-      status,
-      durationMs,
-      nodeCount,
-      ...error !== undefined ? { error } : {},
-    }, { ignorable: true })
-    // Flush through the store's durability barrier before the scope disposal
-    // retires the session: a reader of the detail projection then always sees
-    // the complete log, even while the final drain runs in the background.
-    const sessions = this.scope.ctx.get('sessions')
-    if (sessions !== undefined) await sessions.flush(this.session)
-    await this.scope.dispose()
+    try {
+      this.session.append('pipeline/run-settled', {
+        status,
+        durationMs,
+        nodeCount,
+        ...error !== undefined ? { error } : {},
+      }, { ignorable: true })
+      // Flush through the store's durability barrier, then detach directly: a
+      // reader of the detail projection then always sees the complete log, and
+      // the store entry retires without depending on disposal timing.
+      const sessions = this.scope.ctx.get('sessions')
+      if (sessions !== undefined) await sessions.flush(this.session)
+      this.detachHolder.current?.()
+      await this.scope.dispose()
+    } catch (cause) {
+      throw cause
+    }
   }
 }
 

@@ -365,7 +365,7 @@ export class PipelineLocalEngine extends PipelineEngine {
       status,
       ...error !== undefined ? { error } : {},
       nodeCount,
-      sessionId: String(info.runId),
+      sessionId: runSession === undefined ? String(info.runId) : String(runSession.id),
     }
     // Metrics commit before the run-end publish: observers of the event read
     // settled state, never a projection still catching up.

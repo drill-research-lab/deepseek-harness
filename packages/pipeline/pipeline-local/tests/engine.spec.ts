@@ -253,7 +253,10 @@ describe('PipelineLocalEngine runs', () => {
     expect((promptText as { text: string }).text).toContain('Summarize.')
     expect(engine.list()[0]).toMatchObject({ status: 'idle', runCount: 1, lastStatus: 'completed', failureStreak: 0 })
     const record = JSON.parse(readFileSync(join(storageDir, 'runs', 'sch-search-test', '1.json'), 'utf8')) as { runId: string; status: string; nodeCount: number; sessionId?: string }
-    expect(record).toMatchObject({ runId: 'sch-search-test-run-1', status: 'completed', nodeCount: 3, sessionId: 'sch-search-test-run-1' })
+    // The session id extends the run id with a uniqueness suffix (bare run ids
+    // recur after delete + re-create, and the persistence layer refuses id reuse).
+    expect(record).toMatchObject({ runId: 'sch-search-test-run-1', status: 'completed', nodeCount: 3 })
+    expect(record.sessionId).toMatch(/^sch-search-test-run-1-[A-Za-z0-9_-]+$/)
 
     // The run's session log carries the full node projection; the detail RPC
     // folds it back out after the run scope's teardown flushed persistence.
@@ -280,7 +283,9 @@ describe('PipelineLocalEngine runs', () => {
     await started.result
 
     // The persisted log: descriptor opens, both nodes settle, the run settles.
-    const logLines = readFileSync(join(sessionRoot, '_no-cwd', 'sch-search-test-run-1', 'session.jsonl'), 'utf8').trim().split('\n')
+    // The session directory carries the suffixed id (find it by the run prefix).
+    const logDir = readdirSync(join(sessionRoot, '_no-cwd')).find(dir => dir.startsWith('sch-search-test-run-1-'))
+    const logLines = readFileSync(join(sessionRoot, '_no-cwd', logDir ?? '', 'session.jsonl'), 'utf8').trim().split('\n')
     const events = logLines.map(line => JSON.parse(line) as { type: string; ignorable?: true; data: Record<string, unknown> })
     expect(events.map(event => event.type)).toEqual([
       'session', 'pipeline/run-descriptor', 'pipeline/node-started', 'pipeline/node-settled',
@@ -306,36 +311,40 @@ describe('PipelineLocalEngine runs', () => {
     ]
     ;(short as { edges: unknown[] }).edges = [{ from: 'trigger', to: 'collect' }]
     await engine.save({ definition: short })
+    const logDirs = (): string[] => readdirSync(join(sessionRoot, '_no-cwd')).filter(dir => dir.startsWith('sch-search-test-run-'))
     const first = engine.startRun({ id: PipelineId('sch-search-test'), trigger: 'manual' })
     if (first.outcome !== 'started') throw new Error('expected a started run')
     await first.result
-    expect(existsSync(join(sessionRoot, '_no-cwd', 'sch-search-test-run-1', 'session.jsonl'))).toBe(true)
+    expect(logDirs()).toHaveLength(1)
 
     const second = engine.startRun({ id: PipelineId('sch-search-test'), trigger: 'manual' })
     if (second.outcome !== 'started') throw new Error('expected a started run')
     await second.result
     // The pruned record's run log retired with it; the retained run's log stays.
-    expect(existsSync(join(sessionRoot, '_no-cwd', 'sch-search-test-run-1'))).toBe(false)
-    expect(existsSync(join(sessionRoot, '_no-cwd', 'sch-search-test-run-2', 'session.jsonl'))).toBe(true)
+    expect(logDirs()).toHaveLength(1)
     expect(engine.listRuns(PipelineId('sch-search-test')).map(r => r.runId)).toEqual(['sch-search-test-run-2'])
     void ctx
   })
 
-  it('fails the run loudly when the run session cannot be created', async () => {
-    const { ctx, engine } = await setup()
+  it('fails the run loudly when no session store is mounted', async () => {
+    // A deployment mounting the engine without the session vocabulary cannot
+    // project run logs; the run settles failed instead of silently skipping
+    // the projection.
+    const ctx = new Context()
+    const storageDir = tempStorage()
+    await ctx.plugin(PipelineLocalEngine, { storageDir, llmProvider: 'test-provider', llmModel: 'test-model' })
+    const engine = ctx.pipelineEngine as PipelineLocalEngine
     await engine.save({ definition: definition() })
-    // A live session owning the deterministic run id makes the open throw.
-    ctx.sessions.create(SessionId('sch-search-test-run-1'))
     const started = engine.startRun({ id: PipelineId('sch-search-test'), trigger: 'manual' })
     if (started.outcome !== 'started') throw new Error('expected a started run')
     const result = await started.result
     expect(result).toMatchObject({ status: 'failed', nodeCount: 0 })
-    expect(result.error).toContain('already exists')
+    expect(result.error).toContain('no session store is mounted')
     expect(engine.list()[0]).toMatchObject({ status: 'idle', lastStatus: 'failed' })
   })
 
   it('detaches the run session at settle: the same run id can run again after re-creation', async () => {
-    const { ctx, engine } = await setup()
+    const { ctx, engine, storageDir } = await setup()
     engine.registerBuiltin('test/search', () => ({ hits: 1 }))
     const short: Record<string, unknown> = definition()
     ;(short as { nodes: unknown[] }).nodes = [
@@ -347,10 +356,14 @@ describe('PipelineLocalEngine runs', () => {
     const first = engine.startRun({ id: PipelineId('sch-search-test'), trigger: 'manual' })
     if (first.outcome !== 'started') throw new Error('expected a started run')
     await first.result
-    // The store no longer holds the settled run's session.
-    expect(ctx.sessions.get(SessionId('sch-search-test-run-1'), 'trusted-internal')).toBeUndefined()
+    // The store no longer holds the settled run's session; its record points
+    // at the suffixed session id the persistence layer wrote.
+    const firstRunRecord = JSON.parse(readFileSync(join(storageDir, 'runs', 'sch-search-test', '1.json'), 'utf8')) as { sessionId?: string }
+    expect(firstRunRecord.sessionId).toMatch(/^sch-search-test-run-1-/)
+    expect(ctx.sessions.get(SessionId(firstRunRecord.sessionId ?? ''), 'trusted-internal')).toBeUndefined()
     // Re-creating the same pipeline reuses the ordinal sequence, so the same
-    // session id recurs; a leaked live session would collide here.
+    // run id recurs against the OLD persisted artifact; the suffixed session
+    // id is what keeps the new log off the collision path.
     await engine.delete(PipelineId('sch-search-test'))
     await engine.save({ definition: short })
     const second = engine.startRun({ id: PipelineId('sch-search-test'), trigger: 'manual' })
