@@ -7,8 +7,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import { PipelineNodeId } from '@deepseek-ai/dsh-pipeline'
-import type { PipelineNode, WorkflowJson } from '@deepseek-ai/dsh-pipeline/types'
+import type { PipelineNode, PipelineNodeId, WorkflowJson } from '@deepseek-ai/dsh-pipeline/types'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import styles from './Inspector.module.css'
 
@@ -125,7 +124,7 @@ export function Inspector({ definition, selectedId, onChange, onCommit, busy, t 
         <label key={`${String(edge.from)}->${String(edge.to)}-${index}`} className={styles.field}>
           <select
             value={String(edge.to)}
-            onChange={(e) => { setEdgeTarget(index, PipelineNodeId(e.target.value)) }}
+            onChange={(e) => { setEdgeTarget(index, e.target.value as PipelineNodeId) }}
             data-testid={`inspector-edge-${index}`}
           >
             {definition.nodes.filter(node => String(node.id) !== String(selected.id)).map(node => (
