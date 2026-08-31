@@ -390,6 +390,23 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     expect((await ctx.sessionPersistence.list()).map(h => h.id)).toContain(m.id)
   })
 
+  it('forget deletes the artifact directory and reports repeated removals', async () => {
+    const m = meta('forgotten', '/work')
+    await ctx.sessionPersistence.create(m)
+    await ctx.sessionPersistence.append(m.id, oneTurnLog())
+    expect((await ctx.sessionPersistence.list()).map(h => h.id)).toContain(m.id)
+
+    await expect(ctx.sessionPersistence.forget(m.id)).resolves.toBe(true)
+    expect((await ctx.sessionPersistence.list()).map(h => h.id)).not.toContain(m.id)
+    await expect(ctx.sessionPersistence.load(m.id)).rejects.toThrow(/not found/)
+    await expect(ctx.sessionPersistence.forget(m.id)).resolves.toBe(false)
+  })
+
+  it('forget refuses a live session', async () => {
+    const session = ctx.sessions.create(meta('live-run', '/work').id)
+    await expect(ctx.sessionPersistence.forget(session.id)).rejects.toThrow(/is live/)
+  })
+
   it('readRaw returns the stored artifact text verbatim with its original filename', async () => {
     const m = meta('raw-read', '/work')
     await ctx.sessionPersistence.create(m)

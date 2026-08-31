@@ -4,7 +4,7 @@
 
 pipeline 能力接縫（`ctx.pipelineEngine`）的檔案型 provider：在設定的儲存根目錄下持久化 `WorkflowJSON` 定義、投影帶 run 指標的 registry 摘要，並評估定義——`builtin` 與 `llm` 節點——套用重疊政策。它實作的 Service Definition 是 [`dsh-pipeline`](../../pipeline/pipeline)。
 
-## 儲存布局
+## 儲存版面配置
 
 ```
 <storageDir>/

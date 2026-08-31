@@ -199,6 +199,9 @@ flowchart LR
   svc_workflowEngine["ctx.workflowEngine<br/>Workflow script engine"]
   pkg_workflow_worker_thread["workflow-worker-thread"]
   pkg_tool_workflow["tool-workflow"]
+  pkg_pipeline["pipeline"]
+  svc_pipelineEngine["ctx.pipelineEngine<br/>Scheduled pipeline engine"]
+  pkg_pipeline_local["pipeline-local"]
   pkg_lsp["lsp"]
   svc_lsp["ctx.lsp<br/>Language-server navigation seam"]
   pkg_lsp_local["lsp-local"]
@@ -257,6 +260,8 @@ flowchart LR
   pkg_modules --> svc_clientModules
   pkg_ownership --> svc_ownership
   pkg_permission_presets --> svc_permissionPresets
+  pkg_pipeline --> svc_pipelineEngine
+  pkg_pipeline_local --> svc_pipelineEngine
   pkg_plan_mode --> svc_planMode
   pkg_pwsh_local --> svc_shell
   pkg_sandbox --> svc_sandbox
@@ -352,6 +357,7 @@ flowchart LR
   svc_llm --> pkg_compaction_basic
   svc_localAccounts --> pkg_auth_gateway_ldap
   svc_lsp --> pkg_tool_lsp
+  svc_pipelineEngine --> pkg_apiproxy
   svc_sandbox --> pkg_bash_sandbox
   svc_sandbox --> pkg_terminal_bash
   svc_sandboxPolicy --> pkg_bash_sandbox
@@ -492,6 +498,7 @@ flowchart LR
 | `ctx.ldapAuthGateway` | `core` | [`auth-gateway-ldap`](../packages/identity/auth-gateway-ldap) | - | - | - | 在獨立於 DSH 的行程和憑證目錄中負責主要 LDAP 登入、選填 DSH 本機登入與註冊，以及 Ed25519 斷言簽名。 |
 | `ctx.clientModules` | `core` | `modules` | - | `hmr` | - | 透過增量 `dsh.client` 掃描組合 __DSH_BOOT__ 入口圖，提供外掛程式組合包，並通知重建／圖變更訂閱方。 |
 | `ctx.workflowEngine` | `seam` | [`workflow`](../packages/workflow/workflow) | [`workflow-worker-thread`](../packages/workflow/workflow-worker-thread) | [`tool-workflow`](../packages/workflow/tool-workflow), [`tool-ralph`](../packages/workflow/tool-ralph) | - | 每個上下文使用一個引擎，與 bash 相同，且沒有具名提供方登錄檔；通用工作流程與固定 Ralph 消費端啟動執行，其中的 agent() 呼叫透過 ctx.subagents 扇出。 |
+| `ctx.pipelineEngine` | `seam` | [`pipeline`](../packages/pipeline/pipeline) | [`pipeline-local`](../packages/pipeline/pipeline-local) | `apiproxy` | - | 檔案支撐的引擎持久化 WorkflowJSON 定義，逐次執行求值 DAG（內建與 llm 執行器），並把每次執行投影進獨立的背景工作階段；pipelines Remote 面負責對外線路。 |
 | `ctx.lsp` | `seam` | [`lsp`](../packages/lsp/lsp) | `lsp-local` | [`tool-lsp`](../packages/lsp/tool-lsp) | - | 提供方註冊與選擇，加上恰好四種操作的標準化查詢執行；該 seam 不提供協定逃生口，後端必須轉換為標準化請求和結果。 |
 | `ctx.apiProxy` | `core` | `apiproxy` | - | `connection` | - | 與傳輸無關的 Host 閘道介面：它分派瀏覽器 API 呼叫，每條打開的 Host 流自行訂閱轉發事件，而不是由廣播方法向其推送。 |
 | `ctx.dynamicCordisRunner` | `core` | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | - | [`tool-cordis`](../packages/extensions/tool-cordis) | - | 擁有記憶體定義登錄檔、Host 半的 vm 沙盒和 request-run 往返流程；瀏覽器頁面透過其 Remote 命名空間線上訪問同一服務。 |

@@ -8,7 +8,7 @@
 
 ## Model Experience
 
-無。表面透過宿主的 `pipelines` Remote 命名空間讀取流水線定義與執行記錄，不新增任何提示內容、會話事件或投影。
+無，因為本套件透過宿主的 `pipelines` Remote 命名空間讀取流水線定義與執行記錄，不新增任何提示詞、工具 schema、請求內容或模型可見結果。
 
 #### KV Cache effect
 

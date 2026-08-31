@@ -147,7 +147,10 @@ export class PipelineFileRegistry {
     await PipelineFileRegistry.writeFileAtomic(join(this.rootDir, 'registry.json'), raw)
   }
 
-  /** List every persisted pipeline's projection, in definition-id order. */
+  /**
+   * List every persisted pipeline's projection, in definition-id order.
+   * @returns the summaries; empty when nothing is persisted.
+   */
   list(): PipelineSummary[] {
     return [...this.index.keys()].sort().map(id => this.summary(PipelineId(id)))
   }
@@ -171,7 +174,11 @@ export class PipelineFileRegistry {
     }
   }
 
-  /** Read one persisted definition, or undefined when unknown. */
+  /**
+   * Read one persisted definition, or undefined when unknown.
+   * @param id - the pipeline's id.
+   * @returns the validated definition, or `undefined` when unknown.
+   */
   get(id: PipelineId): WorkflowJson | undefined {
     return this.definitions.get(String(id))
   }
@@ -179,6 +186,8 @@ export class PipelineFileRegistry {
   /**
    * List one pipeline's settled run records, oldest first. An unknown pipeline
    * or one without runs yields an empty list.
+   * @param id - the pipeline's id.
+   * @returns the run records; empty when nothing has run.
    */
   listRuns(id: PipelineId): readonly PipelineRunRecord[] {
     const dir = join(this.runsDir, String(id))
@@ -189,18 +198,29 @@ export class PipelineFileRegistry {
       .sort((a, b) => runOrdinal(a.runId) - runOrdinal(b.runId))
   }
 
-  /** Read one settled run record, or `undefined` when the pipeline or ordinal is unknown. */
+  /**
+   * Read one settled run record, or `undefined` when the pipeline or ordinal is unknown.
+   * @param id - the pipeline's id.
+   * @param ordinal - the run's ordinal.
+   * @returns the run record, or `undefined` when unknown.
+   */
   readRun(id: PipelineId, ordinal: number): PipelineRunRecord | undefined {
     const raw = readJsonFile(join(this.runsDir, String(id), `${ordinal}.json`))
     return raw === undefined ? undefined : (raw as PipelineRunRecord)
   }
 
-  /** List every persisted definition's id (the durable source-of-truth set). */
+  /**
+   * List every persisted definition's id (the durable source-of-truth set).
+   * @returns the ids in sorted order.
+   */
   definitionIds(): string[] {
     return [...this.definitions.keys()].sort()
   }
 
-  /** Persist one validated definition (create or replace) and refresh its index name. */
+  /**
+   * Persist one validated definition (create or replace) and refresh its index name.
+   * @param definition - the validated definition to store.
+   */
   async save(definition: WorkflowJson): Promise<void> {
     const id = String(definition.id)
     await PipelineFileRegistry.writeFileAtomic(join(this.definitionsDir, `${id}.json`), definition)
@@ -213,6 +233,7 @@ export class PipelineFileRegistry {
   /**
    * Delete one definition and its index entry. Run records and step state are
    * kept: deletion never destroys recorded data.
+   * @param id - the pipeline's id.
    * @returns true when the definition existed.
    */
   async delete(id: PipelineId): Promise<boolean> {
@@ -225,7 +246,12 @@ export class PipelineFileRegistry {
     return true
   }
 
-  /** Pause or resume one pipeline's trigger; unknown ids return false. */
+  /**
+   * Pause or resume one pipeline's trigger; unknown ids return false.
+   * @param id - the pipeline's id.
+   * @param enabled - true resumes the trigger; false pauses it.
+   * @returns whether the definition existed.
+   */
   async setEnabled(id: PipelineId, enabled: boolean): Promise<boolean> {
     const entry = this.index.get(String(id))
     if (entry === undefined) return false
@@ -236,23 +262,39 @@ export class PipelineFileRegistry {
     return true
   }
 
-  /** The current trigger-enabled flag, or undefined when the id is unknown. */
+  /**
+   * The current trigger-enabled flag, or undefined when the id is unknown.
+   * @param id - the pipeline's id.
+   * @returns the enabled flag, or `undefined` when unknown.
+   */
   enabledOf(id: PipelineId): boolean | undefined {
     return this.index.get(String(id))?.enabled
   }
 
-  /** The next run ordinal for one pipeline (monotonic across retention). */
+  /**
+   * The next run ordinal for one pipeline (monotonic across retention).
+   * @param id - the pipeline's id.
+   * @returns the next ordinal.
+   */
   nextOrdinal(id: PipelineId): number {
     // Only the engine calls this, and only after resolving the definition.
     return (this.index.get(String(id)) as IndexEntry).nextOrdinal
   }
 
-  /** The persisted next-scheduled-fire projection, or undefined when unset. */
+  /**
+   * The persisted next-scheduled-fire projection, or undefined when unset.
+   * @param id - the pipeline's id.
+   * @returns the ISO next-fire timestamp, or `undefined` when unset.
+   */
   nextRunAtOf(id: PipelineId): string | undefined {
     return this.index.get(String(id))?.nextRunAt
   }
 
-  /** Store or clear the next-scheduled-fire projection. */
+  /**
+   * Store or clear the next-scheduled-fire projection.
+   * @param id - the pipeline's id.
+   * @param nextRunAt - the ISO next-fire timestamp, or `undefined` to clear.
+   */
   async setNextRunAt(id: PipelineId, nextRunAt: string | undefined): Promise<void> {
     // Only the engine calls this, and only for a persisted pipeline.
     const entry = this.index.get(String(id)) as IndexEntry
@@ -260,7 +302,10 @@ export class PipelineFileRegistry {
     await this.flushIndex()
   }
 
-  /** Count one trigger skipped under the overlap policy. */
+  /**
+   * Count one trigger skipped under the overlap policy.
+   * @param id - the pipeline's id.
+   */
   async incrementSkipped(id: PipelineId): Promise<void> {
     // Only the engine calls this, and only for a persisted pipeline.
     const entry = this.index.get(String(id)) as IndexEntry
@@ -302,7 +347,11 @@ export class PipelineFileRegistry {
     return prunedSessionIds
   }
 
-  /** The per-pipeline state directory a builtin step may use for cross-run data (created on demand). */
+  /**
+   * The per-pipeline state directory a builtin step may use for cross-run data (created on demand).
+   * @param id - the pipeline's id.
+   * @returns the directory path, created on demand.
+   */
   stateDirFor(id: PipelineId): string {
     const dir = join(this.stateDir, String(id))
     mkdirSync(dir, { recursive: true })

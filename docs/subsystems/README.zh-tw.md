@@ -42,6 +42,7 @@
 | [web.md](web.md) | Web 訪問 seam：`WebSearchRequest`/`Result`、`WebFetchRequest`/`Result`、`WebFetchBody`、提供方可用性、`WebError` |
 | [spill.md](spill.md) | spill 儲存 seam：`SaveTextSpill`、`SpillOwner`/`SpillSource`、`SpillRef`、品牌類型 `SpillLocator` |
 | [workflow.md](workflow.md) | 工作流程 seam：`WorkflowStartRequest`、`WorkflowMeta`、`WorkflowRun`/`Result`、`workflow/*` 事件載荷、`WorkflowError` 致命性 |
+| [pipeline.md](pipeline.md) | 排程流水線 seam：`PipelineEngine`（list/get/save/delete/setEnabled/startRun）、`pipeline/*` 事件載荷、執行記錄與 D13 保留策略 |
 | [jobs.md](jobs.md) | 背景工作執行時期：品牌化 `JobId`、producer 約定、消費端檢視表和 `ctx.jobs` 服務行為 |
 | [permission-presets.md](permission-presets.md) | 權限預設層：`PresetSpec`/`PresetOption`、派生的 `custom` 狀態、僅記日誌的 `permission/preset` 事件 |
 | [plan.md](plan.md) | 計畫模式：僅記日誌的 `plan/mode` 狀態、待定選擇的沖刷、`PlanModeConfig`、`exit_plan_mode` 審閱流程 |

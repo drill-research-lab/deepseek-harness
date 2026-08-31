@@ -71,10 +71,11 @@ interface SessionHeader {
    */
   readonly seedLength?: number
   /**
-   * Coarse product classification for a session created as a subagent child.
-   * This is presentation metadata, not proof that the child is continuable.
+   * Coarse product classification for a background session: a subagent child
+   * or a pipeline run log. This is presentation metadata, not proof that the
+   * session is continuable.
    */
-  readonly origin?: 'subagent'
+  readonly origin?: 'subagent' | 'pipeline'
   /**
    * Delegation depth: absent (zero) for a top-level session, parent depth + 1
    * for a subagent child. Persisted so a recursion budget survives restart and
@@ -119,7 +120,7 @@ interface CreateSessionOptions {
     readonly parentSession?: SessionId
     readonly createdAt?: number
     readonly seedLength?: number
-    readonly origin?: 'subagent'
+    readonly origin?: 'subagent' | 'pipeline'
     readonly delegationDepth?: number
     readonly agentPreset?: string
   }
@@ -384,6 +385,17 @@ abstract list(signal?: AbortSignal): Promise<SessionHeader[]>
  * @returns one header and opaque revision per materialized session without loading full logs.
  */
 abstract listSnapshots(signal?: AbortSignal): Promise<SessionPersistenceSnapshot[]>
+
+/**
+ * Delete one persisted session's durable log and metadata outright.
+ * Retention policies use this to retire pruned records. A live session
+ * must be disposed first: forgetting under an active writer would let the
+ * write-behind recreate the artifact.
+ * @param id - the persisted session to delete.
+ * @returns whether a stored log existed and was deleted.
+ * @throws when a live session with this id is still attached.
+ */
+abstract forget(id: SessionId): Promise<boolean>
 ```
 
 Types: [SessionEvent](session.md) · [SessionId](core.md)

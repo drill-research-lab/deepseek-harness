@@ -4,4 +4,4 @@
 #   pnpm run verify-translation-pairing --write packages/pipeline/pipeline-local/README.md
 README.md: 22fa01d09032b105ddd8a54d0ed9e94cfac7967d
 README.zh.md: 38d69b3ead6ced458343541d21608a352b948706
-README.zh-tw.md: c74e6df8795ac1460c0750d75f4a9b8c60f355d2
+README.zh-tw.md: 19ea0e54cc608c65153c22fd9e34ac6696a9e308

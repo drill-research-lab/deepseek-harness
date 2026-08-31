@@ -130,7 +130,11 @@ export class PipelineRunSession {
     return new PipelineRunSession(scope, session.id, session)
   }
 
-  /** Record one node's execution window opening. */
+  /**
+   * Record one node's execution window opening.
+   * @param nodeId - the node's id within the definition.
+   * @param nodeType - the node's type (`trigger`, `builtin`, or `llm`).
+   */
   nodeStarted(nodeId: string, nodeType: string): void {
     this.session.append('pipeline/node-started', { nodeId, nodeType }, { ignorable: true })
   }

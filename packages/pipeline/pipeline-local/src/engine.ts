@@ -85,6 +85,9 @@ export interface Config {
  * Topologically order the definition's nodes (Kahn's algorithm). The
  * validator already rejected cycles; disabled and unreachable nodes keep
  * their place so their skipped lifecycle still renders in run views.
+ * @param nodes - the definition's nodes in declaration order.
+ * @param edges - the adjacency map (source id to target ids).
+ * @returns the nodes in execution order.
  */
 export function topoOrder(nodes: readonly PipelineNode[], edges: ReadonlyMap<string, readonly string[]>): PipelineNode[] {
   const byId = new Map(nodes.map(node => [String(node.id), node]))
@@ -182,17 +185,30 @@ export class PipelineLocalEngine extends PipelineEngine {
     return this.registry.get(id)
   }
 
-  /** Whether one pipeline id is already taken. */
+  /**
+   * Whether one pipeline id is already taken.
+   * @param id - the candidate pipeline id.
+   * @returns whether a definition with this id is persisted.
+   */
   hasPipeline(id: PipelineId): boolean {
     return this.registry.get(id) !== undefined
   }
 
-  /** List one pipeline's settled run records, oldest first. */
+  /**
+   * List one pipeline's settled run records, oldest first.
+   * @param id - the pipeline's id.
+   * @returns the run records; empty when nothing has run.
+   */
   listRuns(id: PipelineId): readonly PipelineRunRecord[] {
     return this.registry.listRuns(id)
   }
 
-  /** Read one settled run record, or `undefined` when the pipeline or ordinal is unknown. */
+  /**
+   * Read one settled run record, or `undefined` when the pipeline or ordinal is unknown.
+   * @param id - the pipeline's id.
+   * @param ordinal - the run's ordinal.
+   * @returns the run record, or `undefined` when unknown.
+   */
   readRun(id: PipelineId, ordinal: number): PipelineRunRecord | undefined {
     return this.registry.readRun(id, ordinal)
   }

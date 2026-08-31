@@ -89,12 +89,20 @@ export function buildArxivQueryUrl(config: SearchConfig, lastSuccessfulAt: strin
   return `${API_BASE}?${params.toString()}`
 }
 
-/** Extract the arXiv id (with version) from an Atom entry id URL. */
+/**
+ * Extract the arXiv id (with version) from an Atom entry id URL.
+ * @param url - the entry's `<id>` URL.
+ * @returns the arXiv id with its version suffix.
+ */
 export function arxivIdFromEntryUrl(url: string): string {
   return url.replace(/^https?:\/\/arxiv\.org\/abs\//, '')
 }
 
-/** The canonical abs URL for one arXiv id: the version suffix stripped. */
+/**
+ * The canonical abs URL for one arXiv id: the version suffix stripped.
+ * @param arxivId - the versioned arXiv id.
+ * @returns the canonical abs URL.
+ */
 export function canonicalUrlFor(arxivId: string): string {
   return `https://arxiv.org/abs/${arxivId.replace(/v\d+$/, '')}`
 }
@@ -106,6 +114,7 @@ export function canonicalUrlFor(arxivId: string): string {
  * @param config - the step config ({@link SearchConfig}).
  * @param _input - the upstream (trigger) output, unused.
  * @param context - the step context; `stateDir` supplies the last-successful-run window.
+ * @returns the raw Atom body with its retrieval stamp and query.
  */
 export const searchStep = async (
   config: JsonValue | undefined,
@@ -134,7 +143,12 @@ export const searchStep = async (
   return { atom: await response.text(), retrievedAt: new Date().toISOString(), query: searchConfig.query }
 }
 
-/** Parse one arXiv Atom document into normalized records. */
+/**
+ * Parse one arXiv Atom document into normalized records.
+ * @param atom - the raw Atom body.
+ * @param retrievedAt - the retrieval stamp stamped onto every record.
+ * @returns the normalized records.
+ */
 export function normalizeAtom(atom: string, retrievedAt: string): ArxivRecord[] {
   const parser = new XMLParser({
     removeNSPrefix: true,
@@ -181,6 +195,7 @@ export function normalizeAtom(atom: string, retrievedAt: string): ArxivRecord[] 
  * The `scheduled-search/normalize` step: raw Atom in, normalized records out.
  * @param _config - unused.
  * @param input - the search step's output.
+ * @returns the normalized records and provenance.
  */
 export const normalizeStep = (_config: JsonValue | undefined, input: JsonValue): Promise<NormalizedResult> => {
   const search = input as Partial<SearchResult>

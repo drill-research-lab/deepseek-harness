@@ -8,7 +8,7 @@ The `/client` exports are the plugin body (`apply`/`inject`), the shared store f
 
 ## Model Experience
 
-None. The surface reads pipeline definitions and run records through the host's `pipelines` Remote namespace and adds no prompt content, session event, or projection.
+None, as this package reads pipeline definitions and run records over the host's `pipelines` Remote namespace and adds no prompt, tool schema, request content, or model-visible result.
 
 #### KV Cache effect
 

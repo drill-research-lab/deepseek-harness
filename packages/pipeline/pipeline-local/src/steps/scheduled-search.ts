@@ -41,7 +41,11 @@ interface SeenState {
   keys: Record<string, { firstSeenRun: string }>
 }
 
-/** The dedupe key for one record: arXiv id, else DOI, else canonical URL. */
+/**
+ * The dedupe key for one record: arXiv id, else DOI, else canonical URL.
+ * @param record - the normalized record.
+ * @returns the dedupe key.
+ */
 export function dedupeKeyFor(record: ArxivRecord): string {
   if (record.arxivId !== '') return record.arxivId
   if (record.doi !== undefined && record.doi !== '') return record.doi
@@ -64,6 +68,7 @@ function readSeenState(context: BuiltinStepContext): SeenState {
  * @param _config - unused.
  * @param input - the normalize step's output.
  * @param context - the step context; `stateDir` holds the seen state.
+ * @returns the fresh records and their dedupe keys.
  */
 export const dedupeStep = async (_config: JsonValue | undefined, input: JsonValue, context: BuiltinStepContext): Promise<DedupeResult> => {
   const { records } = input as Partial<NormalizedResult>
@@ -88,6 +93,7 @@ export const dedupeStep = async (_config: JsonValue | undefined, input: JsonValu
  * @param config - the step config (`destination` overrides the context's artifact directory).
  * @param input - the dedupe step's output.
  * @param context - the step context (`stateDir` for state, `runId` for provenance).
+ * @returns the persisted count and the artifact file path.
  */
 export const persistStep = async (config: JsonValue | undefined, input: JsonValue, context: BuiltinStepContext): Promise<PersistResult> => {
   const { new: fresh, skipped } = input as Partial<DedupeResult>

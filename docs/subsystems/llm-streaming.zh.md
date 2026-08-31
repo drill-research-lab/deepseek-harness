@@ -358,6 +358,13 @@ interface LlmProviderInfo {
   id: string
   /** Human-readable provider name for selectors and diagnostics. */
   name: string
+  /**
+   * Credential-reference name the route resolves its key through, when it
+   * names one (an environment-variable name such as `OPENAI_API_KEY`, never a
+   * secret value). Absent means the route authenticates another way, so a
+   * key-availability gate cannot judge it and treats it as usable.
+   */
+  apiKeyEnv?: string
 }
 ```
 
