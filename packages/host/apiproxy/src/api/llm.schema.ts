@@ -6,7 +6,7 @@
 import { z } from 'zod'
 import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
-import type { ConfigurableProviderView, DiscoveredModelView } from './llm.ts'
+import type { ConfigurableProviderView, DiscoveredModelView, InferenceMetricsView } from './llm.ts'
 import { modelCatalogFailureSchema, modelProviderGroupSchema } from './sessions.schema.ts'
 
 /** ConfigurableProviderView row of llm.providers. */
@@ -35,6 +35,22 @@ export const llmModelsValueSchema = z.object({
   groups: z.array(modelProviderGroupSchema),
   failures: z.array(modelCatalogFailureSchema),
 }) satisfies z.ZodType<Wire<ResponseValue<'llm.models'>>>
+
+/** llm.metrics request payload. */
+export const llmMetricsRequestSchema = z.object({}) satisfies z.ZodType<Wire<RequestPayload<'llm.metrics'>>>
+
+/** llm.metrics response value. */
+export const llmMetricsValueSchema = z.object({
+  backend: z.literal('vllm'),
+  sampledAt: z.number().int().nonnegative(),
+  refreshAfterMs: z.number().int().positive(),
+  requestsRunning: z.number().int().nonnegative(),
+  requestsWaiting: z.number().int().nonnegative(),
+  kvCacheUsage: z.number().min(0).max(1).optional(),
+  promptTokensTotal: z.number().nonnegative().optional(),
+  generationTokensTotal: z.number().nonnegative().optional(),
+  preemptionsTotal: z.number().nonnegative().optional(),
+}) satisfies z.ZodType<Wire<InferenceMetricsView>>
 
 /** DiscoveredModelView row of llm.discoverModels. */
 export const discoveredModelViewSchema = z.object({

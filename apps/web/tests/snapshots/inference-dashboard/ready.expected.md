@@ -1,0 +1,48 @@
+- dialog "设置":
+  - navigation:
+    - text: 设置
+    - button "通用设置":
+      - img
+      - text: 通用设置
+    - button "模型":
+      - img
+      - text: 模型
+    - button "插件":
+      - img
+      - text: 插件
+    - button "推理状态":
+      - img
+      - text: 推理状态
+    - button "Agent 预设":
+      - img
+      - text: Agent 预设
+  - button "打开配置文件"
+  - button "关闭":
+    - img
+    - text: 关闭
+  - region "模型运行状态":
+    - heading "模型运行状态" [level=2]
+    - paragraph: 当前 vLLM 服务的实时负载与资源指标。
+    - text: 在线 · 更新时间 {{clock}}
+    - article "推理后端":
+      - text: 推理后端
+      - strong: vllm
+    - article "请求":
+      - text: 请求
+      - term: 运行中
+      - definition: "2"
+      - term: 等待中
+      - definition: "7"
+      - paragraph: 这里显示总请求数，不代表当前任务的排队序位。
+    - article "KV 缓存":
+      - text: KV 缓存
+      - strong: 42%
+      - progressbar "KV 缓存"
+    - article "Token 累计":
+      - text: Token 累计
+      - term: 输入
+      - definition: 1,200
+      - term: 输出
+      - definition: "345"
+      - term: 抢占次数
+      - definition: "6"

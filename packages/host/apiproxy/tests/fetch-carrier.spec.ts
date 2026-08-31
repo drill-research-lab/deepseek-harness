@@ -283,6 +283,18 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       async models(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { groups: [], failures: [] } } }
       },
+      async metrics(request) {
+        return {
+          rpcId: request.rpcId,
+          result: {
+            ok: true,
+            value: {
+              backend: 'vllm', sampledAt: 0, refreshAfterMs: 2000,
+              requestsRunning: 0, requestsWaiting: 0,
+            },
+          },
+        }
+      },
       async discoverModels(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { models: [] } } }
       },

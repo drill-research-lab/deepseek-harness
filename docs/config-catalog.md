@@ -842,16 +842,27 @@ export interface Config {
    * @default 1024
    */
   coldBlankProbeMaxBytes?: number
+  /**
+   * Internal vLLM Prometheus endpoint used by the browser inference dashboard.
+   * The endpoint address stays on the Host and is never returned to clients.
+   */
+  inferenceMetricsUrl?: string
+  /** Deadline for one metrics scrape in milliseconds. @default 3000 */
+  inferenceMetricsTimeoutMs?: number
+  /** Maximum response bytes accepted from one metrics scrape. @default 1048576 */
+  inferenceMetricsMaxBytes?: number
+  /** Successful dashboard refresh cadence in milliseconds. @default 2000 */
+  inferenceMetricsRefreshMs?: number
 }
 ```
 
-Source: [`packages/host/apiproxy/src/index.ts:41`](../packages/host/apiproxy/src/index.ts)
+Source: [`packages/host/apiproxy/src/index.ts:46`](../packages/host/apiproxy/src/index.ts)
 
 <a id="deepseek-aidsh-host-authentication"></a>
 
 ## `@deepseek-ai/dsh-host-authentication`
 
-Requires: `credentials`
+Requires: `credentials` · `webServer`
 
 ```ts config-catalog
 /** External identity-cookie verification configuration. */
@@ -869,7 +880,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/host/authentication/src/index.ts:10`](../packages/host/authentication/src/index.ts)
+Source: [`packages/host/authentication/src/index.ts:11`](../packages/host/authentication/src/index.ts)
 
 <a id="deepseek-aidsh-host-directory-picker-browse"></a>
 
@@ -898,6 +909,12 @@ Requires: `webServer`
 export interface Config {
   /** Absolute path of index.html inside the dist root. */
   distIndex: string
+  /**
+   * Absolute login URL an unauthenticated browser is redirected to before the
+   * shell loads. Absent (or empty) disables the redirect, preserving the
+   * auth-optional deployment where the shell is served without a guard.
+   */
+  loginUrl?: string
 }
 ```
 
@@ -3045,6 +3062,8 @@ export interface Config {
   surfaceContext: boolean
   /** Explicit `--trusted-host` authorities from this invocation. */
   trustedHosts: string[]
+  /** Absolute login URL an unauthenticated browser is redirected to; absent disables the redirect. */
+  loginUrl?: string
 }
 ```
 
@@ -3200,6 +3219,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-directory-picker-browse` ([`packages/client/ui-directory-picker-browse/src/index.ts`](../packages/client/ui-directory-picker-browse/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-directory-picker-native` ([`packages/client/ui-directory-picker-native/src/index.ts`](../packages/client/ui-directory-picker-native/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-goal` ([`packages/client/ui-goal/src/index.ts`](../packages/client/ui-goal/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-inference-dashboard` ([`packages/client/ui-inference-dashboard/src/index.ts`](../packages/client/ui-inference-dashboard/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-input-trigger` ([`packages/client/ui-input-trigger/src/index.ts`](../packages/client/ui-input-trigger/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-jobs` ([`packages/client/ui-jobs/src/index.ts`](../packages/client/ui-jobs/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-layout` ([`packages/client/ui-layout/src/index.ts`](../packages/client/ui-layout/src/index.ts))

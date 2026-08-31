@@ -21,6 +21,11 @@ import {
   DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
   type SessionLogCompressionLevel,
 } from './session-export.ts'
+import {
+  DEFAULT_INFERENCE_METRICS_MAX_BYTES,
+  DEFAULT_INFERENCE_METRICS_REFRESH_MS,
+  DEFAULT_INFERENCE_METRICS_TIMEOUT_MS,
+} from './inference-metrics.ts'
 
 export type * from './api/index.ts'
 export { RpcId } from './api/rpc.ts'
@@ -59,6 +64,17 @@ export interface Config {
    * @default 1024
    */
   coldBlankProbeMaxBytes?: number
+  /**
+   * Internal vLLM Prometheus endpoint used by the browser inference dashboard.
+   * The endpoint address stays on the Host and is never returned to clients.
+   */
+  inferenceMetricsUrl?: string
+  /** Deadline for one metrics scrape in milliseconds. @default 3000 */
+  inferenceMetricsTimeoutMs?: number
+  /** Maximum response bytes accepted from one metrics scrape. @default 1048576 */
+  inferenceMetricsMaxBytes?: number
+  /** Successful dashboard refresh cadence in milliseconds. @default 2000 */
+  inferenceMetricsRefreshMs?: number
 }
 
 /**
@@ -77,6 +93,13 @@ export class ApiProxyService extends Service implements ApiProxy {
     sessionExportCompressionLevel: z.number().step(1).min(0).max(9)
       .default(DEFAULT_SESSION_LOG_COMPRESSION_LEVEL) as z<SessionLogCompressionLevel>,
     coldBlankProbeMaxBytes: z.natural().default(DEFAULT_COLD_BLANK_PROBE_MAX_BYTES),
+    inferenceMetricsUrl: z.string(),
+    inferenceMetricsTimeoutMs: z.number().step(1).min(1)
+      .default(DEFAULT_INFERENCE_METRICS_TIMEOUT_MS),
+    inferenceMetricsMaxBytes: z.number().step(1).min(1)
+      .default(DEFAULT_INFERENCE_METRICS_MAX_BYTES),
+    inferenceMetricsRefreshMs: z.number().step(1).min(250)
+      .default(DEFAULT_INFERENCE_METRICS_REFRESH_MS),
   })
 
   readonly sessions: ApiProxy['sessions']
@@ -107,6 +130,18 @@ export class ApiProxyService extends Service implements ApiProxy {
       ...(config.coldBlankProbeMaxBytes === undefined
         ? {}
         : { coldBlankProbeMaxBytes: config.coldBlankProbeMaxBytes }),
+      ...(config.inferenceMetricsUrl === undefined
+        ? {}
+        : { inferenceMetricsUrl: config.inferenceMetricsUrl }),
+      ...(config.inferenceMetricsTimeoutMs === undefined
+        ? {}
+        : { inferenceMetricsTimeoutMs: config.inferenceMetricsTimeoutMs }),
+      ...(config.inferenceMetricsMaxBytes === undefined
+        ? {}
+        : { inferenceMetricsMaxBytes: config.inferenceMetricsMaxBytes }),
+      ...(config.inferenceMetricsRefreshMs === undefined
+        ? {}
+        : { inferenceMetricsRefreshMs: config.inferenceMetricsRefreshMs }),
     })
     this.sessions = api.sessions
     this.auth = api.auth

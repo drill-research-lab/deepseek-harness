@@ -112,6 +112,13 @@ import {
   inspectApiRemoteSession,
 } from '@deepseek-ai/dsh-api-remotes'
 import { canOpenNativePath, openNativePath, openNativeTextFile } from './native-path-opener.ts'
+import {
+  DEFAULT_INFERENCE_METRICS_MAX_BYTES,
+  DEFAULT_INFERENCE_METRICS_REFRESH_MS,
+  DEFAULT_INFERENCE_METRICS_TIMEOUT_MS,
+  fetchVllmMetrics,
+  InferenceMetricsError,
+} from './inference-metrics.ts'
 
 /** Page size when history is called without maxMessages. */
 const DEFAULT_MAX_MESSAGES = 50
@@ -673,6 +680,14 @@ export interface ApiProxyDefaults {
   sessionExportCompressionLevel?: SessionLogCompressionLevel
   /** Maximum artifact size eligible for one cold blankness read. */
   coldBlankProbeMaxBytes?: number
+  /** HTTP(S) Prometheus endpoint scraped for the authenticated inference dashboard. */
+  inferenceMetricsUrl?: string
+  /** Deadline for one inference metrics scrape. */
+  inferenceMetricsTimeoutMs?: number
+  /** Maximum bytes accepted from one inference metrics response. */
+  inferenceMetricsMaxBytes?: number
+  /** Successful browser refresh cadence returned with every sample. */
+  inferenceMetricsRefreshMs?: number
   /**
    * Whether handing a path to the native opener can work at all — the
    * `hasDocument` capability the preset roster reports, and the switch
@@ -1124,6 +1139,19 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     ?? DEFAULT_SESSION_LOG_COMPRESSION_LEVEL
   const coldBlankProbeMaxBytes = defaults.coldBlankProbeMaxBytes
     ?? DEFAULT_COLD_BLANK_PROBE_MAX_BYTES
+  const inferenceMetricsTimeoutMs = defaults.inferenceMetricsTimeoutMs
+    ?? DEFAULT_INFERENCE_METRICS_TIMEOUT_MS
+  const inferenceMetricsMaxBytes = defaults.inferenceMetricsMaxBytes
+    ?? DEFAULT_INFERENCE_METRICS_MAX_BYTES
+  const inferenceMetricsRefreshMs = defaults.inferenceMetricsRefreshMs
+    ?? DEFAULT_INFERENCE_METRICS_REFRESH_MS
+  let inferenceMetricsUrl: URL | undefined
+  if (defaults.inferenceMetricsUrl !== undefined) {
+    inferenceMetricsUrl = new URL(defaults.inferenceMetricsUrl)
+    if (inferenceMetricsUrl.protocol !== 'http:' && inferenceMetricsUrl.protocol !== 'https:') {
+      throw new Error('inferenceMetricsUrl must use http: or https:')
+    }
+  }
   /** The seed model each create/resume declares; re-read so it never goes stale. */
   const agentOptions = (): AgentOptions => {
     const { provider, model } = defaults.defaultModelSelection()
@@ -3466,6 +3494,37 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async models(request) {
         return ok(request, await buildModelCatalog(ctx))
+      },
+
+      async metrics(request, signal) {
+        if (inferenceMetricsUrl === undefined) {
+          return err(request, {
+            code: 'inference-metrics-unconfigured',
+            message: 'Inference metrics are not configured for this deployment.',
+            details: {},
+          })
+        }
+        const timeout = AbortSignal.timeout(inferenceMetricsTimeoutMs)
+        const scrapeSignal = signal === undefined
+          ? timeout
+          : AbortSignal.any([signal, timeout])
+        try {
+          const sample = await fetchVllmMetrics(
+            inferenceMetricsUrl,
+            inferenceMetricsMaxBytes,
+            scrapeSignal,
+          )
+          return ok(request, { ...sample, refreshAfterMs: inferenceMetricsRefreshMs })
+        } catch (error: unknown) {
+          if (error instanceof InferenceMetricsError) {
+            return err(request, { code: error.code, message: error.message, details: {} })
+          }
+          return err(request, {
+            code: 'inference-metrics-unavailable',
+            message: 'The inference metrics endpoint could not be read.',
+            details: {},
+          })
+        }
       },
 
       async discoverModels(request, signal) {

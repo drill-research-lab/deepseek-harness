@@ -123,6 +123,8 @@
     - id: api-gateway
       name: '@deepseek-ai/dsh-host-apiproxy'
       inject: [ownership]
+      config:
+        inferenceMetricsUrl: !!js process.env.DSH_INFERENCE_METRICS_URL
 
     - id: cordis-host-runner
       name: '@deepseek-ai/dsh-cordis-host-runner'
@@ -232,6 +234,9 @@
 
     - id: ui-settings-models
       name: '@deepseek-ai/dsh-client-ui-settings-models'
+
+    - id: ui-inference-dashboard
+      name: '@deepseek-ai/dsh-client-ui-inference-dashboard'
 
     - id: ui-settings-plugin-inventory
       name: '@deepseek-ai/dsh-client-ui-settings-plugin-inventory'

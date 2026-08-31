@@ -49,6 +49,16 @@ export interface LlmApi {
   models(request: RpcRequest<{}>): Promise<RpcResponse<{ groups: ModelProviderGroup[]; failures: ModelCatalogFailure[] }>>
 
   /**
+   * Read one bounded metrics sample from the deployment's configured vLLM
+   * Prometheus endpoint. The Host performs the scrape so the browser never
+   * receives the internal endpoint address.
+   */
+  metrics(
+    request: RpcRequest<{}>,
+    signal?: AbortSignal,
+  ): Promise<RpcResponse<InferenceMetricsView>>
+
+  /**
    * Interrogate a provider endpoint the configuration surface is still
    * drafting, and return the models it advertises for the user to adopt.
    *
@@ -74,6 +84,28 @@ export interface LlmApi {
     }>,
     signal?: AbortSignal,
   ): Promise<RpcResponse<{ models: DiscoveredModelView[] }>>
+}
+
+/** Authenticated browser projection of one vLLM metrics sample. */
+export interface InferenceMetricsView {
+  /** Recognized inference backend. */
+  backend: 'vllm'
+  /** Host sample time in Unix milliseconds. */
+  sampledAt: number
+  /** Delay before the browser requests another successful sample. */
+  refreshAfterMs: number
+  /** Requests in model execution batches. */
+  requestsRunning: number
+  /** Requests accepted but waiting for processing. */
+  requestsWaiting: number
+  /** KV-cache occupancy as a fraction from zero through one, when exposed. */
+  kvCacheUsage?: number
+  /** Cumulative prompt tokens, when exposed. */
+  promptTokensTotal?: number
+  /** Cumulative generated tokens, when exposed. */
+  generationTokensTotal?: number
+  /** Cumulative scheduler preemptions, when exposed. */
+  preemptionsTotal?: number
 }
 
 /** Wire view of one model an interrogated endpoint advertises. */
