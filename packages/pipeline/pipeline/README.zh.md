@@ -37,7 +37,7 @@ Pipeline 能力接縫：Drill Pipelines 的持久化 `WorkflowJSON` 定義格式
 
 ## 驗證
 
-`validateWorkflowJson(value)` 是載入期的 parser 邊界：純函式、無 I/O，拋出帶封閉 `PipelineSchemaErrorCode` 的 `PipelineSchemaError`，訊息指出第一個缺陷的欄位路徑（`nodes[2].prompt`）。它檢查每一層的形狀與允許鍵（未知欄位一律拒絕——對 LLM 生成定義的錯字防護）、唯一節點 id、恰一個 trigger 節點、edge 端點/重複/目標規則、無環（含自環）、五欄 cron 結構，以及經 `Intl` 檢查的 IANA 時區名。刻意不在這裡做的：cron 的範圍與步進語意屬於解析該運算式的 scheduler provider；`builtin.ref` 的解析屬於 provider registry。
+`validateWorkflowJson(value)` 是載入期的 parser 邊界：純函式、無 I/O，拋出帶封閉 `PipelineSchemaErrorCode` 的 `PipelineSchemaError`，訊息指出第一個缺陷的欄位路徑（`nodes[2].prompt`）。它檢查每一層的形狀與允許鍵（未知欄位一律拒絕——對 LLM 生成定義的錯字防護）、唯一節點 id、恰一個 trigger 節點、edge 端點/重複/目標規則、無環（含自環）、五欄 cron 結構、經 `Intl` 檢查的 IANA 時區名，並透過排程器自己的模式引擎（croner）驗證 cron 語意：croner 無法計算的運算式在載入期即失敗，早於任何註冊。刻意不在這裡做的：`builtin.ref` 的解析屬於 provider registry。
 
 ## 接縫
 
@@ -64,6 +64,4 @@ None；本套件既不組裝也不發送 provider 請求。
 
 ## Known Limitations and Deferred Work
 
-- **尚無引擎 provider**——實作此契約的檔案型 registry、cron 排程器與 DAG 評估器是下一個切片；落地前 `ctx.pipelineEngine` 沒有 provider，也不會有任何 run 啟動。
 - **僅線性圖**——schema 沒有分支或 fan-out 欄位；它們隨執行它們的引擎切片以附加選填欄位落地。
-- **cron 語意延後**——驗證只檢查結構（五欄、字元集）；範圍與步進驗證在 scheduler provider 解析運算式時進行，於註冊時 fail loud。

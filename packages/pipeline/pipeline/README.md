@@ -37,7 +37,7 @@ Every node carries a unique stable `id` (edges reference it, so display renames 
 
 ## Validation
 
-`validateWorkflowJson(value)` is the load-time parser boundary: pure, no I/O, throwing `PipelineSchemaError` with a closed `PipelineSchemaErrorCode` and a message naming the first defect's field path (`nodes[2].prompt`). It checks shape and allowed keys at every level (unknown fields reject — typo protection for LLM-authored definitions), unique node ids, exactly one trigger node, edge endpoint/duplicate/target rules, acyclicity (self-edges included), the five-field cron structure, and the IANA time-zone name through `Intl`. Deliberately not here: cron range and step semantics belong to the scheduler provider that parses the expression, and `builtin.ref` resolution belongs to the provider registry.
+`validateWorkflowJson(value)` is the load-time parser boundary: pure, no I/O, throwing `PipelineSchemaError` with a closed `PipelineSchemaErrorCode` and a message naming the first defect's field path (`nodes[2].prompt`). It checks shape and allowed keys at every level (unknown fields reject — typo protection for LLM-authored definitions), unique node ids, exactly one trigger node, edge endpoint/duplicate/target rules, acyclicity (self-edges included), the five-field cron structure, the IANA time-zone name through `Intl`, and cron semantics through the scheduler's own pattern engine (croner): an expression croner cannot compute fails at load, before any registration. Deliberately not here: `builtin.ref` resolution belongs to the provider registry.
 
 ## The seam
 
@@ -64,6 +64,4 @@ None; this package neither assembles nor sends a provider request.
 
 ## Known Limitations and Deferred Work
 
-- **No engine provider yet** — the file-backed registry, cron scheduler, and DAG evaluator that implement this contract are the next slice; until they land, `ctx.pipelineEngine` has no provider and nothing starts runs.
 - **Linear graphs only** — the schema has no branching or fan-out fields; they land with the execution slice that evaluates them, as additive optional fields.
-- **Cron semantics deferred** — validation checks structure only (five fields, character set); range and step validation happens when the scheduler provider parses the expression, failing loud at registration.
