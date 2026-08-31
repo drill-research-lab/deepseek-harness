@@ -219,7 +219,10 @@ describe('PipelinesNav', () => {
     fireEvent.click(screen.getByTestId('pipeline-sch-search'))
     expect(openEditor).toHaveBeenCalledWith('sch-search')
     expect(share.instance.getSnapshot().openId).toBe('sch-search')
-    expect(calls).toEqual(['list'])
+    // Opening the editor flips openId, and the nav reloads the list so a
+    // freshly created pipeline appears without a remount.
+    await screen.findByText('arXiv digest')
+    expect(calls).toEqual(['list', 'list'])
   })
 
   it('shows the failure badge for a failing streak', async () => {

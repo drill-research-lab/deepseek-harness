@@ -31,7 +31,7 @@ export function PipelinesNav({ wide, expandSidebar, useStore, actions, api, open
     return () => {
       live = false
     }
-  }, [api])
+  }, [api, openId])
 
   const onOpen = useCallback((id: string) => {
     actions.open(id)
@@ -48,7 +48,7 @@ export function PipelinesNav({ wide, expandSidebar, useStore, actions, api, open
   }, [api])
 
   return (
-    <div className={styles.block} data-wide={wide}>
+    <div className={styles.block} data-wide={wide} data-testid="pipelines-nav">
       <div className={styles.header}>
         {t('nav.title')}
         <button type="button" className={styles.new} data-testid="pipeline-new" onClick={() => { actions.openCreate() }}>
