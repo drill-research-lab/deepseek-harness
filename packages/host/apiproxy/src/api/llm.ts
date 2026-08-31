@@ -50,8 +50,8 @@ export interface LlmApi {
 
   /**
    * Read one bounded metrics sample from the deployment's configured vLLM
-   * Prometheus endpoint. The Host performs the scrape so the browser never
-   * receives the internal endpoint address.
+   * Prometheus endpoint. The response includes summary values and every
+   * parsed vLLM series, while the internal endpoint address remains Host-only.
    */
   metrics(
     request: RpcRequest<{}>,
@@ -86,6 +86,48 @@ export interface LlmApi {
   ): Promise<RpcResponse<{ models: DiscoveredModelView[] }>>
 }
 
+/** Prometheus metric types accepted from a vLLM exposition. */
+export type InferenceMetricType =
+  | 'counter'
+  | 'gauge'
+  | 'histogram'
+  | 'summary'
+  | 'untyped'
+  | 'info'
+  | 'stateset'
+  | 'gaugehistogram'
+  | 'unknown'
+
+/** One decoded label on a Prometheus series. */
+export interface InferenceMetricLabelView {
+  /** Prometheus label name. */
+  name: string
+  /** Decoded Prometheus label value. */
+  value: string
+}
+
+/** One vLLM Prometheus sample, preserving its exact numeric token. */
+export interface InferenceMetricSeriesView {
+  /** Exact metric name, including a histogram suffix when present. */
+  metric: string
+  /** Labels that distinguish this series from its siblings. */
+  labels: InferenceMetricLabelView[]
+  /** Prometheus numeric token, including `NaN` and infinities. */
+  value: string
+}
+
+/** One declared or inferred vLLM Prometheus metric family. */
+export interface InferenceMetricFamilyView {
+  /** Family name from `TYPE`/`HELP`, or the exact sample name when undeclared. */
+  name: string
+  /** Provider description from `HELP`, when exposed. */
+  help?: string
+  /** Provider metric type from `TYPE`, when recognized. */
+  type?: InferenceMetricType
+  /** Every sample assigned to this family. */
+  series: InferenceMetricSeriesView[]
+}
+
 /** Authenticated browser projection of one vLLM metrics sample. */
 export interface InferenceMetricsView {
   /** Recognized inference backend. */
@@ -106,6 +148,8 @@ export interface InferenceMetricsView {
   generationTokensTotal?: number
   /** Cumulative scheduler preemptions, when exposed. */
   preemptionsTotal?: number
+  /** Complete parsed vLLM metric families from the bounded exposition. */
+  metricFamilies: InferenceMetricFamilyView[]
 }
 
 /** Wire view of one model an interrogated endpoint advertises. */

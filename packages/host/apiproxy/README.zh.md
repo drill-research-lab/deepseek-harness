@@ -64,7 +64,7 @@ Workspace 列表与 Session 列表是相互独立的重连基线。`workspace.cr
 
 ## 推理指标
 
-`llm.metrics` 由宿主获取已配置的 vLLM Prometheus 端点，返回运行中与等待中的请求汇总值，以及可用的 KV 缓存、累计 token 和抢占指标。部署通过 `inferenceMetricsUrl` 提供完整的 HTTP(S) URL；Web 组合包从 `DSH_INFERENCE_METRICS_URL` 读取它。`inferenceMetricsTimeoutMs`、`inferenceMetricsMaxBytes` 与 `inferenceMetricsRefreshMs` 限制单次抓取并控制浏览器成功取得数据后的刷新频率。浏览器不会收到端点 URL。未配置、抓取失败、响应过大或必要 gauge 无效都会产生不同的业务错误；整个 `/api` 路由仍受载体的认证与信任防线保护。
+`llm.metrics` 由宿主获取已配置的 vLLM Prometheus 端点，返回运行中与等待中的请求汇总值、可用的 KV 缓存与累计 token／抢占指标，以及按 `HELP`／`TYPE` 元数据分组的每个可解析 vLLM 数值序列。序列保留解码后的标签与原始数值 token，包括无限值与 `NaN`；非 vLLM 的进程／运行时指标会被排除。部署通过 `inferenceMetricsUrl` 提供完整的 HTTP(S) URL；Web 组合包从 `DSH_INFERENCE_METRICS_URL` 读取它。`inferenceMetricsTimeoutMs`、`inferenceMetricsMaxBytes` 与 `inferenceMetricsRefreshMs` 限制单次抓取并控制浏览器成功取得数据后的刷新频率，解析结果另有 10,000 条序列上限。浏览器不会收到端点 URL。未配置、抓取失败、响应过大或格式错误、必要 gauge 无效都会产生不同的业务错误；整个 `/api` 路由仍受载体的认证与信任防线保护。
 
 ## 载体层（`/client` + 根路径）
 

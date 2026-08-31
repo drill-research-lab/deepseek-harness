@@ -762,6 +762,7 @@ describe('config unary surface', () => {
           requestsRunning: 2,
           requestsWaiting: 3,
           kvCacheUsage: 0.5,
+          metricFamilies: [],
         })),
         discoverModels: record('llm.discoverModels', r => ok(r, { models: [{ id: 'acme-large', contextWindow: 65536 }] })),
       },
@@ -795,6 +796,7 @@ describe('config unary surface', () => {
       value: {
         backend: 'vllm', sampledAt: 123, refreshAfterMs: 2000,
         requestsRunning: 2, requestsWaiting: 3, kvCacheUsage: 0.5,
+        metricFamilies: [],
       },
     })
     const discovered = await c.llm.discoverModels({

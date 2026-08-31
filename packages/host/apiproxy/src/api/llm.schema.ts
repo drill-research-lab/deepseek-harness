@@ -39,6 +39,36 @@ export const llmModelsValueSchema = z.object({
 /** llm.metrics request payload. */
 export const llmMetricsRequestSchema = z.object({}) satisfies z.ZodType<Wire<RequestPayload<'llm.metrics'>>>
 
+const inferenceMetricTypeSchema = z.enum([
+  'counter',
+  'gauge',
+  'histogram',
+  'summary',
+  'untyped',
+  'info',
+  'stateset',
+  'gaugehistogram',
+  'unknown',
+])
+
+const inferenceMetricLabelViewSchema = z.object({
+  name: z.string().min(1),
+  value: z.string(),
+})
+
+const inferenceMetricSeriesViewSchema = z.object({
+  metric: z.string().min(1),
+  labels: z.array(inferenceMetricLabelViewSchema),
+  value: z.string().min(1),
+})
+
+const inferenceMetricFamilyViewSchema = z.object({
+  name: z.string().min(1),
+  help: z.string().optional(),
+  type: inferenceMetricTypeSchema.optional(),
+  series: z.array(inferenceMetricSeriesViewSchema),
+})
+
 /** llm.metrics response value. */
 export const llmMetricsValueSchema = z.object({
   backend: z.literal('vllm'),
@@ -50,6 +80,7 @@ export const llmMetricsValueSchema = z.object({
   promptTokensTotal: z.number().nonnegative().optional(),
   generationTokensTotal: z.number().nonnegative().optional(),
   preemptionsTotal: z.number().nonnegative().optional(),
+  metricFamilies: z.array(inferenceMetricFamilyViewSchema),
 }) satisfies z.ZodType<Wire<InferenceMetricsView>>
 
 /** DiscoveredModelView row of llm.discoverModels. */

@@ -16,13 +16,23 @@ import {
 
 const METRICS = `
 # HELP vllm:num_requests_running Number of requests currently running.
+# TYPE vllm:num_requests_running gauge
 vllm:num_requests_running{engine="0"} 2
 vllm:num_requests_running{engine="1"} 1
+# HELP vllm:num_requests_waiting Number of requests waiting to be processed.
+# TYPE vllm:num_requests_waiting gauge
 vllm:num_requests_waiting 4
 vllm:kv_cache_usage_perc 0.375
 vllm:prompt_tokens_total 1200
 vllm:generation_tokens_total 345
 vllm:num_preemptions_total 6
+# HELP vllm:time_to_first_token_seconds Histogram of time to first token\\n(in seconds).
+# TYPE vllm:time_to_first_token_seconds histogram
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.5"} 8
+vllm:time_to_first_token_seconds_bucket{engine="0",le="+Inf"} 10
+vllm:time_to_first_token_seconds_sum{engine="0"} 3.25
+vllm:time_to_first_token_seconds_count{engine="0"} 10
+python_gc_objects_collected_total 99
 `
 
 afterEach(() => { vi.unstubAllGlobals() })
@@ -46,7 +56,8 @@ async function harness(overrides: Partial<Parameters<typeof createApiProxy>[1]> 
 describe('vLLM metrics parser', () => {
   it('aggregates labeled request gauges and reads dashboard counters', () => {
     expect(prometheusMetric(METRICS, 'vllm:num_requests_running')).toBe(3)
-    expect(parseVllmMetrics(METRICS, 123)).toEqual({
+    const metrics = parseVllmMetrics(METRICS, 123)
+    expect(metrics).toMatchObject({
       backend: 'vllm',
       sampledAt: 123,
       requestsRunning: 3,
@@ -56,6 +67,43 @@ describe('vLLM metrics parser', () => {
       generationTokensTotal: 345,
       preemptionsTotal: 6,
     })
+    expect(metrics.metricFamilies.find(family => family.name === 'vllm:num_requests_running')).toEqual({
+      name: 'vllm:num_requests_running',
+      help: 'Number of requests currently running.',
+      type: 'gauge',
+      series: [
+        { metric: 'vllm:num_requests_running', labels: [{ name: 'engine', value: '0' }], value: '2' },
+        { metric: 'vllm:num_requests_running', labels: [{ name: 'engine', value: '1' }], value: '1' },
+      ],
+    })
+    expect(metrics.metricFamilies.find(family => family.name === 'vllm:time_to_first_token_seconds')).toEqual({
+      name: 'vllm:time_to_first_token_seconds',
+      help: 'Histogram of time to first token\n(in seconds).',
+      type: 'histogram',
+      series: [
+        {
+          metric: 'vllm:time_to_first_token_seconds_bucket',
+          labels: [{ name: 'engine', value: '0' }, { name: 'le', value: '0.5' }],
+          value: '8',
+        },
+        {
+          metric: 'vllm:time_to_first_token_seconds_bucket',
+          labels: [{ name: 'engine', value: '0' }, { name: 'le', value: '+Inf' }],
+          value: '10',
+        },
+        {
+          metric: 'vllm:time_to_first_token_seconds_sum',
+          labels: [{ name: 'engine', value: '0' }],
+          value: '3.25',
+        },
+        {
+          metric: 'vllm:time_to_first_token_seconds_count',
+          labels: [{ name: 'engine', value: '0' }],
+          value: '10',
+        },
+      ],
+    })
+    expect(metrics.metricFamilies.some(family => family.name.startsWith('python_'))).toBe(false)
   })
 
   it('accepts underscore-prefixed vLLM metrics and omits an invalid optional ratio', () => {
@@ -63,7 +111,7 @@ describe('vLLM metrics parser', () => {
 vllm_num_requests_running 1
 vllm_num_requests_waiting 0
 vllm_gpu_cache_usage_perc 8
-`, 456)).toEqual({
+`, 456)).toMatchObject({
       backend: 'vllm', sampledAt: 456, requestsRunning: 1, requestsWaiting: 0,
     })
   })
@@ -81,15 +129,35 @@ vllm:num_requests_waiting 0
   })
 
   it('omits invalid negative optional counters', () => {
-    expect(parseVllmMetrics(`
+    const metrics = parseVllmMetrics(`
 vllm:num_requests_running 1
 vllm:num_requests_waiting 0
 vllm:prompt_tokens_total -1
 vllm:generation_tokens_total -2
 vllm:num_preemptions_total -3
-`, 789)).toEqual({
+`, 789)
+    expect(metrics).toMatchObject({
       backend: 'vllm', sampledAt: 789, requestsRunning: 1, requestsWaiting: 0,
     })
+    expect(metrics).not.toHaveProperty('promptTokensTotal')
+    expect(metrics).not.toHaveProperty('generationTokensTotal')
+    expect(metrics).not.toHaveProperty('preemptionsTotal')
+  })
+
+  it('rejects a malformed vLLM sample instead of silently hiding it', () => {
+    expect(() => parseVllmMetrics(`
+vllm:num_requests_running{engine="unterminated} 1
+vllm:num_requests_waiting 0
+`)).toThrow(expect.objectContaining<Partial<InferenceMetricsError>>({ code: 'inference-metrics-invalid' }))
+  })
+
+  it('rejects an otherwise valid exposition above the retained-series limit', () => {
+    const samples = Array.from({ length: 10_001 }, (_, index) => `vllm:test_metric{id="${String(index)}"} 1`)
+    expect(() => parseVllmMetrics(`
+vllm:num_requests_running 0
+vllm:num_requests_waiting 0
+${samples.join('\n')}
+`)).toThrow(expect.objectContaining<Partial<InferenceMetricsError>>({ code: 'inference-metrics-too-large' }))
   })
 })
 

@@ -1,5 +1,13 @@
 /** Bounded vLLM Prometheus retrieval for the browser inference dashboard. */
 
+import type {
+  InferenceMetricFamilyView,
+  InferenceMetricLabelView,
+  InferenceMetricSeriesView,
+  InferenceMetricType,
+  InferenceMetricsView,
+} from './api/llm.ts'
+
 /** Default deadline for one metrics scrape. */
 export const DEFAULT_INFERENCE_METRICS_TIMEOUT_MS = 3_000
 
@@ -9,25 +17,11 @@ export const DEFAULT_INFERENCE_METRICS_MAX_BYTES = 1_048_576
 /** Default successful browser refresh interval. */
 export const DEFAULT_INFERENCE_METRICS_REFRESH_MS = 2_000
 
-/** Metrics returned to the authenticated browser. */
-export interface InferenceMetricsSample {
-  /** Backend whose metric names were recognized. */
-  backend: 'vllm'
-  /** Host sample time in Unix milliseconds. */
-  sampledAt: number
-  /** Requests in model execution batches. */
-  requestsRunning: number
-  /** Requests accepted but waiting for processing. */
-  requestsWaiting: number
-  /** KV-cache occupancy as a fraction from zero through one, when exposed. */
-  kvCacheUsage?: number
-  /** Cumulative prompt tokens, when exposed. */
-  promptTokensTotal?: number
-  /** Cumulative generated tokens, when exposed. */
-  generationTokensTotal?: number
-  /** Cumulative scheduler preemptions, when exposed. */
-  preemptionsTotal?: number
-}
+/** Maximum parsed vLLM samples retained from one bounded response. */
+export const MAX_INFERENCE_METRIC_SERIES = 10_000
+
+/** Metrics returned to the authenticated browser before refresh metadata is added. */
+export type InferenceMetricsSample = Omit<InferenceMetricsView, 'refreshAfterMs'>
 
 /** Stable failure codes returned by the dashboard endpoint. */
 export type InferenceMetricsFailureCode =
@@ -86,6 +80,173 @@ function vllmMetric(body: string, name: string): number | undefined {
     ?? prometheusMetric(body, `vllm_${name}`)
 }
 
+const PROMETHEUS_NAME = '[a-zA-Z_:][a-zA-Z0-9_:]*'
+const PROMETHEUS_LABEL_NAME = /^[a-zA-Z_][a-zA-Z0-9_]*/
+const PROMETHEUS_VALUE = /^(?:NaN|[+-]?Inf|[-+]?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+))(?:[eE][-+]?\d+)?)$/
+const PROMETHEUS_TYPES = new Set<InferenceMetricType>([
+  'counter',
+  'gauge',
+  'histogram',
+  'summary',
+  'untyped',
+  'info',
+  'stateset',
+  'gaugehistogram',
+  'unknown',
+])
+
+interface MetricMetadata {
+  help?: string
+  type?: InferenceMetricType
+}
+
+/** Decode the escape sequences allowed in Prometheus HELP text. */
+function decodeHelp(value: string): string {
+  return value.replace(/\\([\\n])/g, (_whole, escapedValue: string) => escapedValue === 'n' ? '\n' : '\\')
+}
+
+/** Decode a Prometheus label set without accepting partial or malformed input. */
+function parseLabels(source: string): InferenceMetricLabelView[] | undefined {
+  const labels: InferenceMetricLabelView[] = []
+  let offset = 0
+  const whitespace = (): void => {
+    while (source[offset] === ' ' || source[offset] === '\t') offset += 1
+  }
+  whitespace()
+  while (offset < source.length) {
+    const nameMatch = PROMETHEUS_LABEL_NAME.exec(source.slice(offset))
+    if (nameMatch === null) return undefined
+    const name = nameMatch[0]
+    offset += name.length
+    whitespace()
+    if (source[offset] !== '=') return undefined
+    offset += 1
+    whitespace()
+    if (source[offset] !== '"') return undefined
+    offset += 1
+    let value = ''
+    let closed = false
+    while (offset < source.length) {
+      const character = source[offset]
+      if (character === undefined) return undefined
+      offset += 1
+      if (character === '"') {
+        closed = true
+        break
+      }
+      if (character !== '\\') {
+        value += character
+        continue
+      }
+      const escapedValue = source[offset]
+      offset += 1
+      if (escapedValue === 'n') value += '\n'
+      else if (escapedValue === '\\' || escapedValue === '"') value += escapedValue
+      else return undefined
+    }
+    if (!closed) return undefined
+    labels.push({ name, value })
+    whitespace()
+    if (offset === source.length) break
+    if (source[offset] !== ',') return undefined
+    offset += 1
+    whitespace()
+  }
+  return labels
+}
+
+/** Parse one Prometheus sample line whose metric name has already been scoped. */
+function parseSeries(line: string): InferenceMetricSeriesView | undefined {
+  const sample = new RegExp(
+    `^(${PROMETHEUS_NAME})(?:\\{(.*)\\})?[ \\t]+([^ \\t]+)(?:[ \\t]+[+-]?\\d+)?[ \\t]*(?:#.*)?$`,
+  ).exec(line)
+  if (sample === null) return undefined
+  const metric = sample[1]
+  const value = sample[3]
+  if (metric === undefined || value === undefined || !PROMETHEUS_VALUE.test(value)) return undefined
+  const labels = sample[2] === undefined ? [] : parseLabels(sample[2])
+  if (labels === undefined) return undefined
+  return { metric, labels, value }
+}
+
+/** Associate histogram and summary child samples with their declared family. */
+function declaredFamilyName(
+  metric: string,
+  metadata: ReadonlyMap<string, MetricMetadata>,
+): string {
+  if (metadata.has(metric)) return metric
+  for (const [name, item] of metadata) {
+    if (item.type !== 'histogram' && item.type !== 'summary' && item.type !== 'gaugehistogram') continue
+    if (metric === `${name}_bucket` || metric === `${name}_sum` || metric === `${name}_count`) return name
+  }
+  return metric
+}
+
+/** Parse every vLLM family from one Prometheus text exposition. */
+function parseMetricFamilies(body: string): InferenceMetricFamilyView[] {
+  const metadata = new Map<string, MetricMetadata>()
+  const series: InferenceMetricSeriesView[] = []
+  const helpRow = new RegExp(`^# HELP (${PROMETHEUS_NAME})(?: (.*))?$`)
+  const typeRow = new RegExp(`^# TYPE (${PROMETHEUS_NAME}) ([a-zA-Z_]+)$`)
+  for (const rawLine of body.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (line.length === 0) continue
+    const help = helpRow.exec(line)
+    const helpName = help?.[1]
+    if (helpName !== undefined && /^vllm[:_]/.test(helpName)) {
+      const item = metadata.get(helpName) ?? {}
+      item.help = decodeHelp(help?.[2] ?? '')
+      metadata.set(helpName, item)
+      continue
+    }
+    const type = typeRow.exec(line)
+    const typeName = type?.[1]
+    const typeValue = type?.[2]
+    if (typeName !== undefined && typeValue !== undefined && /^vllm[:_]/.test(typeName)) {
+      const item = metadata.get(typeName) ?? {}
+      if (PROMETHEUS_TYPES.has(typeValue as InferenceMetricType)) {
+        item.type = typeValue as InferenceMetricType
+      }
+      metadata.set(typeName, item)
+      continue
+    }
+    if (!/^vllm[:_]/.test(line)) continue
+    const parsed = parseSeries(line)
+    if (parsed === undefined) {
+      throw new InferenceMetricsError(
+        'The configured endpoint exposed malformed vLLM metrics.',
+        'inference-metrics-invalid',
+      )
+    }
+    series.push(parsed)
+    if (series.length > MAX_INFERENCE_METRIC_SERIES) {
+      throw new InferenceMetricsError(
+        `The metrics response exceeds the ${String(MAX_INFERENCE_METRIC_SERIES)} series limit.`,
+        'inference-metrics-too-large',
+      )
+    }
+  }
+
+  const families = new Map<string, InferenceMetricFamilyView>()
+  for (const [name, item] of metadata) {
+    families.set(name, {
+      name,
+      ...item.help === undefined ? {} : { help: item.help },
+      ...item.type === undefined ? {} : { type: item.type },
+      series: [],
+    })
+  }
+  for (const item of series) {
+    const name = declaredFamilyName(item.metric, metadata)
+    const family = families.get(name) ?? { name, series: [] }
+    family.series.push(item)
+    families.set(name, family)
+  }
+  return [...families.values()]
+    .filter(family => family.series.length > 0)
+    .sort((left, right) => left.name.localeCompare(right.name))
+}
+
 /**
  * Parse the dashboard subset of a vLLM `/metrics` response.
  * @param body - complete bounded Prometheus exposition.
@@ -94,6 +255,7 @@ function vllmMetric(body: string, name: string): number | undefined {
  * @throws {@link InferenceMetricsError} when the request gauges are absent or invalid.
  */
 export function parseVllmMetrics(body: string, sampledAt = Date.now()): InferenceMetricsSample {
+  const metricFamilies = parseMetricFamilies(body)
   const requestsRunning = vllmMetric(body, 'num_requests_running')
   const requestsWaiting = vllmMetric(body, 'num_requests_waiting')
   if (requestsRunning === undefined || requestsWaiting === undefined
@@ -127,6 +289,7 @@ export function parseVllmMetrics(body: string, sampledAt = Date.now()): Inferenc
     ...promptTokensTotal === undefined ? {} : { promptTokensTotal },
     ...generationTokensTotal === undefined ? {} : { generationTokensTotal },
     ...preemptionsTotal === undefined ? {} : { preemptionsTotal },
+    metricFamilies,
   }
 }
 

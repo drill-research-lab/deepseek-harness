@@ -32,6 +32,32 @@ describe('InferenceDashboard', () => {
           backend: 'vllm', sampledAt: 0, refreshAfterMs: 60_000,
           requestsRunning: 2, requestsWaiting: 7, kvCacheUsage: 0.42,
           promptTokensTotal: 1200, generationTokensTotal: 345, preemptionsTotal: 6,
+          metricFamilies: [
+            {
+              name: 'vllm:num_requests_running',
+              help: 'Number of requests currently running.',
+              type: 'gauge',
+              series: [
+                {
+                  metric: 'vllm:num_requests_running',
+                  labels: [{ name: 'engine', value: '0' }, { name: 'model_name', value: 'acme/model' }],
+                  value: '2',
+                },
+              ],
+            },
+            {
+              name: 'vllm:time_to_first_token_seconds',
+              help: 'Time to first token.',
+              type: 'histogram',
+              series: [
+                {
+                  metric: 'vllm:time_to_first_token_seconds_bucket',
+                  labels: [{ name: 'le', value: '+Inf' }],
+                  value: '10',
+                },
+              ],
+            },
+          ],
         },
       },
     })))
@@ -44,6 +70,16 @@ describe('InferenceDashboard', () => {
     expect(requests.textContent).toContain('not the current task’s queue position')
     expect(screen.getByRole('progressbar', { name: 'KV cache' }).getAttribute('aria-valuenow')).toBe('42')
     expect(screen.getByRole('article', { name: 'Cumulative tokens' }).textContent).toContain('1,200')
+    expect(screen.getByRole('heading', { name: 'All vLLM metrics' })).toBeTruthy()
+    expect(screen.getByRole('status').textContent).toContain('2 families · 2 series')
+    expect(screen.getByText('{engine="0", model_name="acme/model"}')).toBeTruthy()
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Filter metrics' }), {
+      target: { value: 'histogram' },
+    })
+    expect(screen.getByRole('status').textContent).toContain('1 families · 1 matching series')
+    expect(screen.queryByText('vllm:num_requests_running')).toBeNull()
+    expect(screen.getAllByText('vllm:time_to_first_token_seconds_bucket')).toHaveLength(1)
   })
 
   it('explains an unconfigured deployment and retries a failed endpoint', async () => {
@@ -66,6 +102,7 @@ describe('InferenceDashboard', () => {
           value: {
             backend: 'vllm', sampledAt: 0, refreshAfterMs: 60_000,
             requestsRunning: 1, requestsWaiting: 0,
+            metricFamilies: [],
           },
         },
       })

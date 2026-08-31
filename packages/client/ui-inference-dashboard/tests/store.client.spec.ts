@@ -15,6 +15,7 @@ const sample = {
   requestsRunning: 2,
   requestsWaiting: 5,
   kvCacheUsage: 0.5,
+  metricFamilies: [],
 }
 
 describe('InferenceDashboardController', () => {

@@ -19,12 +19,19 @@ const MODE = webSnapshotMode()
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/inference-dashboard', import.meta.url))
 const READY_EXPECTED = join(SNAPSHOT_DIR, 'ready.expected.md')
 const METRICS = `
-vllm:num_requests_running 2
-vllm:num_requests_waiting 7
+# HELP vllm:num_requests_running Number of requests currently running.
+# TYPE vllm:num_requests_running gauge
+vllm:num_requests_running{engine="0",model_name="test-model"} 2
+# HELP vllm:num_requests_waiting Number of requests waiting to be processed.
+# TYPE vllm:num_requests_waiting gauge
+vllm:num_requests_waiting{engine="0",model_name="test-model"} 7
 vllm:kv_cache_usage_perc 0.42
 vllm:prompt_tokens_total 1200
 vllm:generation_tokens_total 345
 vllm:num_preemptions_total 6
+# HELP vllm:time_to_first_token_seconds Time to first token.
+# TYPE vllm:time_to_first_token_seconds histogram
+vllm:time_to_first_token_seconds_bucket{engine="0",model_name="test-model",le="+Inf"} 10
 `
 
 function listen(server: Server): Promise<number> {
@@ -105,6 +112,9 @@ describe('web e2e: embedded inference dashboard', () => {
     expect(await requests.textContent()).toContain('运行中2')
     expect(await requests.textContent()).toContain('等待中7')
     expect(await dialog.getByRole('progressbar', { name: 'KV 缓存' }).getAttribute('aria-valuenow')).toBe('42')
+    await dialog.getByRole('heading', { name: '全部 vLLM 指标' }).waitFor()
+    expect(await dialog.getByRole('status').textContent()).toContain('7 个指标组 · 7 条序列')
+    expect(await dialog.getByText('{engine="0", model_name="test-model"}').count()).toBe(2)
 
     const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(READY_EXPECTED, snapshot, MODE)

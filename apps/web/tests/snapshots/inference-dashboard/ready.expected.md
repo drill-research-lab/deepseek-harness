@@ -46,3 +46,128 @@
       - definition: "345"
       - term: 抢占次数
       - definition: "6"
+    - region "全部 vLLM 指标":
+      - heading "全部 vLLM 指标" [level=3]
+      - paragraph: 完整显示端点公开的每个 vLLM 数值序列及其标签。
+      - text: 筛选指标
+      - searchbox "筛选指标":
+        - /placeholder: 名称、类型、标签或值
+      - status: 7 个指标组 · 7 条序列
+      - article:
+        - code: vllm:generation_tokens_total
+        - table:
+          - rowgroup:
+            - row "指标 标签 值":
+              - columnheader "指标"
+              - columnheader "标签"
+              - columnheader "值"
+          - rowgroup:
+            - row "vllm:generation_tokens_total 无 345":
+              - cell "vllm:generation_tokens_total":
+                - code: vllm:generation_tokens_total
+              - cell "无":
+                - code: 无
+              - cell "345":
+                - code: "345"
+      - article:
+        - code: vllm:kv_cache_usage_perc
+        - table:
+          - rowgroup:
+            - row "指标 标签 值":
+              - columnheader "指标"
+              - columnheader "标签"
+              - columnheader "值"
+          - rowgroup:
+            - row "vllm:kv_cache_usage_perc 无 0.42":
+              - cell "vllm:kv_cache_usage_perc":
+                - code: vllm:kv_cache_usage_perc
+              - cell "无":
+                - code: 无
+              - cell "0.42":
+                - code: "0.42"
+      - article:
+        - code: vllm:num_preemptions_total
+        - table:
+          - rowgroup:
+            - row "指标 标签 值":
+              - columnheader "指标"
+              - columnheader "标签"
+              - columnheader "值"
+          - rowgroup:
+            - row "vllm:num_preemptions_total 无 6":
+              - cell "vllm:num_preemptions_total":
+                - code: vllm:num_preemptions_total
+              - cell "无":
+                - code: 无
+              - cell "6":
+                - code: "6"
+      - article:
+        - code: vllm:num_requests_running
+        - text: gauge
+        - paragraph: Number of requests currently running.
+        - table:
+          - rowgroup:
+            - row "指标 标签 值":
+              - columnheader "指标"
+              - columnheader "标签"
+              - columnheader "值"
+          - rowgroup:
+            - 'row "vllm:num_requests_running {engine=\"0\", model_name=\"test-model\"} 2"':
+              - cell "vllm:num_requests_running":
+                - code: vllm:num_requests_running
+              - 'cell "{engine=\"0\", model_name=\"test-model\"}"':
+                - 'code: {engine="0", model_name="test-model"}'
+              - cell "2":
+                - code: "2"
+      - article:
+        - code: vllm:num_requests_waiting
+        - text: gauge
+        - paragraph: Number of requests waiting to be processed.
+        - table:
+          - rowgroup:
+            - row "指标 标签 值":
+              - columnheader "指标"
+              - columnheader "标签"
+              - columnheader "值"
+          - rowgroup:
+            - 'row "vllm:num_requests_waiting {engine=\"0\", model_name=\"test-model\"} 7"':
+              - cell "vllm:num_requests_waiting":
+                - code: vllm:num_requests_waiting
+              - 'cell "{engine=\"0\", model_name=\"test-model\"}"':
+                - 'code: {engine="0", model_name="test-model"}'
+              - cell "7":
+                - code: "7"
+      - article:
+        - code: vllm:prompt_tokens_total
+        - table:
+          - rowgroup:
+            - row "指标 标签 值":
+              - columnheader "指标"
+              - columnheader "标签"
+              - columnheader "值"
+          - rowgroup:
+            - row "vllm:prompt_tokens_total 无 1200":
+              - cell "vllm:prompt_tokens_total":
+                - code: vllm:prompt_tokens_total
+              - cell "无":
+                - code: 无
+              - cell "1200":
+                - code: "1200"
+      - article:
+        - code: vllm:time_to_first_token_seconds
+        - text: histogram
+        - paragraph: Time to first token.
+        - table:
+          - rowgroup:
+            - row "指标 标签 值":
+              - columnheader "指标"
+              - columnheader "标签"
+              - columnheader "值"
+          - rowgroup:
+            - 'row "vllm:time_to_first_token_seconds_bucket {engine=\"0\", model_name=\"test-model\", le=\"+Inf\"} 10"':
+              - cell "vllm:time_to_first_token_seconds_bucket":
+                - code: vllm:time_to_first_token_seconds_bucket
+              - 'cell "{engine=\"0\", model_name=\"test-model\", le=\"+Inf\"}"':
+                - 'code: {engine="0", model_name="test-model", le="+Inf"}'
+              - cell "10":
+                - code: "10"

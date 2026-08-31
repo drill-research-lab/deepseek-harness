@@ -291,6 +291,7 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
             value: {
               backend: 'vllm', sampledAt: 0, refreshAfterMs: 2000,
               requestsRunning: 0, requestsWaiting: 0,
+              metricFamilies: [],
             },
           },
         }
