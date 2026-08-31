@@ -18,8 +18,12 @@ import { newEnglishPage, saveFailureShot } from './support.ts'
 /** controlled-input fill helper: see comment */
 async function fillReact(page: Page, testId: string, value: string): Promise<void> {
   await page.getByTestId(testId).evaluate((input, text) => {
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
-    setter?.call(input, text)
+    // The native setter updates React's value tracker so the dispatched input
+    // event is not deduped; it is always invoked with an explicit receiver.
+    // oxlint-disable-next-line typescript/unbound-method -- `value` is an accessor; `.set` is only ever called bound
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!
+      .set as (this: HTMLInputElement, text: string) => void
+    setter.call(input as HTMLInputElement, text)
     input.dispatchEvent(new Event('input', { bubbles: true }))
   }, value)
 }
@@ -59,12 +63,12 @@ describe('web e2e: pipelines create, run, and pause', () => {
     await expect.poll(() => emptyState.count(), { timeout: 15_000 }).toBeGreaterThan(0)
 
     // Gallery form: name + query are the required fields; the rest ship defaults.
-    await page.getByTestId('pipeline-new').evaluate((button) => { button.click() })
+    await page.getByTestId('pipeline-new').evaluate((button) => { (button as HTMLElement).click() })
     const createView = page.getByTestId('pipeline-create')
     await createView.waitFor({ timeout: 10_000 })
     await fillReact(page, 'create-name', 'Lab Digest')
     await fillReact(page, 'create-query', 'LLM agents')
-    await createView.getByRole('button', { name: 'Create' }).evaluate((button) => { button.click() })
+    await createView.getByRole('button', { name: 'Create' }).evaluate((button) => { (button as HTMLElement).click() })
 
     // The editor opens on the created pipeline with the DAG canvas mounted.
     const editor = page.getByTestId('pipeline-editor')
@@ -74,23 +78,23 @@ describe('web e2e: pipelines create, run, and pause', () => {
 
     // Run now settles a real run record on the host (arXiv fetch included);
     // either status proves the RPC -> engine -> record loop.
-    await editor.getByRole('button', { name: 'Run now' }).evaluate((button) => { button.click() })
+    await editor.getByRole('button', { name: 'Run now' }).evaluate((button) => { (button as HTMLElement).click() })
     const runRow = editor.locator('[data-testid^="run-"]').first()
     await runRow.waitFor({ timeout: 60_000 })
-    await runRow.evaluate((button) => { button.click() })
+    await runRow.evaluate((button) => { (button as HTMLElement).click() })
     await page.getByTestId('run-detail').waitFor({ timeout: 10_000 })
     expect(await page.getByTestId('run-detail').textContent()).toMatch(/Nodes/iu)
 
     // Close the editor; the sidebar block lists the created pipeline and the
     // pause toggle flips to its resume glyph without an error. The fixture
     // mints its own ids (fx-pipeline-N), so the row is located by name.
-    await editor.getByRole('button', { name: 'Close', exact: true }).evaluate((button) => { button.click() })
+    await editor.getByRole('button', { name: 'Close', exact: true }).evaluate((button) => { (button as HTMLElement).click() })
     const row = page.locator('[data-testid^="pipeline-"]').filter({ hasText: 'Lab Digest' })
     await row.waitFor({ timeout: 10_000 })
     const snapshot = await captureStableAria(page, '[data-testid="pipelines-nav"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(SIDEBAR_EXPECTED, snapshot, MODE)
 
-    await page.getByRole('button', { name: 'Pause', exact: true }).evaluate((button) => { button.click() })
+    await page.getByRole('button', { name: 'Pause', exact: true }).evaluate((button) => { (button as HTMLElement).click() })
     await expect.poll(() => page.getByRole('button', { name: 'Resume', exact: true }).count(), { timeout: 10_000 }).toBe(1)
     expect(tripwire.pageErrors).toEqual([])
   }, 180_000)
