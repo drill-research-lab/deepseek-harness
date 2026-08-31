@@ -192,6 +192,10 @@ class TestPersistence extends SessionPersistence {
     return Promise.resolve([...this.durable.values()].map(value => value.meta).filter(meta => this.ownerVisible(meta)))
   }
 
+  async forget(id: SessionId): Promise<boolean> {
+    return this.durable.delete(id)
+  }
+
   async listSnapshots(): Promise<SessionPersistenceSnapshot[]> {
     await this.onListSnapshots?.()
     return [...this.durable.values()]

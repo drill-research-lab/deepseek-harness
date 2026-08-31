@@ -13,6 +13,11 @@ import * as checkpointPolicy from '../src/index.ts'
 const contexts: Context[] = []
 
 class TestPersistence extends SessionPersistence {
+
+  async forget(_id: SessionId): Promise<boolean> {
+    return false
+  }
+
   override readonly supportsRawArtifacts = false
 
   locate(_meta: SessionHeader): undefined { return undefined }

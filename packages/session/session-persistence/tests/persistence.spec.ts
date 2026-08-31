@@ -68,6 +68,11 @@ interface CoordinatorInternals {
  * durable behavior is covered by the JSONL and SQLite backends.
  */
 class MemoryPersistence extends SessionPersistence implements PersistenceBackend<never> {
+
+  async forget(id: SessionId): Promise<boolean> {
+    return this.store.delete(String(id))
+  }
+
   override readonly supportsRawArtifacts = false
 
   static inject = ['sessions']
