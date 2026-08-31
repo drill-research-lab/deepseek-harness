@@ -51,6 +51,7 @@ function view(over: Partial<WritingViewInjected> = {}): WritingViewInjected {
     restore: vi.fn().mockResolvedValue('\\documentclass{article}'),
     select,
     renameReport,
+    openConversation: vi.fn(),
     hooks: { reportSelection: { getSnapshot, subscribe } },
     ...over,
   }
@@ -193,11 +194,12 @@ describe('WritingView', () => {
     prompt.mockRestore()
   })
 
-  it('closes the overlay and toggles the chat bubble', async () => {
-    const { container } = render(<WritingView {...props(view())} />)
+  it('opens the conversation from the chat bubble and closes the overlay', async () => {
+    const actions = view()
+    render(<WritingView {...props(actions)} />)
     await waitFor(() => expect(screen.getByText('☰')).toBeTruthy())
     fireEvent.click(screen.getByText('💬'))
-    expect(container.querySelector('[class*="chatDrawer"]')).toBeTruthy()
+    expect(actions.openConversation).toHaveBeenCalled()
     fireEvent.click(screen.getByTitle('close'))
     expect(state.selectedReportId).toBeUndefined()
   })

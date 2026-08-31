@@ -39,6 +39,8 @@ export interface WritingViewInjected {
   select(reportId: string | undefined): void
   /** Rename one report in the shared list in place. */
   renameReport(reportId: string, title: string): void
+  /** Open the agent conversation (switch to the chat view). */
+  openConversation(): void
   /** Report list + selection observable, bound to `useReportSelection`. */
   hooks: { readonly reportSelection: HostObservable<WritingReportsState> }
 }
