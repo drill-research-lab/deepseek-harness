@@ -40,7 +40,7 @@ export interface HeaderLine {
   cwd?: string
   parentSession?: SessionId
   seedLength?: number
-  origin?: 'subagent'
+  origin?: 'subagent' | 'pipeline'
   delegationDepth: number
   agentPreset?: string
 }
