@@ -76,6 +76,7 @@ export interface RpcMethodMap {
   'llm.providers': LlmApi['providers']
   'llm.models': LlmApi['models']
   'llm.metrics': LlmApi['metrics']
+  'llm.resources': LlmApi['resources']
   'llm.discoverModels': LlmApi['discoverModels']
 }
 

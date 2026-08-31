@@ -17,6 +17,25 @@ const sample = {
   kvCacheUsage: 0.5,
 }
 
+const resourceSample = {
+  sampledAt: 456,
+  refreshAfterMs: 2000,
+  gpu: {
+    usagePercent: 12,
+    temperatureC: 47,
+    powerDrawWatts: 9.94,
+    powerLimitWatts: 120,
+    vramUsedMb: 100,
+    vramTotalMb: 200,
+    vramAvailableMb: 100,
+    throttled: false,
+    throttleReason: 'ok',
+    processes: [],
+  },
+  storage: [],
+  networkInterfaces: [],
+}
+
 describe('InferenceDashboardController', () => {
   it('polls at the Host-provided cadence and stops with its owner', async () => {
     vi.useFakeTimers()
@@ -71,6 +90,46 @@ describe('InferenceDashboardController', () => {
         },
       })
     })
+    controller.stop()
+  })
+
+  it('retries resources independently from a failed vLLM poll', async () => {
+    const metrics = vi.fn(() => Promise.resolve({
+      rpcId: 'metrics',
+      result: {
+        ok: false as const,
+        error: { code: 'inference-metrics-unavailable' as const, message: 'vLLM offline', details: {} },
+      },
+    }))
+    const resources = vi.fn()
+      .mockResolvedValueOnce({
+        rpcId: 'resources-1',
+        result: {
+          ok: false,
+          error: { code: 'inference-metrics-unavailable', message: 'SparkDash offline', details: {} },
+        },
+      })
+      .mockResolvedValueOnce({ rpcId: 'resources-2', result: { ok: true, value: resourceSample } })
+    const controller = new InferenceDashboardController({ llm: { metrics, resources } } as never)
+
+    controller.start()
+    await vi.waitFor(() => {
+      expect(controller.resourcesStore.getSnapshot()).toMatchObject({
+        status: 'error', message: 'SparkDash offline',
+      })
+    })
+    controller.retryResources()
+    await vi.waitFor(() => {
+      expect(controller.resourcesStore.getSnapshot()).toMatchObject({
+        status: 'ready',
+        resources: {
+          ...resourceSample,
+          gpuUsageHistory: [12],
+          gpuTemperatureHistory: [47],
+        },
+      })
+    })
+    expect(controller.store.getSnapshot()).toMatchObject({ status: 'error', message: 'vLLM offline' })
     controller.stop()
   })
 

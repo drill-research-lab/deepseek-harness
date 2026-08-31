@@ -65,6 +65,7 @@ import {
 } from '../api/credentials.schema.ts'
 import {
   llmDiscoverModelsRequestSchema, llmMetricsRequestSchema, llmModelsRequestSchema, llmProvidersRequestSchema,
+  llmResourcesRequestSchema,
 } from '../api/llm.schema.ts'
 import {
   subagentHistoryRequestSchema,
@@ -144,6 +145,7 @@ const UNARY_ROUTES: UnaryRoutes = {
   'llm.providers': { schema: llmProvidersRequestSchema, invoke: (api, r) => api.llm.providers(r) },
   'llm.models': { schema: llmModelsRequestSchema, invoke: (api, r) => api.llm.models(r) },
   'llm.metrics': { schema: llmMetricsRequestSchema, invoke: (api, r, signal) => api.llm.metrics(r, signal) },
+  'llm.resources': { schema: llmResourcesRequestSchema, invoke: (api, r, signal) => api.llm.resources(r, signal) },
   'llm.discoverModels': { schema: llmDiscoverModelsRequestSchema, invoke: (api, r, signal) => api.llm.discoverModels(r, signal) },
 }
 
@@ -176,6 +178,8 @@ function fullResponse(narrow: RpcResponse<unknown>): Response {
  * schema/invoker pairing; its invoke face accepts the map-wide request union
  * after JSON parsing.
  */
+// The method key must remain generic so the mapped route retains its request/response correlation.
+// oxlint-disable-next-line typescript/no-unnecessary-type-parameters
 async function handleUnary<K extends keyof RpcMethodMap>(
   api: ApiProxy, method: K, message: ClientRequest, signal: AbortSignal,
 ): Promise<Response> {

@@ -119,6 +119,7 @@ import {
   fetchVllmMetrics,
   InferenceMetricsError,
 } from './inference-metrics.ts'
+import { fetchInferenceResources } from './inference-resources.ts'
 
 /** Page size when history is called without maxMessages. */
 const DEFAULT_MAX_MESSAGES = 50
@@ -682,6 +683,8 @@ export interface ApiProxyDefaults {
   coldBlankProbeMaxBytes?: number
   /** HTTP(S) Prometheus endpoint scraped for the authenticated inference dashboard. */
   inferenceMetricsUrl?: string
+  /** HTTP(S) SparkDash snapshot endpoint scraped for resource panels. */
+  inferenceResourcesUrl?: string
   /** Deadline for one inference metrics scrape. */
   inferenceMetricsTimeoutMs?: number
   /** Maximum bytes accepted from one inference metrics response. */
@@ -1150,6 +1153,13 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     inferenceMetricsUrl = new URL(defaults.inferenceMetricsUrl)
     if (inferenceMetricsUrl.protocol !== 'http:' && inferenceMetricsUrl.protocol !== 'https:') {
       throw new Error('inferenceMetricsUrl must use http: or https:')
+    }
+  }
+  let inferenceResourcesUrl: URL | undefined
+  if (defaults.inferenceResourcesUrl !== undefined) {
+    inferenceResourcesUrl = new URL(defaults.inferenceResourcesUrl)
+    if (inferenceResourcesUrl.protocol !== 'http:' && inferenceResourcesUrl.protocol !== 'https:') {
+      throw new Error('inferenceResourcesUrl must use http: or https:')
     }
   }
   /** The seed model each create/resume declares; re-read so it never goes stale. */
@@ -2078,10 +2088,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
   return {
     auth: {
-      async me(request) {
+      me(request) {
         const user = ctx.get('auth')?.currentUser()
         if (user === undefined) throw new Error('auth.me requires an authenticated request scope')
-        return ok(request, { userId: user.userId, username: user.username })
+        return Promise.resolve(ok(request, { userId: user.userId, username: user.username }))
       },
     },
     sessions: {
@@ -3522,6 +3532,35 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           return err(request, {
             code: 'inference-metrics-unavailable',
             message: 'The inference metrics endpoint could not be read.',
+            details: {},
+          })
+        }
+      },
+
+      async resources(request, signal) {
+        if (inferenceResourcesUrl === undefined) {
+          return err(request, {
+            code: 'inference-metrics-unconfigured',
+            message: 'Inference resources are not configured for this deployment.',
+            details: {},
+          })
+        }
+        const timeout = AbortSignal.timeout(inferenceMetricsTimeoutMs)
+        const scrapeSignal = signal === undefined ? timeout : AbortSignal.any([signal, timeout])
+        try {
+          const sample = await fetchInferenceResources(
+            inferenceResourcesUrl,
+            inferenceMetricsMaxBytes,
+            scrapeSignal,
+          )
+          return ok(request, { ...sample, refreshAfterMs: inferenceMetricsRefreshMs })
+        } catch (error: unknown) {
+          if (error instanceof InferenceMetricsError) {
+            return err(request, { code: error.code, message: error.message, details: {} })
+          }
+          return err(request, {
+            code: 'inference-metrics-unavailable',
+            message: 'The inference resource endpoint could not be read.',
             details: {},
           })
         }

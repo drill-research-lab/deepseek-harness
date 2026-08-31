@@ -2,6 +2,6 @@
 # side as of the last confirmed-consistent state. All languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/client/ui-inference-dashboard/README.md
-README.md: c3f30ad3844b178acc1cfc36c92a0599f9f2b7c9
-README.zh.md: 832cb52ff6d16b1534dfc353a46411c873319ce4
-README.zh-tw.md: f073ac929669a7861eb1accfae062b4ea2968ee7
+README.md: 937688a3118756fbc2d3d4c23e52dcba6afed09d
+README.zh.md: 51108a96f459f4612a884577bcddd44edeaa6e1c
+README.zh-tw.md: 9108202fa5ef909975e2fa910222653c7decc2a7

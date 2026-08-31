@@ -125,6 +125,7 @@
       inject: [ownership]
       config:
         inferenceMetricsUrl: !!js process.env.DSH_INFERENCE_METRICS_URL
+        inferenceResourcesUrl: !!js process.env.DSH_INFERENCE_RESOURCES_URL
 
     - id: cordis-host-runner
       name: '@deepseek-ai/dsh-cordis-host-runner'

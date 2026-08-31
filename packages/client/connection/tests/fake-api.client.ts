@@ -229,6 +229,9 @@ export class FakeApiClient implements IApiClient {
       backend: 'vllm' as const, sampledAt: 0, refreshAfterMs: 2000,
       requestsRunning: 0, requestsWaiting: 0,
     }))),
+    resources: payload => this.record('llm.resources', payload, Promise.resolve(ok({
+      sampledAt: 0, refreshAfterMs: 2000, storage: [], networkInterfaces: [],
+    }))),
     discoverModels: payload => this.record('llm.discoverModels', payload, Promise.resolve(ok({ models: [] }))),
   }
 

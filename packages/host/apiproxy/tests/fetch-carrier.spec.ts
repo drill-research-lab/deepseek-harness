@@ -295,6 +295,15 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
           },
         }
       },
+      async resources(request) {
+        return {
+          rpcId: request.rpcId,
+          result: {
+            ok: true,
+            value: { sampledAt: 0, refreshAfterMs: 2000, storage: [], networkInterfaces: [] },
+          },
+        }
+      },
       async discoverModels(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { models: [] } } }
       },

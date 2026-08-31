@@ -332,8 +332,13 @@ export function parseVllmMetrics(body: string, sampledAt = Date.now()): Inferenc
   }
 }
 
-/** Read a response body without ever retaining more than the configured byte cap. */
-async function boundedText(response: Response, maxBytes: number): Promise<string> {
+/**
+ * Read a response body without retaining more than the configured byte cap.
+ * @param response - upstream HTTP response.
+ * @param maxBytes - maximum complete body size.
+ * @returns decoded response text.
+ */
+export async function boundedText(response: Response, maxBytes: number): Promise<string> {
   const declared = Number(response.headers.get('content-length') ?? Number.NaN)
   if (Number.isFinite(declared) && declared > maxBytes) {
     throw new InferenceMetricsError(

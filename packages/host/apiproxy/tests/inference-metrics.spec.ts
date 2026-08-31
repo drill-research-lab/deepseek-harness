@@ -258,3 +258,51 @@ describe('llm.metrics', () => {
       .toThrow('inferenceMetricsUrl must use http: or https:')
   })
 })
+
+describe('llm.resources', () => {
+  it('reports missing deployment configuration without network access', async () => {
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+    const { ctx, api } = await harness()
+    const response = await api.llm.resources({ rpcId: RpcId('resources-unconfigured'), payload: {} })
+    expect(response.result).toMatchObject({
+      ok: false,
+      error: { code: 'inference-metrics-unconfigured' },
+    })
+    expect(fetchSpy).not.toHaveBeenCalled()
+    await ctx.fiber.dispose()
+  })
+
+  it('returns a projected SparkDash sample at the configured cadence', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(Response.json({
+      metrics: {
+        gpu: {
+          temperature: 47, usage: 0, power: { draw: 10, limit: 120 },
+          vram: { used: 112246, total: 122566, available: 2329 },
+        },
+        storage: [],
+        network: { primaryInterface: null, linkSpeedMbps: null, interfaces: [] },
+      },
+    }))))
+    const { ctx, api } = await harness({
+      inferenceResourcesUrl: 'http://sparkdash.test/api/sparks/park/metrics',
+      inferenceMetricsRefreshMs: 7_500,
+    })
+    const response = await api.llm.resources({ rpcId: RpcId('resources-ready'), payload: {} })
+    expect(response.result).toMatchObject({
+      ok: true,
+      value: {
+        refreshAfterMs: 7_500,
+        gpu: { temperatureC: 47, powerLimitWatts: 120 },
+        storage: [],
+        networkInterfaces: [],
+      },
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects non-HTTP resource protocols at composition time', () => {
+    expect(() => createApiProxy(new Context(), defaults({ inferenceResourcesUrl: 'file:///tmp/resources' })))
+      .toThrow('inferenceResourcesUrl must use http: or https:')
+  })
+})

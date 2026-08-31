@@ -66,6 +66,8 @@ Workspace 清單與 Session 清單是相互獨立的重連基線。`workspace.cr
 
 `llm.metrics` 由宿主取得已設定的 vLLM Prometheus 端點，回傳固定的 SparkDash 衍生面板欄位：請求彙總值、KV 快取佔用率、token 與搶佔計數器、引擎狀態、prefix cache 與 speculative acceptance 比率，以及 TTFT、端對端和 token 間延遲的 p95。URL 指向 `/metrics` 時，同源 `/v1/models` 請求會盡力補充模型 id 與上下文上限。原始 Prometheus 標籤與非 vLLM 的程序／執行階段指標絕不會回傳。部署透過 `inferenceMetricsUrl` 提供完整的 HTTP(S) URL；Web 組合包從 `DSH_INFERENCE_METRICS_URL` 讀取它。`inferenceMetricsTimeoutMs`、`inferenceMetricsMaxBytes` 與 `inferenceMetricsRefreshMs` 限制單次抓取並控制瀏覽器成功取得資料後的重新整理頻率，解析另有 10,000 條樣本上限。瀏覽器不會收到端點 URL。未設定、抓取失敗、回應過大或格式錯誤、必要 gauge 無效都會產生不同的業務錯誤；整個 `/api` 路由仍受載體的認證與信任防線保護。
 
+`llm.resources` 取得一個已設定的 SparkDash 指標快照，僅回傳 GPU 使用率、溫度、功耗、時脈、顯存與最多五個 GPU 程序，已啟用的掛載儲存容量與 I/O，以及帶位址的作用中網路介面流量、主要介面狀態和連線速率。格式錯誤或過大的快照會被拒絕；Spark 身分、來源 URL、MAC 位址、停用裝置、非作用中介面、CPU/RAM 與其他 SparkDash 欄位均被省略。部署提供 `inferenceResourcesUrl`，Web 組合包從 `DSH_INFERENCE_RESOURCES_URL` 讀取它。資源呼叫共用指標呼叫的截止時間、位元組限制與成功重新整理間隔，但獨立失敗，因此一個來源無法使用時另一組面板仍可使用。
+
 ## 載體層（`/client` + 根路徑）
 
 `AbstractApiClient` 持有全部協定不變數：簽發 rpcId、包裝／解包信封、Zod 解析、SSE 幀解碼、一元請求逾時，以及按微任務批次處理的信封觀測（`subscribeEnvelopes`）；平臺子類只提供 `doFetch` 傳輸環節。`InProcessApiClient` 以 `toFetchHandler(api)` 為基礎，仍是同構接點：它執行完整的協定序列化與校驗路徑而不經過網路，供需要該路徑的呼叫方和載體測試使用。產品的 `dsh --profile headless` 是直連 core 的入口，不掛載本包。

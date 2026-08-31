@@ -1,5 +1,5 @@
 // Real Web composition: Settings opens the embedded inference dashboard over
-// the authenticated llm.metrics RPC, including visible failure and retry.
+// authenticated LLM and resource RPCs, including visible failure and retry.
 
 import { createServer, type Server } from 'node:http'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -42,6 +42,30 @@ vllm:time_to_first_token_seconds_bucket{engine="0",model_name="test-model",le="1
 vllm:time_to_first_token_seconds_bucket{engine="0",model_name="test-model",le="+Inf"} 10
 vllm:time_to_first_token_seconds_count{engine="0",model_name="test-model"} 10
 `
+const RESOURCES = {
+  metrics: {
+    gpu: {
+      temperature: 47,
+      usage: 12,
+      power: { draw: 9.94, limit: 120 },
+      vram: { used: 112246, total: 122566, available: 2329 },
+      processes: [{ pid: 40781, name: 'VLLM::EngineCore', vramMB: 112246 }],
+      throttle: { active: false, reason: 'ok', smClockMHz: 2190, smClockMaxMHz: 3003 },
+    },
+    storage: [{
+      device: 'nvme0n1p2', label: '/', used: 387884, total: 3845092,
+      available: 3261857, readSpeed: 0, writeSpeed: 7372,
+    }],
+    network: {
+      primaryInterface: 'enP7s7',
+      linkSpeedMbps: 1000,
+      interfaces: [{
+        name: 'enP7s7', rxSpeed: 38912, txSpeed: 2764,
+        ip: '192.168.101.70', operstate: 'up',
+      }],
+    },
+  },
+}
 
 function listen(server: Server): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -79,6 +103,11 @@ describe('web e2e: embedded inference dashboard', () => {
         response.end(JSON.stringify({ data: [{ id: 'test-model', max_model_len: 128_000 }] }))
         return
       }
+      if (request.url === '/resources') {
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify(RESOURCES))
+        return
+      }
       response.writeHead(200, { 'content-type': 'text/plain' })
       response.end(METRICS)
     })
@@ -87,6 +116,7 @@ describe('web e2e: embedded inference dashboard', () => {
     await writeFile(overlay, `- id: api-gateway
   config:
     inferenceMetricsUrl: http://127.0.0.1:${String(port)}/metrics
+    inferenceResourcesUrl: http://127.0.0.1:${String(port)}/resources
     inferenceMetricsRefreshMs: 60000
 `, 'utf8')
     scaffold = await launchWebScaffold({ extraOverlayPath: overlay })
@@ -116,11 +146,11 @@ describe('web e2e: embedded inference dashboard', () => {
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: '设置' })
     await dialog.getByRole('button', { name: '推理状态' }).click()
-    await dialog.getByRole('alert').waitFor({ timeout: 10_000 })
-    expect(await dialog.getByRole('alert').textContent()).toContain('HTTP 503')
+    await dialog.getByRole('alert').first().waitFor({ timeout: 10_000 })
+    expect(await dialog.getByRole('alert').first().textContent()).toContain('HTTP 503')
 
     metricsReady = true
-    await dialog.getByRole('button', { name: '重试' }).click()
+    await dialog.getByRole('button', { name: '重试' }).first().click()
     await dialog.getByRole('heading', { name: '模型运行状态' }).waitFor({ timeout: 10_000 })
     const panel = dialog.getByRole('article', { name: 'LLM 运行指标' })
     expect(await panel.textContent()).toContain('test-model')
@@ -128,10 +158,16 @@ describe('web e2e: embedded inference dashboard', () => {
     expect(await panel.textContent()).toContain('KV Cache42.0%')
     expect(await panel.textContent()).toContain('Context128,000')
     expect(await panel.textContent()).toContain('Prefix Cache75.0%')
+    await dialog.getByRole('button', { name: '重试' }).click()
+    const gpu = dialog.getByRole('article', { name: 'GPU 资源' })
+    expect(await gpu.textContent()).toContain('VLLM::EngineCore')
+    expect(await dialog.getByRole('article', { name: '存储资源' }).textContent()).toContain('nvme0n1p2')
+    expect(await dialog.getByRole('article', { name: '网络资源' }).textContent()).toContain('192.168.101.70')
 
     const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(READY_EXPECTED, snapshot, MODE)
     expect(snapshot).toContain('Requests 是整个 vLLM 部署的总量，不代表当前 DSH 任务的排队位置。')
+    expect(snapshot).toContain('VLLM::EngineCore')
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 })

@@ -11,7 +11,9 @@ import { en, zh, zhTw, type InferenceDashboardKey } from './locales.ts'
 
 export type { InferenceDashboardInjected, InferenceDashboardProps } from './InferenceDashboard.tsx'
 export type { InferenceDashboardKey } from './locales.ts'
-export type { InferenceDashboardMetrics, InferenceDashboardState } from './store.ts'
+export type {
+  InferenceDashboardMetrics, InferenceDashboardResources, InferenceDashboardState, InferenceResourcesState,
+} from './store.ts'
 export { InferenceDashboardController } from './store.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -35,6 +37,7 @@ export function apply(ctx: ClientContext): void {
   const connection = ctx.get('connection') as ConnectionHandle
   const controller = new InferenceDashboardController(connection.api)
   const useSnapshot = bindSnapshotSelector(controller.store)
+  const useResourcesSnapshot = bindSnapshotSelector(controller.resourcesStore)
   const t = ctx.locale.bind(NS) as InferenceDashboardInjected['t']
 
   ctx.effect(() => ctx.on('connection/reset', () => {
@@ -46,6 +49,6 @@ export function apply(ctx: ClientContext): void {
     id: 'inference-dashboard',
     order: 20,
     label: () => t('nav'),
-    inject: (): InferenceDashboardInjected => ({ controller, useSnapshot, t }),
+    inject: (): InferenceDashboardInjected => ({ controller, useSnapshot, useResourcesSnapshot, t }),
   }, InferenceDashboard))
 }

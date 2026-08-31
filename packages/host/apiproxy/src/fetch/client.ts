@@ -63,6 +63,7 @@ import {
 } from '../api/credentials.schema.ts'
 import {
   llmDiscoverModelsValueSchema, llmMetricsValueSchema, llmModelsValueSchema, llmProvidersValueSchema,
+  llmResourcesValueSchema,
 } from '../api/llm.schema.ts'
 import {
   subagentHistoryValueSchema,
@@ -166,6 +167,7 @@ export interface IApiClient {
     providers(payload: RequestPayload<'llm.providers'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.providers'>>>
     models(payload: RequestPayload<'llm.models'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.models'>>>
     metrics(payload: RequestPayload<'llm.metrics'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.metrics'>>>
+    resources(payload: RequestPayload<'llm.resources'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.resources'>>>
     discoverModels(payload: RequestPayload<'llm.discoverModels'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.discoverModels'>>>
   }
   /** client-response passthrough (rpcId is a backfill of the server-request's id — never minted here). */
@@ -230,6 +232,7 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'llm.providers': llmProvidersValueSchema,
   'llm.models': llmModelsValueSchema,
   'llm.metrics': llmMetricsValueSchema,
+  'llm.resources': llmResourcesValueSchema,
   'llm.discoverModels': llmDiscoverModelsValueSchema,
 }
 
@@ -511,6 +514,7 @@ export abstract class AbstractApiClient implements IApiClient {
     providers: (payload, signal) => this.callUnary('llm.providers', payload, signal),
     models: (payload, signal) => this.callUnary('llm.models', payload, signal),
     metrics: (payload, signal) => this.callUnary('llm.metrics', payload, signal),
+    resources: (payload, signal) => this.callUnary('llm.resources', payload, signal),
     discoverModels: (payload, signal) => this.callUnary('llm.discoverModels', payload, signal),
   }
 

@@ -65,3 +65,37 @@
       - text: "MTP Accept: speculative/MTP draft token 的累计接受率。"
       - strong: 60.0%
       - paragraph: Requests 是整个 vLLM 部署的总量，不代表当前 DSH 任务的排队位置。
+  - region "资源":
+    - heading "资源" [level=2]
+    - text: 更新时间 {{clock}}
+    - article "GPU 资源":
+      - heading "⌁ GPU" [level=3]
+      - text: Usage
+      - strong: 12%
+      - text: Temperature
+      - strong: 47°C
+      - text: GPU Power
+      - strong: 9.94W / 120W
+      - text: Throttle
+      - strong: OK
+      - text: SM Clock
+      - strong: 2,190 / 3,003 MHz
+      - text: VRAM
+      - strong: 109.6 / 119.7 GB
+      - text: Available
+      - strong: 2.3 GB
+      - text: Processes VLLM::EngineCore 40781
+      - strong: 109.6 GB
+    - article "存储资源":
+      - heading "▣ Storage" [level=3]
+      - strong: /
+      - text: nvme0n1p2
+      - strong: 10%
+      - text: 378.8 GB / 3,755.0 GB 3,185.4 GB free ↑ 7.2 KB/s ↓ 0 B/s
+    - article "网络资源":
+      - heading "⌁ Network" [level=3]
+      - text: Primary
+      - strong: enP7s7
+      - strong: 1,000 Mbps
+      - strong: 192.168.101.70
+      - text: enP7s7 ↑ 2.7 KB/s　↓ 38.0 KB/s

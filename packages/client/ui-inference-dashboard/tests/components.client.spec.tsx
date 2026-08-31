@@ -16,9 +16,17 @@ afterEach(() => {
 
 const t: InferenceDashboardInjected['t'] = key => en[key]
 
-function mount(metrics: ReturnType<typeof vi.fn>) {
-  const controller = new InferenceDashboardController({ llm: { metrics } } as never)
-  render(<InferenceDashboard controller={controller} useSnapshot={bindSnapshotSelector(controller.store)} t={t} />)
+function mount(metrics: ReturnType<typeof vi.fn>, resources: ReturnType<typeof vi.fn> = vi.fn(() => Promise.resolve({
+  rpcId: 'resources',
+  result: { ok: true as const, value: { sampledAt: 0, refreshAfterMs: 60_000, storage: [], networkInterfaces: [] } },
+}))) {
+  const controller = new InferenceDashboardController({ llm: { metrics, resources } } as never)
+  render(<InferenceDashboard
+    controller={controller}
+    useSnapshot={bindSnapshotSelector(controller.store)}
+    useResourcesSnapshot={bindSnapshotSelector(controller.resourcesStore)}
+    t={t}
+  />)
   return controller
 }
 
@@ -39,7 +47,7 @@ describe('InferenceDashboard', () => {
       },
     })))
 
-    expect(screen.getByRole('status').textContent).toContain('Reading')
+    expect(screen.getAllByRole('status')[0]?.textContent).toContain('Reading')
     expect(await screen.findByRole('heading', { name: 'Model runtime status' })).toBeTruthy()
     const panel = screen.getByRole('article', { name: 'LLM runtime metrics' })
     expect(panel.textContent).toContain('acme/model')
@@ -87,5 +95,66 @@ describe('InferenceDashboard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(await screen.findByRole('heading', { name: 'Model runtime status' })).toBeTruthy()
     expect(metrics).toHaveBeenCalledTimes(2)
+  })
+
+  it('renders the SparkDash GPU, storage, and network projection', async () => {
+    const metrics = vi.fn(() => Promise.resolve({
+      rpcId: 'metrics',
+      result: {
+        ok: true as const,
+        value: {
+          backend: 'vllm' as const, sampledAt: 0, refreshAfterMs: 60_000,
+          requestsRunning: 0, requestsWaiting: 0,
+        },
+      },
+    }))
+    const resources = vi.fn(() => Promise.resolve({
+      rpcId: 'resources',
+      result: {
+        ok: true as const,
+        value: {
+          sampledAt: 0,
+          refreshAfterMs: 60_000,
+          gpu: {
+            usagePercent: 12, temperatureC: 47, powerDrawWatts: 9.94, powerLimitWatts: 120,
+            smClockMhz: 2190, smClockMaxMhz: 3003,
+            vramUsedMb: 112246, vramTotalMb: 122566, vramAvailableMb: 2329,
+            throttled: false, throttleReason: 'ok',
+            processes: [{ pid: 40781, name: 'VLLM::EngineCore', vramMb: 112246 }],
+          },
+          storage: [{
+            device: 'nvme0n1p2', label: '/', usedMb: 387884, totalMb: 3845092,
+            availableMb: 3261857, readBytesPerSecond: 0, writeBytesPerSecond: 7372,
+          }],
+          primaryNetworkInterface: 'enP7s7',
+          networkLinkSpeedMbps: 1000,
+          networkInterfaces: [{
+            name: 'enP7s7', ip: '192.168.101.70', primary: true,
+            rxBytesPerSecond: 38912, txBytesPerSecond: 2764,
+          }],
+        },
+      },
+    }))
+    mount(metrics, resources)
+
+    expect(await screen.findByRole('heading', { name: 'Resources' })).toBeTruthy()
+    expect(screen.getByRole('article', { name: 'GPU resources' }).textContent).toContain('VLLM::EngineCore')
+    expect(screen.getByRole('article', { name: 'Storage resources' }).textContent).toContain('nvme0n1p2')
+    expect(screen.getByRole('article', { name: 'Network resources' }).textContent).toContain('192.168.101.70')
+    expect(screen.queryByText(/wolMac/)).toBeNull()
+  })
+
+  it('keeps resources visible when vLLM telemetry fails', async () => {
+    const metrics = vi.fn(() => Promise.resolve({
+      rpcId: 'metrics',
+      result: {
+        ok: false as const,
+        error: { code: 'inference-metrics-unavailable' as const, message: 'offline', details: {} },
+      },
+    }))
+    mount(metrics)
+
+    expect((await screen.findByRole('alert')).textContent).toContain('offline')
+    expect(await screen.findByRole('heading', { name: 'Resources' })).toBeTruthy()
   })
 })

@@ -847,6 +847,11 @@ export interface Config {
    * The endpoint address stays on the Host and is never returned to clients.
    */
   inferenceMetricsUrl?: string
+  /**
+   * Internal SparkDash snapshot endpoint used by the resource panels. The
+   * endpoint address stays on the Host and is never returned to clients.
+   */
+  inferenceResourcesUrl?: string
   /** Deadline for one metrics scrape in milliseconds. @default 3000 */
   inferenceMetricsTimeoutMs?: number
   /** Maximum response bytes accepted from one metrics scrape. @default 1048576 */
