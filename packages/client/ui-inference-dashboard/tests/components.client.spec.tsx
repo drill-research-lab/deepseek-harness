@@ -30,56 +30,32 @@ describe('InferenceDashboard', () => {
         ok: true,
         value: {
           backend: 'vllm', sampledAt: 0, refreshAfterMs: 60_000,
+          modelId: 'acme/model', contextLength: 128_000, engineState: 'active',
           requestsRunning: 2, requestsWaiting: 7, kvCacheUsage: 0.42,
           promptTokensTotal: 1200, generationTokensTotal: 345, preemptionsTotal: 6,
-          metricFamilies: [
-            {
-              name: 'vllm:num_requests_running',
-              help: 'Number of requests currently running.',
-              type: 'gauge',
-              series: [
-                {
-                  metric: 'vllm:num_requests_running',
-                  labels: [{ name: 'engine', value: '0' }, { name: 'model_name', value: 'acme/model' }],
-                  value: '2',
-                },
-              ],
-            },
-            {
-              name: 'vllm:time_to_first_token_seconds',
-              help: 'Time to first token.',
-              type: 'histogram',
-              series: [
-                {
-                  metric: 'vllm:time_to_first_token_seconds_bucket',
-                  labels: [{ name: 'le', value: '+Inf' }],
-                  value: '10',
-                },
-              ],
-            },
-          ],
+          prefixCacheHitRate: 0.75, mtpAcceptanceRate: 0.6,
+          ttftP95Seconds: 0.5, e2eP95Seconds: 2.5, itlP95Seconds: 0.1,
         },
       },
     })))
 
     expect(screen.getByRole('status').textContent).toContain('Reading')
     expect(await screen.findByRole('heading', { name: 'Model runtime status' })).toBeTruthy()
-    const requests = screen.getByRole('article', { name: 'Requests' })
-    expect(requests.textContent).toContain('Running2')
-    expect(requests.textContent).toContain('Waiting7')
-    expect(requests.textContent).toContain('not the current task’s queue position')
-    expect(screen.getByRole('progressbar', { name: 'KV cache' }).getAttribute('aria-valuenow')).toBe('42')
-    expect(screen.getByRole('article', { name: 'Cumulative tokens' }).textContent).toContain('1,200')
-    expect(screen.getByRole('heading', { name: 'All vLLM metrics' })).toBeTruthy()
-    expect(screen.getByRole('status').textContent).toContain('2 families · 2 series')
-    expect(screen.getByText('{engine="0", model_name="acme/model"}')).toBeTruthy()
-
-    fireEvent.change(screen.getByRole('searchbox', { name: 'Filter metrics' }), {
-      target: { value: 'histogram' },
-    })
-    expect(screen.getByRole('status').textContent).toContain('1 families · 1 matching series')
-    expect(screen.queryByText('vllm:num_requests_running')).toBeNull()
-    expect(screen.getAllByText('vllm:time_to_first_token_seconds_bucket')).toHaveLength(1)
+    const panel = screen.getByRole('article', { name: 'LLM runtime metrics' })
+    expect(panel.textContent).toContain('acme/model')
+    expect(panel.textContent).toContain('Generation tok/s0.0')
+    expect(panel.textContent).toContain('Prefill tok/s0.0')
+    expect(panel.textContent).toContain('Slots2 running')
+    expect(panel.textContent).toContain('Context128,000')
+    expect(panel.textContent).toContain('EngineActive')
+    expect(panel.textContent).toContain('KV Cache42.0%')
+    expect(panel.textContent).toContain('Requests2 run / 7 wait')
+    expect(panel.textContent).toContain('TTFT p950.500s')
+    expect(panel.textContent).toContain('Prefix Cache75.0%')
+    expect(panel.textContent).toContain('E2E p952.500s')
+    expect(panel.textContent).toContain('ITL p950.100s')
+    expect(panel.textContent).toContain('MTP Accept60.0%')
+    expect(panel.textContent).toContain('do not represent the current DSH task’s queue position')
   })
 
   it('explains an unconfigured deployment and retries a failed endpoint', async () => {
@@ -102,7 +78,6 @@ describe('InferenceDashboard', () => {
           value: {
             backend: 'vllm', sampledAt: 0, refreshAfterMs: 60_000,
             requestsRunning: 1, requestsWaiting: 0,
-            metricFamilies: [],
           },
         },
       })

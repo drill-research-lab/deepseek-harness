@@ -39,48 +39,27 @@ export const llmModelsValueSchema = z.object({
 /** llm.metrics request payload. */
 export const llmMetricsRequestSchema = z.object({}) satisfies z.ZodType<Wire<RequestPayload<'llm.metrics'>>>
 
-const inferenceMetricTypeSchema = z.enum([
-  'counter',
-  'gauge',
-  'histogram',
-  'summary',
-  'untyped',
-  'info',
-  'stateset',
-  'gaugehistogram',
-  'unknown',
-])
-
-const inferenceMetricLabelViewSchema = z.object({
-  name: z.string().min(1),
-  value: z.string(),
-})
-
-const inferenceMetricSeriesViewSchema = z.object({
-  metric: z.string().min(1),
-  labels: z.array(inferenceMetricLabelViewSchema),
-  value: z.string().min(1),
-})
-
-const inferenceMetricFamilyViewSchema = z.object({
-  name: z.string().min(1),
-  help: z.string().optional(),
-  type: inferenceMetricTypeSchema.optional(),
-  series: z.array(inferenceMetricSeriesViewSchema),
-})
-
 /** llm.metrics response value. */
 export const llmMetricsValueSchema = z.object({
   backend: z.literal('vllm'),
   sampledAt: z.number().int().nonnegative(),
   refreshAfterMs: z.number().int().positive(),
+  modelId: z.string().min(1).optional(),
+  contextLength: z.number().int().positive().optional(),
+  engineState: z.enum(['active', 'weights-offloaded', 'discarded']).optional(),
   requestsRunning: z.number().int().nonnegative(),
   requestsWaiting: z.number().int().nonnegative(),
   kvCacheUsage: z.number().min(0).max(1).optional(),
   promptTokensTotal: z.number().nonnegative().optional(),
   generationTokensTotal: z.number().nonnegative().optional(),
   preemptionsTotal: z.number().nonnegative().optional(),
-  metricFamilies: z.array(inferenceMetricFamilyViewSchema),
+  iterationTokensTotal: z.number().nonnegative().optional(),
+  ttftSecondsTotal: z.number().nonnegative().optional(),
+  prefixCacheHitRate: z.number().min(0).max(1).optional(),
+  mtpAcceptanceRate: z.number().min(0).max(1).optional(),
+  ttftP95Seconds: z.number().nonnegative().optional(),
+  e2eP95Seconds: z.number().nonnegative().optional(),
+  itlP95Seconds: z.number().nonnegative().optional(),
 }) satisfies z.ZodType<Wire<InferenceMetricsView>>
 
 /** DiscoveredModelView row of llm.discoverModels. */

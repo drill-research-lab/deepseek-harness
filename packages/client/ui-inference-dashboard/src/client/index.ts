@@ -11,7 +11,7 @@ import { en, zh, zhTw, type InferenceDashboardKey } from './locales.ts'
 
 export type { InferenceDashboardInjected, InferenceDashboardProps } from './InferenceDashboard.tsx'
 export type { InferenceDashboardKey } from './locales.ts'
-export type { InferenceDashboardState } from './store.ts'
+export type { InferenceDashboardMetrics, InferenceDashboardState } from './store.ts'
 export { InferenceDashboardController } from './store.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {

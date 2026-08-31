@@ -17,8 +17,8 @@ import {
 const METRICS = `
 # HELP vllm:num_requests_running Number of requests currently running.
 # TYPE vllm:num_requests_running gauge
-vllm:num_requests_running{engine="0"} 2
-vllm:num_requests_running{engine="1"} 1
+vllm:num_requests_running{engine="0",model_name="acme/model"} 2
+vllm:num_requests_running{engine="1",model_name="acme/model"} 1
 # HELP vllm:num_requests_waiting Number of requests waiting to be processed.
 # TYPE vllm:num_requests_waiting gauge
 vllm:num_requests_waiting 4
@@ -26,12 +26,27 @@ vllm:kv_cache_usage_perc 0.375
 vllm:prompt_tokens_total 1200
 vllm:generation_tokens_total 345
 vllm:num_preemptions_total 6
+vllm:iteration_tokens_total_sum 2000
+vllm:engine_sleep_state{sleep_state="awake"} 1
+vllm:prefix_cache_hits_total 75
+vllm:prefix_cache_queries_total 100
+vllm:spec_decode_num_accepted_tokens_total 60
+vllm:spec_decode_num_draft_tokens_total 100
 # HELP vllm:time_to_first_token_seconds Histogram of time to first token\\n(in seconds).
 # TYPE vllm:time_to_first_token_seconds histogram
 vllm:time_to_first_token_seconds_bucket{engine="0",le="0.5"} 8
+vllm:time_to_first_token_seconds_bucket{engine="0",le="1.0"} 10
 vllm:time_to_first_token_seconds_bucket{engine="0",le="+Inf"} 10
 vllm:time_to_first_token_seconds_sum{engine="0"} 3.25
 vllm:time_to_first_token_seconds_count{engine="0"} 10
+vllm:e2e_request_latency_seconds_bucket{le="2.0"} 8
+vllm:e2e_request_latency_seconds_bucket{le="3.0"} 10
+vllm:e2e_request_latency_seconds_bucket{le="+Inf"} 10
+vllm:e2e_request_latency_seconds_count 10
+vllm:inter_token_latency_seconds_bucket{le="0.1"} 8
+vllm:inter_token_latency_seconds_bucket{le="0.2"} 10
+vllm:inter_token_latency_seconds_bucket{le="+Inf"} 10
+vllm:inter_token_latency_seconds_count 10
 python_gc_objects_collected_total 99
 `
 
@@ -66,44 +81,16 @@ describe('vLLM metrics parser', () => {
       promptTokensTotal: 1200,
       generationTokensTotal: 345,
       preemptionsTotal: 6,
+      modelId: 'acme/model',
+      engineState: 'active',
+      iterationTokensTotal: 2000,
+      ttftSecondsTotal: 3.25,
+      prefixCacheHitRate: 0.75,
+      mtpAcceptanceRate: 0.6,
+      ttftP95Seconds: 0.875,
+      e2eP95Seconds: 2.75,
+      itlP95Seconds: 0.175,
     })
-    expect(metrics.metricFamilies.find(family => family.name === 'vllm:num_requests_running')).toEqual({
-      name: 'vllm:num_requests_running',
-      help: 'Number of requests currently running.',
-      type: 'gauge',
-      series: [
-        { metric: 'vllm:num_requests_running', labels: [{ name: 'engine', value: '0' }], value: '2' },
-        { metric: 'vllm:num_requests_running', labels: [{ name: 'engine', value: '1' }], value: '1' },
-      ],
-    })
-    expect(metrics.metricFamilies.find(family => family.name === 'vllm:time_to_first_token_seconds')).toEqual({
-      name: 'vllm:time_to_first_token_seconds',
-      help: 'Histogram of time to first token\n(in seconds).',
-      type: 'histogram',
-      series: [
-        {
-          metric: 'vllm:time_to_first_token_seconds_bucket',
-          labels: [{ name: 'engine', value: '0' }, { name: 'le', value: '0.5' }],
-          value: '8',
-        },
-        {
-          metric: 'vllm:time_to_first_token_seconds_bucket',
-          labels: [{ name: 'engine', value: '0' }, { name: 'le', value: '+Inf' }],
-          value: '10',
-        },
-        {
-          metric: 'vllm:time_to_first_token_seconds_sum',
-          labels: [{ name: 'engine', value: '0' }],
-          value: '3.25',
-        },
-        {
-          metric: 'vllm:time_to_first_token_seconds_count',
-          labels: [{ name: 'engine', value: '0' }],
-          value: '10',
-        },
-      ],
-    })
-    expect(metrics.metricFamilies.some(family => family.name.startsWith('python_'))).toBe(false)
   })
 
   it('accepts underscore-prefixed vLLM metrics and omits an invalid optional ratio', () => {
@@ -114,6 +101,17 @@ vllm_gpu_cache_usage_perc 8
 `, 456)).toMatchObject({
       backend: 'vllm', sampledAt: 456, requestsRunning: 1, requestsWaiting: 0,
     })
+  })
+
+  it('omits a histogram quantile when the infinity bucket disagrees with its count', () => {
+    const metrics = parseVllmMetrics(`
+vllm:num_requests_running 0
+vllm:num_requests_waiting 0
+vllm:time_to_first_token_seconds_bucket{le="1"} 8
+vllm:time_to_first_token_seconds_bucket{le="+Inf"} 9
+vllm:time_to_first_token_seconds_count 10
+`)
+    expect(metrics).not.toHaveProperty('ttftP95Seconds')
   })
 
   it('rejects responses without both non-negative request gauges', () => {
@@ -162,6 +160,40 @@ ${samples.join('\n')}
 })
 
 describe('vLLM metrics retrieval', () => {
+  it('enriches the curated metrics with model metadata from the same origin', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(METRICS))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: [{ id: 'acme/model', max_model_len: 128_000 }],
+      })))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(fetchVllmMetrics(
+      new URL('http://metrics.test/metrics'),
+      100_000,
+      new AbortController().signal,
+    )).resolves.toMatchObject({ modelId: 'acme/model', contextLength: 128_000 })
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      new URL('http://metrics.test/v1/models'),
+      expect.objectContaining({ headers: { accept: 'application/json' } }),
+    )
+  })
+
+  it('does not swallow caller cancellation during optional model discovery', async () => {
+    const controller = new AbortController()
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response(METRICS))
+      .mockImplementationOnce(() => {
+        controller.abort()
+        return Promise.reject(new DOMException('cancelled', 'AbortError'))
+      }))
+    await expect(fetchVllmMetrics(
+      new URL('http://metrics.test/metrics'),
+      100_000,
+      controller.signal,
+    )).rejects.toThrow('cancelled')
+  })
+
   it('bounds the body even without Content-Length', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(METRICS))))
     await expect(fetchVllmMetrics(new URL('http://metrics.test/metrics'), 20, new AbortController().signal))

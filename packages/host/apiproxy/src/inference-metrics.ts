@@ -1,12 +1,17 @@
 /** Bounded vLLM Prometheus retrieval for the browser inference dashboard. */
 
-import type {
-  InferenceMetricFamilyView,
-  InferenceMetricLabelView,
-  InferenceMetricSeriesView,
-  InferenceMetricType,
-  InferenceMetricsView,
-} from './api/llm.ts'
+import type { InferenceMetricsView } from './api/llm.ts'
+
+interface InferenceMetricLabelView {
+  name: string
+  value: string
+}
+
+interface InferenceMetricSeriesView {
+  metric: string
+  labels: InferenceMetricLabelView[]
+  value: string
+}
 
 /** Default deadline for one metrics scrape. */
 export const DEFAULT_INFERENCE_METRICS_TIMEOUT_MS = 3_000
@@ -83,28 +88,6 @@ function vllmMetric(body: string, name: string): number | undefined {
 const PROMETHEUS_NAME = '[a-zA-Z_:][a-zA-Z0-9_:]*'
 const PROMETHEUS_LABEL_NAME = /^[a-zA-Z_][a-zA-Z0-9_]*/
 const PROMETHEUS_VALUE = /^(?:NaN|[+-]?Inf|[-+]?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+))(?:[eE][-+]?\d+)?)$/
-const PROMETHEUS_TYPES = new Set<InferenceMetricType>([
-  'counter',
-  'gauge',
-  'histogram',
-  'summary',
-  'untyped',
-  'info',
-  'stateset',
-  'gaugehistogram',
-  'unknown',
-])
-
-interface MetricMetadata {
-  help?: string
-  type?: InferenceMetricType
-}
-
-/** Decode the escape sequences allowed in Prometheus HELP text. */
-function decodeHelp(value: string): string {
-  return value.replace(/\\([\\n])/g, (_whole, escapedValue: string) => escapedValue === 'n' ? '\n' : '\\')
-}
-
 /** Decode a Prometheus label set without accepting partial or malformed input. */
 function parseLabels(source: string): InferenceMetricLabelView[] | undefined {
   const labels: InferenceMetricLabelView[] = []
@@ -169,47 +152,12 @@ function parseSeries(line: string): InferenceMetricSeriesView | undefined {
   return { metric, labels, value }
 }
 
-/** Associate histogram and summary child samples with their declared family. */
-function declaredFamilyName(
-  metric: string,
-  metadata: ReadonlyMap<string, MetricMetadata>,
-): string {
-  if (metadata.has(metric)) return metric
-  for (const [name, item] of metadata) {
-    if (item.type !== 'histogram' && item.type !== 'summary' && item.type !== 'gaugehistogram') continue
-    if (metric === `${name}_bucket` || metric === `${name}_sum` || metric === `${name}_count`) return name
-  }
-  return metric
-}
-
-/** Parse every vLLM family from one Prometheus text exposition. */
-function parseMetricFamilies(body: string): InferenceMetricFamilyView[] {
-  const metadata = new Map<string, MetricMetadata>()
+/** Parse every vLLM sample from one Prometheus text exposition. */
+function parseMetricSeries(body: string): InferenceMetricSeriesView[] {
   const series: InferenceMetricSeriesView[] = []
-  const helpRow = new RegExp(`^# HELP (${PROMETHEUS_NAME})(?: (.*))?$`)
-  const typeRow = new RegExp(`^# TYPE (${PROMETHEUS_NAME}) ([a-zA-Z_]+)$`)
   for (const rawLine of body.split(/\r?\n/)) {
     const line = rawLine.trim()
-    if (line.length === 0) continue
-    const help = helpRow.exec(line)
-    const helpName = help?.[1]
-    if (helpName !== undefined && /^vllm[:_]/.test(helpName)) {
-      const item = metadata.get(helpName) ?? {}
-      item.help = decodeHelp(help?.[2] ?? '')
-      metadata.set(helpName, item)
-      continue
-    }
-    const type = typeRow.exec(line)
-    const typeName = type?.[1]
-    const typeValue = type?.[2]
-    if (typeName !== undefined && typeValue !== undefined && /^vllm[:_]/.test(typeName)) {
-      const item = metadata.get(typeName) ?? {}
-      if (PROMETHEUS_TYPES.has(typeValue as InferenceMetricType)) {
-        item.type = typeValue as InferenceMetricType
-      }
-      metadata.set(typeName, item)
-      continue
-    }
+    if (line.length === 0 || line.startsWith('#')) continue
     if (!/^vllm[:_]/.test(line)) continue
     const parsed = parseSeries(line)
     if (parsed === undefined) {
@@ -226,25 +174,89 @@ function parseMetricFamilies(body: string): InferenceMetricFamilyView[] {
       )
     }
   }
+  return series
+}
 
-  const families = new Map<string, InferenceMetricFamilyView>()
-  for (const [name, item] of metadata) {
-    families.set(name, {
-      name,
-      ...item.help === undefined ? {} : { help: item.help },
-      ...item.type === undefined ? {} : { type: item.type },
-      series: [],
-    })
-  }
+/** Read the first non-empty label value from the parsed vLLM samples. */
+function firstLabel(series: InferenceMetricSeriesView[], name: string): string | undefined {
   for (const item of series) {
-    const name = declaredFamilyName(item.metric, metadata)
-    const family = families.get(name) ?? { name, series: [] }
-    family.series.push(item)
-    families.set(name, family)
+    const value = item.labels.find(label => label.name === name)?.value
+    if (value !== undefined && value.length > 0) return value
   }
-  return [...families.values()]
-    .filter(family => family.series.length > 0)
-    .sort((left, right) => left.name.localeCompare(right.name))
+  return undefined
+}
+
+/** Resolve the engine residency represented by vLLM's labeled sleep-state gauges. */
+function engineState(series: InferenceMetricSeriesView[]): InferenceMetricsView['engineState'] {
+  const states = series.filter(item => /(?:^|[:_])engine_sleep_state$/.test(item.metric))
+  const enabled = (name: string): boolean => states.some(item => (
+    item.labels.some(label => label.name === 'sleep_state' && label.value === name)
+      && Number(item.value) > 0
+  ))
+  if (enabled('awake')) return 'active'
+  if (enabled('weights_offloaded')) return 'weights-offloaded'
+  if (enabled('discard_all')) return 'discarded'
+  return undefined
+}
+
+interface HistogramBucket {
+  upper: number
+  count: number
+}
+
+/** Derive one Prometheus-style quantile from cumulative histogram buckets. */
+function histogramQuantile(
+  series: InferenceMetricSeriesView[],
+  name: string,
+  quantile: number,
+): number | undefined {
+  const bucketName = [`vllm:${name}_bucket`, `vllm_${name}_bucket`]
+  const countName = [`vllm:${name}_count`, `vllm_${name}_count`]
+  const byUpper = new Map<number, number>()
+  let infinityCount = 0
+  let total = 0
+  let totalFound = false
+  for (const item of series) {
+    const value = Number(item.value)
+    if (!Number.isFinite(value)) continue
+    if (countName.includes(item.metric)) {
+      total += value
+      totalFound = true
+      continue
+    }
+    if (!bucketName.includes(item.metric)) continue
+    const rawUpper = item.labels.find(label => label.name === 'le')?.value
+    if (rawUpper === undefined) continue
+    const upper = rawUpper === '+Inf' ? Number.POSITIVE_INFINITY : Number(rawUpper)
+    if (!Number.isFinite(upper) && upper !== Number.POSITIVE_INFINITY) continue
+    if (upper === Number.POSITIVE_INFINITY) infinityCount += value
+    byUpper.set(upper, (byUpper.get(upper) ?? 0) + value)
+  }
+  if (!totalFound || total <= 0 || byUpper.size === 0) return undefined
+  if (infinityCount > 0 && Math.abs(infinityCount - total) > 1e-6) return undefined
+  const buckets: HistogramBucket[] = [...byUpper].map(([upper, count]) => ({ upper, count }))
+    .sort((left, right) => left.upper - right.upper)
+  const target = total * quantile
+  let previousUpper = 0
+  let previousCount = 0
+  for (const bucket of buckets) {
+    if (bucket.count >= target) {
+      if (!Number.isFinite(bucket.upper)) return undefined
+      if (bucket.count === previousCount) return bucket.upper
+      return previousUpper + (bucket.upper - previousUpper)
+        * ((target - previousCount) / (bucket.count - previousCount))
+    }
+    previousUpper = bucket.upper
+    previousCount = bucket.count
+  }
+  return undefined
+}
+
+/** Return a bounded fraction from two cumulative counters. */
+function counterRatio(numerator: number | undefined, denominator: number | undefined): number | undefined {
+  if (numerator === undefined || denominator === undefined || denominator <= 0) return undefined
+  const value = numerator / denominator
+  return Number.isFinite(value) && value >= 0 && value <= 1 ? value : undefined
 }
 
 /**
@@ -255,7 +267,7 @@ function parseMetricFamilies(body: string): InferenceMetricFamilyView[] {
  * @throws {@link InferenceMetricsError} when the request gauges are absent or invalid.
  */
 export function parseVllmMetrics(body: string, sampledAt = Date.now()): InferenceMetricsSample {
-  const metricFamilies = parseMetricFamilies(body)
+  const series = parseMetricSeries(body)
   const requestsRunning = vllmMetric(body, 'num_requests_running')
   const requestsWaiting = vllmMetric(body, 'num_requests_waiting')
   if (requestsRunning === undefined || requestsWaiting === undefined
@@ -280,16 +292,43 @@ export function parseVllmMetrics(body: string, sampledAt = Date.now()): Inferenc
   const promptTokensTotal = optionalCounter('prompt_tokens_total')
   const generationTokensTotal = optionalCounter('generation_tokens_total')
   const preemptionsTotal = optionalCounter('num_preemptions_total')
+  const iterationTokensTotal = optionalCounter('iteration_tokens_total_sum')
+  const ttftSecondsTotal = optionalCounter('time_to_first_token_seconds_sum')
+  const prefixCacheHitRate = counterRatio(
+    optionalCounter('prefix_cache_hits_total'),
+    optionalCounter('prefix_cache_queries_total'),
+  )
+  const mtpAcceptanceRate = counterRatio(
+    optionalCounter('spec_decode_num_accepted_tokens_total'),
+    optionalCounter('spec_decode_num_draft_tokens_total'),
+  )
+  const roundedQuantile = (name: string): number | undefined => {
+    const value = histogramQuantile(series, name, 0.95)
+    return value === undefined ? undefined : Math.round(value * 1000) / 1000
+  }
+  const ttftP95Seconds = roundedQuantile('time_to_first_token_seconds')
+  const e2eP95Seconds = roundedQuantile('e2e_request_latency_seconds')
+  const itlP95Seconds = roundedQuantile('inter_token_latency_seconds')
+  const modelId = firstLabel(series, 'model_name')
+  const currentEngineState = engineState(series)
   return {
     backend: 'vllm',
     sampledAt,
+    ...modelId === undefined ? {} : { modelId },
+    ...currentEngineState === undefined ? {} : { engineState: currentEngineState },
     requestsRunning,
     requestsWaiting,
     ...kvCacheUsage === undefined ? {} : { kvCacheUsage },
     ...promptTokensTotal === undefined ? {} : { promptTokensTotal },
     ...generationTokensTotal === undefined ? {} : { generationTokensTotal },
     ...preemptionsTotal === undefined ? {} : { preemptionsTotal },
-    metricFamilies,
+    ...iterationTokensTotal === undefined ? {} : { iterationTokensTotal },
+    ...ttftSecondsTotal === undefined ? {} : { ttftSecondsTotal },
+    ...prefixCacheHitRate === undefined ? {} : { prefixCacheHitRate },
+    ...mtpAcceptanceRate === undefined ? {} : { mtpAcceptanceRate },
+    ...ttftP95Seconds === undefined ? {} : { ttftP95Seconds },
+    ...e2eP95Seconds === undefined ? {} : { e2eP95Seconds },
+    ...itlP95Seconds === undefined ? {} : { itlP95Seconds },
   }
 }
 
@@ -335,6 +374,45 @@ async function boundedText(response: Response, maxBytes: number): Promise<string
   }
 }
 
+interface VllmModelMetadata {
+  modelId?: string
+  contextLength?: number
+}
+
+/** Read optional SparkDash-style model metadata from the configured vLLM origin. */
+async function fetchVllmModelMetadata(url: URL, signal: AbortSignal): Promise<VllmModelMetadata> {
+  if (!/\/metrics$/.test(url.pathname)) return {}
+  const modelsUrl = new URL(url)
+  modelsUrl.pathname = modelsUrl.pathname.replace(/\/metrics$/, '/v1/models')
+  modelsUrl.search = ''
+  try {
+    const response = await fetch(modelsUrl, { headers: { accept: 'application/json' }, signal })
+    if (!response.ok) {
+      await response.body?.cancel()
+      return {}
+    }
+    const raw: unknown = JSON.parse(await boundedText(response, 65_536))
+    if (typeof raw !== 'object' || raw === null || !('data' in raw) || !Array.isArray(raw.data)) return {}
+    const model: unknown = raw.data[0]
+    if (typeof model !== 'object' || model === null) return {}
+    const modelId = 'id' in model && typeof model.id === 'string' && model.id.length > 0
+      ? model.id
+      : undefined
+    const contextLength = 'max_model_len' in model && typeof model.max_model_len === 'number'
+      && Number.isInteger(model.max_model_len) && model.max_model_len > 0
+      ? model.max_model_len
+      : undefined
+    return {
+      ...modelId === undefined ? {} : { modelId },
+      ...contextLength === undefined ? {} : { contextLength },
+    }
+  } catch (optionalModelMetadataFailure: unknown) {
+    if (signal.aborted) throw optionalModelMetadataFailure
+    // Metrics remain authoritative when the companion model endpoint is absent or malformed.
+    return {}
+  }
+}
+
 /**
  * Fetch and parse one configured vLLM metrics endpoint.
  * @param url - validated HTTP(S) endpoint.
@@ -370,5 +448,7 @@ export async function fetchVllmMetrics(
       'inference-metrics-unavailable',
     )
   }
-  return parseVllmMetrics(await boundedText(response, maxBytes))
+  const sample = parseVllmMetrics(await boundedText(response, maxBytes))
+  const model = await fetchVllmModelMetadata(url, signal)
+  return { ...sample, ...model }
 }

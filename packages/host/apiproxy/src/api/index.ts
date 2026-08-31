@@ -63,8 +63,7 @@ export type { GoalsApi, GoalId, GoalRef } from './goals.ts'
 export type { SettingsApi, SettingsNamespaceView, SettingsPathOpView, SettingsSecretView } from './settings.ts'
 export type { CredentialsApi, CredentialView } from './credentials.ts'
 export type {
-  ConfigurableProviderView, DiscoveredModelView, InferenceMetricFamilyView, InferenceMetricLabelView,
-  InferenceMetricSeriesView, InferenceMetricsView, InferenceMetricType, LlmApi,
+  ConfigurableProviderView, DiscoveredModelView, InferenceMetricsView, LlmApi,
 } from './llm.ts'
 export type { DownloadsApi } from './downloads.ts'
 export type { AuthApi, CurrentUserView } from './auth.ts'

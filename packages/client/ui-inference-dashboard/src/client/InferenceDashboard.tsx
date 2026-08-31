@@ -1,10 +1,13 @@
-/** Inference telemetry rendered inside DSH settings. */
+/** SparkDash-derived vLLM telemetry rendered inside DSH settings. */
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-web-react'
-import type { InferenceMetricFamilyView, InferenceMetricSeriesView } from '@deepseek-ai/dsh-api-remotes/client'
 import type { InferenceDashboardKey } from './locales.ts'
-import type { InferenceDashboardController, InferenceDashboardState } from './store.ts'
+import type {
+  InferenceDashboardController,
+  InferenceDashboardMetrics,
+  InferenceDashboardState,
+} from './store.ts'
 import styles from './InferenceDashboard.module.css'
 
 /** Dependencies supplied by the settings slot registration. */
@@ -20,34 +23,57 @@ export interface InferenceDashboardInjected {
 /** Slot props are partial until injection finishes. */
 export type InferenceDashboardProps = Partial<InferenceDashboardInjected>
 
-/** Format a finite cumulative metric for compact cards. */
+/** Format an optional cumulative value. */
 function count(value: number | undefined, unavailable: string): string {
   return value === undefined ? unavailable : new Intl.NumberFormat().format(value)
 }
 
-/** Render one label set in Prometheus notation with unambiguous escaping. */
-function labels(series: InferenceMetricSeriesView, none: string): string {
-  if (series.labels.length === 0) return none
-  return `{${series.labels.map(label => `${label.name}=${JSON.stringify(label.value)}`).join(', ')}}`
+/** Format an optional percentage fraction. */
+function percent(value: number | undefined, unavailable: string): string {
+  return value === undefined ? unavailable : `${(value * 100).toFixed(1)}%`
 }
 
-/** Keep family metadata and only the matching series when a search is active. */
-function matchingFamilies(families: InferenceMetricFamilyView[], query: string): InferenceMetricFamilyView[] {
-  const needle = query.trim().toLocaleLowerCase()
-  if (needle.length === 0) return families
-  return families.flatMap((family) => {
-    const familyText = [family.name, family.help, family.type].filter(Boolean).join(' ').toLocaleLowerCase()
-    if (familyText.includes(needle)) return [family]
-    const series = family.series.filter((item) => {
-      const seriesText = [
-        item.metric,
-        item.value,
-        ...item.labels.flatMap(label => [label.name, label.value]),
-      ].join(' ').toLocaleLowerCase()
-      return seriesText.includes(needle)
-    })
-    return series.length === 0 ? [] : [{ ...family, series }]
+/** Format an optional seconds value. */
+function seconds(value: number | undefined, unavailable: string): string {
+  return value === undefined ? unavailable : `${value.toFixed(3)}s`
+}
+
+/** Small inline trend matching SparkDash's last-30-sample sparklines. */
+function Sparkline({ values, accent = false }: { values: number[]; accent?: boolean }): ReactNode {
+  const width = 92
+  const height = 28
+  if (values.length < 2) return <span className={styles.sparklinePlaceholder} aria-hidden="true" />
+  const maximum = Math.max(...values, 1)
+  const minimum = Math.min(...values, 0)
+  const span = maximum - minimum || 1
+  const padding = 2
+  const points = values.map((value, index) => {
+    const x = (index / (values.length - 1)) * width
+    const y = height - padding - ((value - minimum) / span) * (height - padding * 2)
+    return `${String(x)},${String(y)}`
   })
+  const area = `M0,${String(height)} L${points.join(' L')} L${String(width)},${String(height)} Z`
+  return (
+    <svg className={accent ? styles.sparklineAccent : styles.sparkline} viewBox={`0 0 ${String(width)} ${String(height)}`} aria-hidden="true">
+      <path d={area} className={styles.sparklineArea} />
+      <polyline points={points.join(' ')} className={styles.sparklineLine} />
+    </svg>
+  )
+}
+
+/** One compact SparkDash-style metric cell with its explanatory tooltip. */
+function MetricTile(props: { label: string; value: string; description?: string; tone?: string }): ReactNode {
+  return (
+    <div className={styles.metricTile}>
+      <div className={styles.metricLabel}>
+        <span>{props.label}</span>
+        {props.description === undefined ? null : (
+          <span className={styles.info} title={props.description} aria-label={`${props.label}: ${props.description}`} />
+        )}
+      </div>
+      <strong className={props.tone ?? styles.metricValue}>{props.value}</strong>
+    </div>
+  )
 }
 
 /** Render the settings dashboard. */
@@ -59,7 +85,6 @@ export function InferenceDashboard(props: InferenceDashboardProps): ReactNode {
 
 function Loaded({ controller, useSnapshot, t }: InferenceDashboardInjected): ReactNode {
   const state = useSnapshot(snapshot => snapshot)
-  const [query, setQuery] = useState('')
   useEffect(() => {
     controller.start()
     return () => { controller.stop() }
@@ -82,13 +107,24 @@ function Loaded({ controller, useSnapshot, t }: InferenceDashboardInjected): Rea
     )
   }
 
-  const { metrics } = state
-  const percent = metrics.kvCacheUsage === undefined
-    ? undefined
-    : Math.round(metrics.kvCacheUsage * 100)
-  const filteredFamilies = matchingFamilies(metrics.metricFamilies, query)
-  const seriesCount = metrics.metricFamilies.reduce((total, family) => total + family.series.length, 0)
-  const filteredSeriesCount = filteredFamilies.reduce((total, family) => total + family.series.length, 0)
+  return <SparkDashPanel metrics={state.metrics} t={t} />
+}
+
+/** Curated vLLM panel adapted from SparkDash's LLM surface. */
+function SparkDashPanel(props: { metrics: InferenceDashboardMetrics; t: InferenceDashboardInjected['t'] }): ReactNode {
+  const { metrics, t } = props
+  const cacheTone = metrics.kvCacheUsage === undefined
+    ? styles.metricValue
+    : metrics.kvCacheUsage >= 0.8 ? styles.danger : metrics.kvCacheUsage >= 0.5 ? styles.warning : styles.success
+  const engine = metrics.engineState === undefined
+    ? t('unavailable')
+    : metrics.engineState === 'active'
+      ? t('engineActive')
+      : metrics.engineState === 'weights-offloaded' ? t('engineOffloaded') : t('engineDiscarded')
+  const slots = metrics.requestsRunning > 0
+    ? `${String(metrics.requestsRunning)} ${t('slotsRunning')}`
+    : t('unavailable')
+
   return (
     <section className={styles.section} aria-labelledby="inference-dashboard-title">
       <header className={styles.header}>
@@ -102,105 +138,55 @@ function Loaded({ controller, useSnapshot, t }: InferenceDashboardInjected): Rea
         </div>
       </header>
 
-      <div className={styles.grid}>
-        <article className={styles.card} aria-label={t('backend')}>
-          <span className={styles.cardLabel}>{t('backend')}</span>
-          <strong className={styles.backend}>{metrics.backend}</strong>
-        </article>
-
-        <article className={styles.card} aria-label={t('requests')}>
-          <span className={styles.cardLabel}>{t('requests')}</span>
-          <dl className={styles.splitMetrics}>
-            <div><dt>{t('running')}</dt><dd>{metrics.requestsRunning}</dd></div>
-            <div><dt>{t('waiting')}</dt><dd>{metrics.requestsWaiting}</dd></div>
-          </dl>
-          <p className={styles.note}>{t('queueNote')}</p>
-        </article>
-
-        <article className={styles.card} aria-label={t('kvCache')}>
-          <span className={styles.cardLabel}>{t('kvCache')}</span>
-          <strong className={styles.metric}>{percent === undefined ? t('unavailable') : `${String(percent)}%`}</strong>
-          {percent === undefined ? null : (
-            <div
-              className={styles.progress}
-              role="progressbar"
-              aria-label={t('kvCache')}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={percent}
-            >
-              <span style={{ width: `${String(percent)}%` }} />
-            </div>
-          )}
-        </article>
-
-        <article className={styles.card} aria-label={t('tokens')}>
-          <span className={styles.cardLabel}>{t('tokens')}</span>
-          <dl className={styles.tokenMetrics}>
-            <div><dt>{t('promptTokens')}</dt><dd>{count(metrics.promptTokensTotal, t('unavailable'))}</dd></div>
-            <div><dt>{t('generationTokens')}</dt><dd>{count(metrics.generationTokensTotal, t('unavailable'))}</dd></div>
-            <div><dt>{t('preemptions')}</dt><dd>{count(metrics.preemptionsTotal, t('unavailable'))}</dd></div>
-          </dl>
-        </article>
-      </div>
-
-      <section className={styles.explorer} aria-labelledby="inference-all-metrics-title">
-        <header className={styles.explorerHeader}>
-          <div>
-            <h3 id="inference-all-metrics-title" className={styles.explorerTitle}>{t('allMetrics')}</h3>
-            <p className={styles.explorerDescription}>{t('allMetricsDescription')}</p>
+      <article className={styles.panel} aria-label={t('llmPanel')}>
+        <header className={styles.panelHeader}>
+          <div className={styles.identity}>
+            <span className={styles.badge}><span aria-hidden="true" />vLLM</span>
+            <strong>{metrics.modelId ?? t('modelUnknown')}</strong>
           </div>
-          <label className={styles.search}>
-            <span>{t('search')}</span>
-            <input
-              type="search"
-              value={query}
-              placeholder={t('searchPlaceholder')}
-              onChange={(event) => { setQuery(event.currentTarget.value) }}
-            />
-          </label>
         </header>
-        <p className={styles.resultCount} role="status">
-          {query.trim().length === 0
-            ? `${String(metrics.metricFamilies.length)} ${t('families')} · ${String(seriesCount)} ${t('series')}`
-            : `${String(filteredFamilies.length)} ${t('families')} · ${String(filteredSeriesCount)} ${t('matchingSeries')}`}
-        </p>
-        {filteredFamilies.length === 0 ? (
-          <p className={styles.noResults}>{t('noResults')}</p>
-        ) : (
-          <div className={styles.familyList}>
-            {filteredFamilies.map(family => (
-              <article className={styles.family} key={family.name}>
-                <header className={styles.familyHeader}>
-                  <code>{family.name}</code>
-                  {family.type === undefined ? null : <span className={styles.type}>{family.type}</span>}
-                </header>
-                {family.help === undefined ? null : <p className={styles.help}>{family.help}</p>}
-                <div className={styles.tableScroll}>
-                  <table className={styles.metricTable}>
-                    <thead>
-                      <tr>
-                        <th scope="col">{t('metric')}</th>
-                        <th scope="col">{t('labels')}</th>
-                        <th scope="col">{t('value')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {family.series.map((item, index) => (
-                        <tr key={`${item.metric}:${String(index)}`}>
-                          <td><code>{item.metric}</code></td>
-                          <td><code>{labels(item, t('noLabels'))}</code></td>
-                          <td><code>{item.value}</code></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </article>
-            ))}
+
+        <div className={styles.throughput}>
+          <div className={styles.rateRow}>
+            <span>{t('generationRate')}</span>
+            <Sparkline values={metrics.generationHistory} accent />
+            <strong>{metrics.generationTokensPerSecond.toFixed(1)}</strong>
           </div>
-        )}
-      </section>
+          <div className={styles.rateRow}>
+            <span>{t('prefillRate')}</span>
+            <Sparkline values={metrics.prefillHistory} />
+            <strong>{metrics.prefillTokensPerSecond.toFixed(1)}</strong>
+          </div>
+        </div>
+
+        <div className={styles.metricGrid}>
+          <MetricTile label={t('slots')} value={slots} />
+          <MetricTile label={t('context')} value={count(metrics.contextLength, t('unavailable'))} />
+          <MetricTile label={t('engine')} value={engine} description={t('engineInfo')} />
+          <MetricTile label={t('totalGenerated')} value={count(metrics.generationTokensTotal, t('unavailable'))} />
+        </div>
+
+        <div className={styles.metricGrid}>
+          <MetricTile
+            label={t('kvCache')}
+            value={percent(metrics.kvCacheUsage, t('unavailable'))}
+            description={t('kvCacheInfo')}
+            {...cacheTone === undefined ? {} : { tone: cacheTone }}
+          />
+          <MetricTile label={t('requests')} value={`${String(metrics.requestsRunning)} ${t('run')} / ${String(metrics.requestsWaiting)} ${t('wait')}`} description={t('requestsInfo')} />
+          <MetricTile label={t('ttftP95')} value={seconds(metrics.ttftP95Seconds, t('unavailable'))} description={t('ttftP95Info')} />
+          <MetricTile label={t('preemptions')} value={count(metrics.preemptionsTotal, t('unavailable'))} description={t('preemptionsInfo')} />
+        </div>
+
+        <div className={styles.metricGrid}>
+          <MetricTile label={t('prefixCache')} value={percent(metrics.prefixCacheHitRate, t('unavailable'))} description={t('prefixCacheInfo')} />
+          <MetricTile label={t('e2eP95')} value={seconds(metrics.e2eP95Seconds, t('unavailable'))} description={t('e2eP95Info')} />
+          <MetricTile label={t('itlP95')} value={seconds(metrics.itlP95Seconds, t('unavailable'))} description={t('itlP95Info')} />
+          <MetricTile label={t('mtpAccept')} value={percent(metrics.mtpAcceptanceRate, t('unavailable'))} description={t('mtpAcceptInfo')} />
+        </div>
+
+        <p className={styles.note}>{t('queueNote')}</p>
+      </article>
     </section>
   )
 }

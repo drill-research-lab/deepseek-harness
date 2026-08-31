@@ -22,152 +22,46 @@
     - text: 关闭
   - region "模型运行状态":
     - heading "模型运行状态" [level=2]
-    - paragraph: 当前 vLLM 服务的实时负载与资源指标。
+    - paragraph: 按 SparkDash LLM 面板呈现当前 vLLM 服务状态。
     - text: 在线 · 更新时间 {{clock}}
-    - article "推理后端":
-      - text: 推理后端
-      - strong: vllm
-    - article "请求":
-      - text: 请求
-      - term: 运行中
-      - definition: "2"
-      - term: 等待中
-      - definition: "7"
-      - paragraph: 这里显示总请求数，不代表当前任务的排队序位。
-    - article "KV 缓存":
-      - text: KV 缓存
-      - strong: 42%
-      - progressbar "KV 缓存"
-    - article "Token 累计":
-      - text: Token 累计
-      - term: 输入
-      - definition: 1,200
-      - term: 输出
-      - definition: "345"
-      - term: 抢占次数
-      - definition: "6"
-    - region "全部 vLLM 指标":
-      - heading "全部 vLLM 指标" [level=3]
-      - paragraph: 完整显示端点公开的每个 vLLM 数值序列及其标签。
-      - text: 筛选指标
-      - searchbox "筛选指标":
-        - /placeholder: 名称、类型、标签或值
-      - status: 7 个指标组 · 7 条序列
-      - article:
-        - code: vllm:generation_tokens_total
-        - table:
-          - rowgroup:
-            - row "指标 标签 值":
-              - columnheader "指标"
-              - columnheader "标签"
-              - columnheader "值"
-          - rowgroup:
-            - row "vllm:generation_tokens_total 无 345":
-              - cell "vllm:generation_tokens_total":
-                - code: vllm:generation_tokens_total
-              - cell "无":
-                - code: 无
-              - cell "345":
-                - code: "345"
-      - article:
-        - code: vllm:kv_cache_usage_perc
-        - table:
-          - rowgroup:
-            - row "指标 标签 值":
-              - columnheader "指标"
-              - columnheader "标签"
-              - columnheader "值"
-          - rowgroup:
-            - row "vllm:kv_cache_usage_perc 无 0.42":
-              - cell "vllm:kv_cache_usage_perc":
-                - code: vllm:kv_cache_usage_perc
-              - cell "无":
-                - code: 无
-              - cell "0.42":
-                - code: "0.42"
-      - article:
-        - code: vllm:num_preemptions_total
-        - table:
-          - rowgroup:
-            - row "指标 标签 值":
-              - columnheader "指标"
-              - columnheader "标签"
-              - columnheader "值"
-          - rowgroup:
-            - row "vllm:num_preemptions_total 无 6":
-              - cell "vllm:num_preemptions_total":
-                - code: vllm:num_preemptions_total
-              - cell "无":
-                - code: 无
-              - cell "6":
-                - code: "6"
-      - article:
-        - code: vllm:num_requests_running
-        - text: gauge
-        - paragraph: Number of requests currently running.
-        - table:
-          - rowgroup:
-            - row "指标 标签 值":
-              - columnheader "指标"
-              - columnheader "标签"
-              - columnheader "值"
-          - rowgroup:
-            - 'row "vllm:num_requests_running {engine=\"0\", model_name=\"test-model\"} 2"':
-              - cell "vllm:num_requests_running":
-                - code: vllm:num_requests_running
-              - 'cell "{engine=\"0\", model_name=\"test-model\"}"':
-                - 'code: {engine="0", model_name="test-model"}'
-              - cell "2":
-                - code: "2"
-      - article:
-        - code: vllm:num_requests_waiting
-        - text: gauge
-        - paragraph: Number of requests waiting to be processed.
-        - table:
-          - rowgroup:
-            - row "指标 标签 值":
-              - columnheader "指标"
-              - columnheader "标签"
-              - columnheader "值"
-          - rowgroup:
-            - 'row "vllm:num_requests_waiting {engine=\"0\", model_name=\"test-model\"} 7"':
-              - cell "vllm:num_requests_waiting":
-                - code: vllm:num_requests_waiting
-              - 'cell "{engine=\"0\", model_name=\"test-model\"}"':
-                - 'code: {engine="0", model_name="test-model"}'
-              - cell "7":
-                - code: "7"
-      - article:
-        - code: vllm:prompt_tokens_total
-        - table:
-          - rowgroup:
-            - row "指标 标签 值":
-              - columnheader "指标"
-              - columnheader "标签"
-              - columnheader "值"
-          - rowgroup:
-            - row "vllm:prompt_tokens_total 无 1200":
-              - cell "vllm:prompt_tokens_total":
-                - code: vllm:prompt_tokens_total
-              - cell "无":
-                - code: 无
-              - cell "1200":
-                - code: "1200"
-      - article:
-        - code: vllm:time_to_first_token_seconds
-        - text: histogram
-        - paragraph: Time to first token.
-        - table:
-          - rowgroup:
-            - row "指标 标签 值":
-              - columnheader "指标"
-              - columnheader "标签"
-              - columnheader "值"
-          - rowgroup:
-            - 'row "vllm:time_to_first_token_seconds_bucket {engine=\"0\", model_name=\"test-model\", le=\"+Inf\"} 10"':
-              - cell "vllm:time_to_first_token_seconds_bucket":
-                - code: vllm:time_to_first_token_seconds_bucket
-              - 'cell "{engine=\"0\", model_name=\"test-model\", le=\"+Inf\"}"':
-                - 'code: {engine="0", model_name="test-model", le="+Inf"}'
-              - cell "10":
-                - code: "10"
+    - article "LLM 运行指标":
+      - text: vLLM
+      - strong: test-model
+      - text: Generation tok/s
+      - strong: "0.0"
+      - text: Prefill tok/s
+      - strong: "0.0"
+      - text: Slots
+      - strong: 2 运行中
+      - text: Context
+      - strong: 128,000
+      - text: Engine
+      - text: "Engine: Active 表示引擎可处理请求；Sleeping 表示权重已卸载；Discarded 表示引擎缓存已清除。"
+      - strong: Active
+      - text: Total Generated
+      - strong: "345"
+      - text: KV Cache
+      - text: "KV Cache: 当前 KV cache 使用比例；达到 80% 通常表示新请求或长上下文的空间不足。"
+      - strong: 42.0%
+      - text: Requests
+      - text: "Requests: run 是正在 GPU 上生成的请求，wait 是已接受但尚未排程的请求。"
+      - strong: 2 run / 7 wait
+      - text: TTFT p95
+      - text: "TTFT p95: 历史请求首个输出 token 延迟的第 95 百分位。"
+      - strong: 0.875s
+      - text: Preempts
+      - text: "Preempts: 为了释放 KV cache 而暂停运行中请求的累计次数。"
+      - strong: "6"
+      - text: Prefix Cache
+      - text: "Prefix Cache: prefix-cache 查询的累计命中率。"
+      - strong: 75.0%
+      - text: E2E p95
+      - text: "E2E p95: 从请求抵达到完成的端到端延迟第 95 百分位。"
+      - strong: —
+      - text: ITL p95
+      - text: "ITL p95: 连续输出 token 之间延迟的第 95 百分位。"
+      - strong: —
+      - text: MTP Accept
+      - text: "MTP Accept: speculative/MTP draft token 的累计接受率。"
+      - strong: 60.0%
+      - paragraph: Requests 是整个 vLLM 部署的总量，不代表当前 DSH 任务的排队位置。

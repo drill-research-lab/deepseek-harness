@@ -29,9 +29,18 @@ vllm:kv_cache_usage_perc 0.42
 vllm:prompt_tokens_total 1200
 vllm:generation_tokens_total 345
 vllm:num_preemptions_total 6
+vllm:iteration_tokens_total_sum 1500
+vllm:engine_sleep_state{sleep_state="awake"} 1
+vllm:prefix_cache_hits_total 75
+vllm:prefix_cache_queries_total 100
+vllm:spec_decode_num_accepted_tokens_total 60
+vllm:spec_decode_num_draft_tokens_total 100
 # HELP vllm:time_to_first_token_seconds Time to first token.
 # TYPE vllm:time_to_first_token_seconds histogram
+vllm:time_to_first_token_seconds_bucket{engine="0",model_name="test-model",le="0.5"} 8
+vllm:time_to_first_token_seconds_bucket{engine="0",model_name="test-model",le="1.0"} 10
 vllm:time_to_first_token_seconds_bucket{engine="0",model_name="test-model",le="+Inf"} 10
+vllm:time_to_first_token_seconds_count{engine="0",model_name="test-model"} 10
 `
 
 function listen(server: Server): Promise<number> {
@@ -59,10 +68,15 @@ describe('web e2e: embedded inference dashboard', () => {
 
   beforeAll(async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-inference-dashboard-'))
-    metricsServer = createServer((_request, response) => {
+    metricsServer = createServer((request, response) => {
       if (!metricsReady) {
         response.writeHead(503, { 'content-type': 'text/plain' })
         response.end('warming up')
+        return
+      }
+      if (request.url === '/v1/models') {
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ data: [{ id: 'test-model', max_model_len: 128_000 }] }))
         return
       }
       response.writeHead(200, { 'content-type': 'text/plain' })
@@ -108,17 +122,16 @@ describe('web e2e: embedded inference dashboard', () => {
     metricsReady = true
     await dialog.getByRole('button', { name: '重试' }).click()
     await dialog.getByRole('heading', { name: '模型运行状态' }).waitFor({ timeout: 10_000 })
-    const requests = dialog.getByRole('article', { name: '请求' })
-    expect(await requests.textContent()).toContain('运行中2')
-    expect(await requests.textContent()).toContain('等待中7')
-    expect(await dialog.getByRole('progressbar', { name: 'KV 缓存' }).getAttribute('aria-valuenow')).toBe('42')
-    await dialog.getByRole('heading', { name: '全部 vLLM 指标' }).waitFor()
-    expect(await dialog.getByRole('status').textContent()).toContain('7 个指标组 · 7 条序列')
-    expect(await dialog.getByText('{engine="0", model_name="test-model"}').count()).toBe(2)
+    const panel = dialog.getByRole('article', { name: 'LLM 运行指标' })
+    expect(await panel.textContent()).toContain('test-model')
+    expect(await panel.textContent()).toContain('Requests2 run / 7 wait')
+    expect(await panel.textContent()).toContain('KV Cache42.0%')
+    expect(await panel.textContent()).toContain('Context128,000')
+    expect(await panel.textContent()).toContain('Prefix Cache75.0%')
 
     const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(READY_EXPECTED, snapshot, MODE)
-    expect(snapshot).toContain('这里显示总请求数，不代表当前任务的排队序位。')
+    expect(snapshot).toContain('Requests 是整个 vLLM 部署的总量，不代表当前 DSH 任务的排队位置。')
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 })

@@ -15,7 +15,6 @@ const sample = {
   requestsRunning: 2,
   requestsWaiting: 5,
   kvCacheUsage: 0.5,
-  metricFamilies: [],
 }
 
 describe('InferenceDashboardController', () => {
@@ -60,7 +59,64 @@ describe('InferenceDashboardController', () => {
       })
     })
     controller.retry()
-    await vi.waitFor(() => { expect(controller.store.getSnapshot()).toEqual({ status: 'ready', metrics: sample }) })
+    await vi.waitFor(() => {
+      expect(controller.store.getSnapshot()).toMatchObject({
+        status: 'ready',
+        metrics: {
+          ...sample,
+          generationTokensPerSecond: 0,
+          prefillTokensPerSecond: 0,
+          generationHistory: [0],
+          prefillHistory: [0],
+        },
+      })
+    })
+    controller.stop()
+  })
+
+  it('derives SparkDash-style live throughput and keeps a short trend', async () => {
+    const metrics = vi.fn()
+      .mockResolvedValueOnce({
+        rpcId: 'metrics-1',
+        result: {
+          ok: true,
+          value: {
+            ...sample,
+            sampledAt: 1_000,
+            promptTokensTotal: 1_000,
+            generationTokensTotal: 500,
+            iterationTokensTotal: 2_000,
+            ttftSecondsTotal: 50,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        rpcId: 'metrics-2',
+        result: {
+          ok: true,
+          value: {
+            ...sample,
+            sampledAt: 3_000,
+            promptTokensTotal: 1_100,
+            generationTokensTotal: 520,
+            iterationTokensTotal: 2_120,
+            ttftSecondsTotal: 52,
+          },
+        },
+      })
+    const controller = new InferenceDashboardController({ llm: { metrics } } as never)
+    controller.start()
+    await vi.waitFor(() => { expect(controller.store.getSnapshot().status).toBe('ready') })
+    await controller.load()
+    expect(controller.store.getSnapshot()).toMatchObject({
+      status: 'ready',
+      metrics: {
+        generationTokensPerSecond: 10,
+        prefillTokensPerSecond: 50,
+        generationHistory: [0, 10],
+        prefillHistory: [0, 50],
+      },
+    })
     controller.stop()
   })
 

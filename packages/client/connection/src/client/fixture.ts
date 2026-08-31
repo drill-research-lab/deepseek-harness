@@ -2963,7 +2963,6 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       metrics: request => ok(request, {
         backend: 'vllm', sampledAt: Date.now(), refreshAfterMs: 2000,
         requestsRunning: 1, requestsWaiting: 0, kvCacheUsage: 0.25,
-        metricFamilies: [],
       }),
       // The fixture endpoint is imaginary, so the interrogation answers the
       // catalog it already serves — enough for a surface to exercise adopting
