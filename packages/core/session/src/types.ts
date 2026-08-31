@@ -396,6 +396,16 @@ export interface SurfaceIntent {
 }
 
 /**
+ * Append intent for a log-only event: the {@link SessionEvent.ignorable}
+ * reader-safety mark. Surface events cannot carry it — their placement is
+ * derivational, and dropping one silently would gut model history.
+ */
+export interface LogIntent {
+  /** Marks the event safe for readers that do not recognize its type. */
+  ignorable?: true
+}
+
+/**
  * One immutable entry in the session log.
  *
  * A proper discriminated union over `type` (not independent `type`/`data`
