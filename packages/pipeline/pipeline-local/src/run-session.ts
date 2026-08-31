@@ -13,7 +13,7 @@
  */
 
 import { createScope, type Scope } from '@deepseek-ai/dsh-scope'
-import { type Session, SessionId } from '@deepseek-ai/dsh-session'
+import { type Session, SessionId, type SessionStore } from '@deepseek-ai/dsh-session'
 import type { Context } from '@deepseek-ai/cordis'
 import type { JsonValue, PipelineRunStatus } from '@deepseek-ai/dsh-pipeline/types'
 import type { PipelineRunNodeOutcome } from './types.ts'
@@ -125,7 +125,18 @@ export class PipelineRunSession {
     if (sessions === undefined) {
       throw new Error('no session store is mounted: pipeline run sessions need ctx.sessions')
     }
-    const session = sessions.create(SessionId(descriptor.runId), { meta: { origin: 'pipeline' } })
+    const session = sessions.prepare(SessionId(descriptor.runId), { meta: { origin: 'pipeline' } })
+    // Fold the store attachment into the per-run scope: create() would pin the
+    // detach disposer to the session store's own fiber (never unloaded mid-process),
+    // leaking every run session as a live store entry. Here the scope disposal
+    // detaches, flushing the write-behind and retiring the live entry.
+    scope.ctx.effect(function* (this: SessionStore) {
+      // Yielding the detach rides the scope's unwind: disposing the scope
+      // detaches the session, flushing the write-behind and retiring the
+      // live entry.
+      yield this.enter(session)
+      this.announce(session)
+    }.bind(sessions), 'pipeline-run-session')
     session.append('pipeline/run-descriptor', descriptor, { ignorable: true })
     return new PipelineRunSession(scope, session.id, session)
   }

@@ -334,6 +334,32 @@ describe('PipelineLocalEngine runs', () => {
     expect(engine.list()[0]).toMatchObject({ status: 'idle', lastStatus: 'failed' })
   })
 
+  it('detaches the run session at settle: the same run id can run again after re-creation', async () => {
+    const { ctx, engine } = await setup()
+    engine.registerBuiltin('test/search', () => ({ hits: 1 }))
+    const short: Record<string, unknown> = definition()
+    ;(short as { nodes: unknown[] }).nodes = [
+      { id: 'trigger', type: 'trigger' },
+      { id: 'collect', type: 'builtin', ref: 'test/search' },
+    ]
+    ;(short as { edges: unknown[] }).edges = [{ from: 'trigger', to: 'collect' }]
+    await engine.save({ definition: short })
+    const first = engine.startRun({ id: PipelineId('sch-search-test'), trigger: 'manual' })
+    if (first.outcome !== 'started') throw new Error('expected a started run')
+    await first.result
+    // The store no longer holds the settled run's session.
+    expect(ctx.sessions.get(SessionId('sch-search-test-run-1'), 'trusted-internal')).toBeUndefined()
+    // Re-creating the same pipeline reuses the ordinal sequence, so the same
+    // session id recurs; a leaked live session would collide here.
+    await engine.delete(PipelineId('sch-search-test'))
+    await engine.save({ definition: short })
+    const second = engine.startRun({ id: PipelineId('sch-search-test'), trigger: 'manual' })
+    if (second.outcome !== 'started') throw new Error('expected a started run')
+    const result = await second.result
+    expect(result).toMatchObject({ status: 'completed', nodeCount: 2 })
+    void ctx
+  })
+
   it('keeps the record metrics when the run session log is unreadable', async () => {
     const { ctx, engine, storageDir, sessionRoot } = await setup()
     engine.registerBuiltin('test/search', () => ({ hits: 1 }))
