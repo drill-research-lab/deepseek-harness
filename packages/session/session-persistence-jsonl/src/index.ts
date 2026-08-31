@@ -8,7 +8,7 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { readdirSync } from 'node:fs'
+import { existsSync, readdirSync, rmSync } from 'node:fs'
 import { open, mkdir, readFile, readdir, realpath, link, rm, stat, truncate } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
@@ -694,6 +694,28 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
   }
 
   // --- materialization / append / repair (file mechanics) ---
+
+  async forget(id: SessionId): Promise<boolean> {
+    return this.coordinator.forget(id, () => this.deleteArtifact(id))
+  }
+
+  /** Remove one session's artifact directory, scanning project dirs when its cwd is unknown. */
+  private async deleteArtifact(id: SessionId): Promise<boolean> {
+    const selectedRoot = await this.rootForId(id)
+    if (selectedRoot === undefined) return false
+    if (this.rootScope.getStore() !== selectedRoot) {
+      return this.rootScope.run(selectedRoot, () => this.deleteArtifact(id))
+    }
+    await this.ensureRootEncoding()
+    const segment = encodeSegment(id)
+    for (const project of await this.listProjectDirs()) {
+      const dir = join(project, segment)
+      if (!existsSync(dir)) continue
+      rmSync(dir, { recursive: true, force: true })
+      return true
+    }
+    return false
+  }
 
   /** Atomically write the header line + first batch (temp-write, fsync, publish). */
   private async materialize(meta: SessionHeader, events: readonly SessionEvent[]): Promise<void> {

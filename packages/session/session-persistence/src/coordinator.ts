@@ -819,6 +819,24 @@ export class PersistenceCoordinator<TornMarker = unknown> {
   }
 
   /**
+   * Delete one session's durable log through `remove` and drop its cached
+   * prepared view. Refuses a live session: an active writer would recreate
+   * the artifact behind the deletion.
+   * @param id - persisted session to delete.
+   * @param remove - the backend's own durable deletion; returns whether a stored log existed.
+   * @returns whether a stored log existed and was deleted.
+   * @throws when a live session with this id is still attached.
+   */
+  async forget(id: SessionId, remove: () => Promise<boolean>): Promise<boolean> {
+    if (this.ctx.sessions.get(id, 'trusted-internal') !== undefined) {
+      throw new Error(`session "${id}" is live; dispose it before forgetting`)
+    }
+    const removed = await this.serialize(id, remove)
+    this.preparations.invalidate(id)
+    return removed
+  }
+
+  /**
    * Read the stored events from `fromSeq` onward, detached and non-mutating
    * (the read-from-seq primitive behind the service's `readFrom`). Runs on
    * the same per-id chain as writes; a backend with the seek-capable

@@ -213,6 +213,21 @@ describe('rowToMeta', () => {
 })
 
 describe('SqliteSessionPersistence: durability and crash semantics', () => {
+  it('forget deletes the session rows and reports repeated removals', async () => {
+    const path = await freshDbPath()
+    const m = meta('forgotten', '/work')
+    const mounted = await backend(path)
+    await mounted.ctx.sessionPersistence.create(m)
+    await mounted.ctx.sessionPersistence.append(m.id, oneTurnLog())
+    expect((await mounted.ctx.sessionPersistence.list()).map(h => h.id)).toContain(m.id)
+
+    await expect(mounted.ctx.sessionPersistence.forget(m.id)).resolves.toBe(true)
+    expect((await mounted.ctx.sessionPersistence.list()).map(h => h.id)).not.toContain(m.id)
+    await expect(mounted.ctx.sessionPersistence.load(m.id)).rejects.toThrow(/not found/)
+    await expect(mounted.ctx.sessionPersistence.forget(m.id)).resolves.toBe(false)
+    await mounted.dispose()
+  })
+
   it('rejects a stored v0 log containing a legacy request/header-delta event', async () => {
     const path = await freshDbPath()
     const m = meta('legacy-header-delta', '/legacy')

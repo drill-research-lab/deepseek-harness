@@ -514,6 +514,64 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 來源：[`packages/interaction/permission-presets/src/index.ts:50`](../packages/interaction/permission-presets/src/index.ts)
 
+### `pipeline/*`
+
+<a id="pipelinenode-settled--log-only"></a>
+
+#### `pipeline/node-settled` — log-only
+
+```ts persistence-catalog
+/**
+ * Closes one node's execution window with its outcome and, when executed,
+ * its JSON output. Log-only and appended with the `ignorable` mark.
+ */
+'pipeline/node-settled': PipelineNodeSettledData
+```
+
+Source: [`packages/pipeline/pipeline-local/src/run-session.ts:95`](../packages/pipeline/pipeline-local/src/run-session.ts)
+
+<a id="pipelinenode-started--log-only"></a>
+
+#### `pipeline/node-started` — log-only
+
+```ts persistence-catalog
+/**
+ * Marks one node's execution window opening. Log-only and appended with
+ * the `ignorable` mark.
+ */
+'pipeline/node-started': PipelineNodeStartedData
+```
+
+Source: [`packages/pipeline/pipeline-local/src/run-session.ts:90`](../packages/pipeline/pipeline-local/src/run-session.ts)
+
+<a id="pipelinerun-descriptor--log-only"></a>
+
+#### `pipeline/run-descriptor` — log-only
+
+```ts persistence-catalog
+/**
+ * Opens a pipeline run's session log with the run's identity. Log-only
+ * and appended with the `ignorable` mark: informational projection whose
+ * loss cannot affect session reconstruction.
+ */
+'pipeline/run-descriptor': PipelineRunDescriptorData
+```
+
+Source: [`packages/pipeline/pipeline-local/src/run-session.ts:85`](../packages/pipeline/pipeline-local/src/run-session.ts)
+
+<a id="pipelinerun-settled--log-only"></a>
+
+#### `pipeline/run-settled` — log-only
+
+```ts persistence-catalog
+/**
+ * Closes the run with its settled facts. Log-only and appended with the
+ * `ignorable` mark.
+ */
+'pipeline/run-settled': PipelineRunSettledData
+```
+
+Source: [`packages/pipeline/pipeline-local/src/run-session.ts:100`](../packages/pipeline/pipeline-local/src/run-session.ts)
 ### `plan/*`
 
 <a id="planmode--log-only"></a>

@@ -197,6 +197,9 @@ flowchart LR
   svc_workflowEngine["ctx.workflowEngine<br/>Workflow script engine"]
   pkg_workflow_worker_thread["workflow-worker-thread"]
   pkg_tool_workflow["tool-workflow"]
+  pkg_pipeline["pipeline"]
+  svc_pipelineEngine["ctx.pipelineEngine<br/>Scheduled pipeline engine"]
+  pkg_pipeline_local["pipeline-local"]
   pkg_lsp["lsp"]
   svc_lsp["ctx.lsp<br/>Language-server navigation seam"]
   pkg_lsp_local["lsp-local"]
@@ -255,6 +258,8 @@ flowchart LR
   pkg_modules --> svc_clientModules
   pkg_ownership --> svc_ownership
   pkg_permission_presets --> svc_permissionPresets
+  pkg_pipeline --> svc_pipelineEngine
+  pkg_pipeline_local --> svc_pipelineEngine
   pkg_plan_mode --> svc_planMode
   pkg_pwsh_local --> svc_shell
   pkg_sandbox --> svc_sandbox
@@ -350,6 +355,7 @@ flowchart LR
   svc_llm --> pkg_compaction_basic
   svc_localAccounts --> pkg_auth_gateway_ldap
   svc_lsp --> pkg_tool_lsp
+  svc_pipelineEngine --> pkg_apiproxy
   svc_sandbox --> pkg_bash_sandbox
   svc_sandbox --> pkg_terminal_bash
   svc_sandboxPolicy --> pkg_bash_sandbox
@@ -490,6 +496,7 @@ flowchart LR
 | `ctx.ldapAuthGateway` | `core` | [`auth-gateway-ldap`](../packages/identity/auth-gateway-ldap) | - | - | - | Owns primary LDAP login, optional DSH-local login and registration, and Ed25519 assertion signing in a process and credential home separate from DSH. |
 | `ctx.clientModules` | `core` | `modules` | - | `hmr` | - | Composes the __DSH_BOOT__ entry graph from an incremental dsh.client scan, serves plugin bundles, and notifies rebuilt/graph-changed subscribers. |
 | `ctx.workflowEngine` | `seam` | [`workflow`](../packages/workflow/workflow) | [`workflow-worker-thread`](../packages/workflow/workflow-worker-thread) | [`tool-workflow`](../packages/workflow/tool-workflow), [`tool-ralph`](../packages/workflow/tool-ralph) | - | One engine per context, as in bash, with no named-provider registry; the general workflow and fixed Ralph consumers start runs whose agent() calls fan out through ctx.subagents. |
+| `ctx.pipelineEngine` | `seam` | [`pipeline`](../packages/pipeline/pipeline) | [`pipeline-local`](../packages/pipeline/pipeline-local) | `apiproxy` | - | The file-backed engine persists WorkflowJSON definitions, evaluates the DAG per run with builtin and llm executors, and projects each run into its own background session; the pipelines Remote face serves the wire. |
 | `ctx.lsp` | `seam` | [`lsp`](../packages/lsp/lsp) | `lsp-local` | [`tool-lsp`](../packages/lsp/tool-lsp) | - | Provider registration and selection plus normalized query execution over exactly four operations; the seam offers no protocol escape hatch, so a backend translates into the normalized request and result. |
 | `ctx.apiProxy` | `core` | `apiproxy` | - | `connection` | - | The transport-agnostic host gateway face: it dispatches browser API calls, and each open host stream subscribes to the events it forwards rather than being pushed to through a broadcast verb. |
 | `ctx.dynamicCordisRunner` | `core` | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | - | [`tool-cordis`](../packages/extensions/tool-cordis) | - | Owns the in-memory definition registry, the vm sandbox for host halves, and the request-run round trip; browser pages reach the same service over the wire through its remote namespace. |

@@ -1,0 +1,7 @@
+# Language-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. All languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/subsystems/pipeline.md
+pipeline.md: 02baa30151a145997037ccbe02be683982afe150
+pipeline.zh.md: 982a08bcd68246e7780ea1b8e1d1c6de16c93d3a
+pipeline.zh-tw.md: a49601e81363adba448a6fbc95ffb4af99786c3f

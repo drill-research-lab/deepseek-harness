@@ -3000,6 +3000,103 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     },
   }
 
+  /** In-memory pipelines store backing the fixture `pipelines/*` Remote face. */
+  const pipelines = new Map<string, {
+    definition: Record<string, unknown>
+    enabled: boolean
+    runs: Array<{ runId: string; startedAt: number; finishedAt: number; status: 'completed' | 'failed'; nodeCount: number }>
+  }>()
+  let pipelineRunSeq = 0
+  let pipelineSeq = 0
+
+  const pipelineRemotes = {
+    list(): { ok: true; value: Array<Record<string, unknown>> } {
+      return {
+        ok: true,
+        value: [...pipelines.entries()].map(([id, state]) => ({
+          id,
+          name: (state.definition as { name?: string }).name ?? id,
+          enabled: state.enabled,
+          status: 'idle',
+          failureStreak: 0,
+          runCount: state.runs.length,
+          skippedCount: 0,
+        })),
+      }
+    },
+    get(id: string): { ok: true; value: Record<string, unknown> | undefined } {
+      return { ok: true, value: pipelines.get(id)?.definition }
+    },
+    save(definition: Record<string, unknown>): { ok: true; value: Record<string, unknown> } {
+      const id = String(definition.id)
+      const existing = pipelines.get(id)
+      pipelines.set(id, { definition, enabled: existing?.enabled ?? true, runs: existing?.runs ?? [] })
+      return { ok: true, value: definition }
+    },
+    delete(id: string): { ok: true; value: boolean } {
+      return { ok: true, value: pipelines.delete(id) }
+    },
+    setEnabled(id: string, enabled: boolean): { ok: true; value: boolean } {
+      const state = pipelines.get(id)
+      if (state === undefined) return { ok: true, value: false }
+      state.enabled = enabled
+      return { ok: true, value: true }
+    },
+    triggerNow(id: string):
+      | { ok: true; value: { outcome: 'started'; runId: string; result: { status: 'completed'; nodeCount: number } } }
+      | { ok: true; value: { outcome: 'skipped'; reason: 'already-running' } } {
+      const state = pipelines.get(id)
+      if (state === undefined) return { ok: true, value: { outcome: 'skipped', reason: 'already-running' } }
+      pipelineRunSeq += 1
+      const nodeCount = Array.isArray((state.definition as { nodes?: unknown[] }).nodes)
+        ? (state.definition as { nodes: unknown[] }).nodes.length
+        : 1
+      state.runs.push({
+        runId: `${id}-run-${String(pipelineRunSeq)}`,
+        startedAt: Date.now() - 40,
+        finishedAt: Date.now(),
+        status: 'completed',
+        nodeCount,
+      })
+      return {
+        ok: true,
+        value: { outcome: 'started', runId: `${id}-run-${String(pipelineRunSeq)}`, result: { status: 'completed', nodeCount } },
+      }
+    },
+    runs(id: string): { ok: true; value: Array<Record<string, unknown>> } {
+      return { ok: true, value: pipelines.get(id)?.runs ?? [] }
+    },
+    run(id: string, ordinal: number): { ok: true; value: Record<string, unknown> | undefined } {
+      const state = pipelines.get(id)
+      const hit = state?.runs.find(record => record.runId === `${id}-run-${String(ordinal)}`)
+      return { ok: true, value: hit }
+    },
+    createFromTemplate(request: {
+      name: string
+      inputs: { query: string; cron: string; timeZone: string; maxResults: number; summary: boolean }
+    }): { ok: true; value: Record<string, unknown> } {
+      pipelineSeq += 1
+      const id = `fx-pipeline-${String(pipelineSeq)}`
+      const nodes: Array<Record<string, unknown>> = [
+        { id: 'trigger', type: 'trigger' },
+        { id: 'search', type: 'builtin', ref: 'scheduled-search/search', config: { query: request.inputs.query, maxResults: request.inputs.maxResults } },
+        { id: 'normalize', type: 'builtin', ref: 'scheduled-search/normalize' },
+        { id: 'dedupe', type: 'builtin', ref: 'scheduled-search/dedupe' },
+        { id: 'persist', type: 'builtin', ref: 'scheduled-search/persist' },
+      ]
+      if (request.inputs.summary) nodes.push({ id: 'summarize', type: 'llm', prompt: 'Summarize the newly collected records.' })
+      const definition: Record<string, unknown> = {
+        version: 1,
+        id,
+        name: request.name,
+        trigger: { kind: 'cron', expression: request.inputs.cron, timeZone: request.inputs.timeZone, enabled: true },
+        nodes,
+        edges: nodes.slice(1).map((node, index) => ({ from: index === 0 ? 'trigger' : String(nodes[index]?.['id']), to: String(node['id']) })),
+      }
+      return this.save(definition)
+    },
+  }
+
   const rpc: ClientConnectionRpc = {
     call(channel, endpoint, payload) {
       if (channel !== '/api') {
@@ -3026,6 +3123,15 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         case 'goals/resume': return Promise.resolve(goalRemotes.resume(sessionId, args.ref as FxGoalRef))
         case 'goals/complete': return Promise.resolve(goalRemotes.complete(sessionId, args.ref as FxGoalRef))
         case 'goals/clear': return Promise.resolve(goalRemotes.clear(sessionId, args.ref as FxGoalRef))
+        case 'pipelines/list': return Promise.resolve(pipelineRemotes.list())
+        case 'pipelines/get': return Promise.resolve(pipelineRemotes.get((payload as { args: { id: string } }).args.id))
+        case 'pipelines/save': return Promise.resolve(pipelineRemotes.save((payload as { args: { definition: Record<string, unknown> } }).args.definition))
+        case 'pipelines/delete': return Promise.resolve(pipelineRemotes.delete((payload as { args: { id: string } }).args.id))
+        case 'pipelines/setEnabled': return Promise.resolve(pipelineRemotes.setEnabled((payload as { args: { id: string; enabled: boolean } }).args.id, (payload as { args: { enabled: boolean } }).args.enabled))
+        case 'pipelines/triggerNow': return Promise.resolve(pipelineRemotes.triggerNow((payload as { args: { id: string } }).args.id))
+        case 'pipelines/createFromTemplate': return Promise.resolve(pipelineRemotes.createFromTemplate((payload as { args: { request: { name: string; inputs: { query: string; cron: string; timeZone: string; maxResults: number; summary: boolean } } } }).args.request))
+        case 'pipelines/runs': return Promise.resolve(pipelineRemotes.runs((payload as { args: { id: string } }).args.id))
+        case 'pipelines/run': return Promise.resolve(pipelineRemotes.run((payload as { args: { id: string; ordinal: number } }).args.id, (payload as { args: { ordinal: number } }).args.ordinal))
         default:
           return Promise.reject(new Error(`fixture connection RPC endpoint ${JSON.stringify(endpoint)} is unavailable`))
       }

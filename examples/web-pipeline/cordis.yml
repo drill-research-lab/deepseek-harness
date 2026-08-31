@@ -1,0 +1,26 @@
+# Keyless Scheduled-pipeline composition: the file-backed engine, the run
+# -session projection vocabulary (the session store and the JSONL persistence
+# its logs materialize through), and the `pipelines` Remote face. The scheduler
+# is off — runs start through `pipelines/triggerNow` (manual lane), which keeps
+# every timing fact in the caller's hands and the snapshot replayable on any
+# platform. Mount over the shipped Web composition with:
+#
+#   dsh web --patch examples/web-pipeline/cordis.yml
+#
+# The step refs used by demo definitions (`demo/collect`) register through the
+# bundled engine's builtin registry.
+
+- id: sessions
+  name: '@deepseek-ai/dsh-session'
+
+- id: persistence
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: './.sessions'
+    compression: none
+
+- id: pipeline-local
+  name: '@deepseek-ai/dsh-pipeline-local'
+  config:
+    storageDir: !!js process.cwd() + '/.pipelines'
+    scheduler: false

@@ -24,6 +24,10 @@
 
 用於持久、僅限 Session 內提醒的選填 Web overlay。它透過 `schedule_create`、`schedule_list` 和 `schedule_delete` 支援正整數秒的 `after_seconds` 延時與絕對 `at` 目標；活動提醒保存在原 Session 中，該 Session 再次 live 時復原，而 cold 期間不會執行。使用 `dsh web --patch examples/web-schedule/cordis.yml` 啟動；絕對時間 authority 以及交付與復原邊界詳見 [web-schedule/README.md](web-schedule/README.md)。
 
+## web-pipeline
+
+用於排程流水線的選填 Web overlay：檔案支撐的 WorkflowJSON 定義，調度器預設關閉，執行只經手動通道或模型工具呼叫啟動。每次執行把節點生命週期投影進自己的背景 Session；執行記錄與定義存放在行程工作目錄下。使用 `dsh web --patch examples/web-pipeline/cordis.yml` 啟動；範本的 arXiv 步驟、保留政策與 reasoning 模型限制詳見 [web-pipeline/README.md](web-pipeline/README.md)。
+
 ## acp-agent
 
 面向程序化用戶端的 ACP（Agent Client Protocol）自動化伺服器，支援工作階段、權限和取消操作。詳見 [ACP 示例參考](acp-agent/README.md)。

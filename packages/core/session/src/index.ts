@@ -15,7 +15,7 @@ import type { Message } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-ownership'
 import { SESSION_FORMAT_VERSION, SessionId } from './types.ts'
 import type { TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
-import type { CreateSessionOptions, EpochHeader, PrepareSessionOptions, RequestContext, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SurfaceIntent, SurfaceEventType } from './types.ts'
+import type { CreateSessionOptions, EpochHeader, LogIntent, PrepareSessionOptions, RequestContext, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SurfaceIntent, SurfaceEventType } from './types.ts'
 import { snapshotJsonValue } from './json.ts'
 import { deriveEventMessage, SurfaceManager } from './surface.ts'
 import type { SessionSurface } from './surface.ts'
@@ -127,8 +127,8 @@ function validateSessionHeader(id: SessionId, input: unknown): SessionHeader {
     && (typeof record.seedLength !== 'number' || !Number.isSafeInteger(record.seedLength) || record.seedLength < 0)) {
     throw new Error('session header seedLength must be a non-negative safe integer')
   }
-  if (record.origin !== undefined && record.origin !== 'subagent') {
-    throw new Error('session header origin must be "subagent"')
+  if (record.origin !== undefined && record.origin !== 'subagent' && record.origin !== 'pipeline') {
+    throw new Error('session header origin must be "subagent" or "pipeline"')
   }
   if (record.delegationDepth !== undefined
     && (typeof record.delegationDepth !== 'number' || !Number.isSafeInteger(record.delegationDepth) || record.delegationDepth < 0)) {
@@ -588,7 +588,8 @@ export class Session {
    *   declare how it joins the surface, the sole source of derived model
    *   history) and
    *   rejected by the compiler for non-surface types like `turn/start` or
-   *   `assistant/chunk`.
+   *   `assistant/chunk`. A log-only event may instead pass {@link LogIntent}
+   *   to set the envelope's `ignorable` reader-safety mark.
    * @returns the logged event — its assigned `seq`/`time` plus the SNAPSHOT of
    *   `data` that entered the log, so reading `event.data` back sees the logged
    *   value, never the caller's still-mutable input.
@@ -609,9 +610,11 @@ export class Session {
   append<T extends SessionEventType>(
     type: T,
     data: SessionEventMap[T],
-    ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent] : []
+    ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent] : [opts?: LogIntent]
   ): SessionEvent<T> {
-    const surfaceOpts: SurfaceIntent | undefined = opts[0]
+    const opts0: SurfaceIntent | LogIntent | undefined = opts[0]
+    const surfaceOpts = opts0 as SurfaceIntent | undefined
+    const logOpts = opts0 as LogIntent | undefined
     const surfaceMetadata = {
       ...surfaceOpts?.sourceEventSeqs === undefined ? {} : { sourceEventSeqs: surfaceOpts.sourceEventSeqs },
       ...surfaceOpts?.surfaceOp === undefined ? {} : { surfaceOp: surfaceOpts.surfaceOp },
@@ -634,6 +637,7 @@ export class Session {
       seq: this.log.length,
       time: Date.now(),
       data: dataSnapshot,
+      ...logOpts?.ignorable === true ? { ignorable: true as const } : {},
       ...(surfaceMetadataSnapshot as { surfaceOp?: unknown; sourceEventSeqs?: unknown }),
     } as unknown as SessionEvent<T>)
     this.surfaceManager.validateNext(event as SessionEvent)

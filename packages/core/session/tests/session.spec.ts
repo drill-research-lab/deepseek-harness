@@ -20,6 +20,16 @@ describe('Session', () => {
     expect(surface).toBe(session.surface)
   })
 
+  it('stamps the ignorable reader-safety mark from a log-only intent and round-trips it', () => {
+    const session = Session.create(SessionId('ignorable-mark'))
+    const marked = session.append('session/end-seed', {}, { ignorable: true })
+    const unmarked = session.append('turn/start', { turn: 1 })
+    expect(marked.ignorable).toBe(true)
+    expect('ignorable' in unmarked).toBe(false)
+    // The mark survives the frozen-log round trip.
+    expect(Session.create(SessionId('ignorable-replay'), [...session.events]).events[0]?.ignorable).toBe(true)
+  })
+
   it('derives message history from the event log', () => {
     const session = Session.create(SessionId('s1'))
     session.append('turn/start', { turn: 1 })
@@ -1306,7 +1316,7 @@ describe('SessionStore', () => {
       { meta: { seedLength: '1' }, error: /seedLength must be a non-negative safe integer/ },
       { meta: { seedLength: 0.5 }, error: /seedLength must be a non-negative safe integer/ },
       { meta: { seedLength: -1 }, error: /seedLength must be a non-negative safe integer/ },
-      { meta: { origin: 'fork' }, error: /origin must be "subagent"/ },
+      { meta: { origin: 'fork' }, error: /origin must be "subagent" or "pipeline"/ },
       { meta: { delegationDepth: '1' }, error: /delegationDepth must be a non-negative safe integer/ },
       { meta: { delegationDepth: 0.5 }, error: /delegationDepth must be a non-negative safe integer/ },
       { meta: { delegationDepth: -1 }, error: /delegationDepth must be a non-negative safe integer/ },

@@ -572,6 +572,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'One engine per context, as in bash, with no named-provider registry; the general workflow and fixed Ralph consumers start runs whose agent() calls fan out through ctx.subagents.',
   },
   {
+    key: 'pipelineEngine',
+    pkg: 'pipeline',
+    title: 'Scheduled pipeline engine',
+    mode: 'seam',
+    implementations: ['pipeline-local'],
+    consumers: ['apiproxy'],
+    note: 'The file-backed engine persists WorkflowJSON definitions, evaluates the DAG per run with builtin and llm executors, and projects each run into its own background session; the pipelines Remote face serves the wire.',
+  },
+  {
     key: 'lsp',
     pkg: 'lsp',
     title: 'Language-server navigation seam',

@@ -1,0 +1,97 @@
+/* Frame-wide overlay above every column. */
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  background: var(--dsh-bg, #1a1a1a);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--dsh-border, #3a3a3a);
+}
+
+.title {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.runNow,
+.close {
+  border: 1px solid var(--dsh-border, #3a3a3a);
+  background: transparent;
+  color: inherit;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.error {
+  padding: 8px 16px;
+  color: #ff6b6b;
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.runs {
+  width: 260px;
+  border-left: 1px solid var(--dsh-border, #3a3a3a);
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.runs h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.noRuns {
+  opacity: 0.6;
+  font-size: 12px;
+}
+
+.run {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  padding: 4px 0;
+}
+
+.run[data-status='failed'] {
+  color: #ff6b6b;
+}
+
+.runOpen {
+  background: var(--dsh-surface, #232323);
+}
+
+.runDetail {
+  margin: 4px 0;
+  font-size: 11px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+}
+
+.runDetail dt {
+  opacity: 0.6;
+}
+
+.runDetail dd {
+  margin: 0;
+}
+
+.runError {
+  color: #ff6b6b;
+  word-break: break-all;
+}

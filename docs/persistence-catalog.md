@@ -90,7 +90,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-Sources: [`packages/core/session/src/types.ts:342`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:349`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:378`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:410`](../packages/core/session/src/types.ts)
+Sources: [`packages/core/session/src/types.ts:343`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:350`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:379`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:421`](../packages/core/session/src/types.ts)
 
 ## Events
 
@@ -215,7 +215,7 @@ Source: [`packages/interaction/user-approval/src/index.ts:67`](../packages/inter
 
 Types: [StreamChunk](subsystems/llm-streaming.md)
 
-Source: [`packages/core/session/src/types.ts:272`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:273`](../packages/core/session/src/types.ts)
 
 <a id="assistantmessage--surface"></a>
 
@@ -233,7 +233,7 @@ Source: [`packages/core/session/src/types.ts:272`](../packages/core/session/src/
 
 Types: [TokenUsage](subsystems/llm-streaming.md)
 
-Source: [`packages/core/session/src/types.ts:279`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:280`](../packages/core/session/src/types.ts)
 
 ### `command/*`
 
@@ -512,6 +512,65 @@ Source: [`packages/llm/llm-retry/src/types.ts:11`](../packages/llm/llm-retry/src
 
 Source: [`packages/interaction/permission-presets/src/index.ts:50`](../packages/interaction/permission-presets/src/index.ts)
 
+### `pipeline/*`
+
+<a id="pipelinenode-settled--log-only"></a>
+
+#### `pipeline/node-settled` — log-only
+
+```ts persistence-catalog
+/**
+ * Closes one node's execution window with its outcome and, when executed,
+ * its JSON output. Log-only and appended with the `ignorable` mark.
+ */
+'pipeline/node-settled': PipelineNodeSettledData
+```
+
+Source: [`packages/pipeline/pipeline-local/src/run-session.ts:96`](../packages/pipeline/pipeline-local/src/run-session.ts)
+
+<a id="pipelinenode-started--log-only"></a>
+
+#### `pipeline/node-started` — log-only
+
+```ts persistence-catalog
+/**
+ * Marks one node's execution window opening. Log-only and appended with
+ * the `ignorable` mark.
+ */
+'pipeline/node-started': PipelineNodeStartedData
+```
+
+Source: [`packages/pipeline/pipeline-local/src/run-session.ts:91`](../packages/pipeline/pipeline-local/src/run-session.ts)
+
+<a id="pipelinerun-descriptor--log-only"></a>
+
+#### `pipeline/run-descriptor` — log-only
+
+```ts persistence-catalog
+/**
+ * Opens a pipeline run's session log with the run's identity. Log-only
+ * and appended with the `ignorable` mark: informational projection whose
+ * loss cannot affect session reconstruction.
+ */
+'pipeline/run-descriptor': PipelineRunDescriptorData
+```
+
+Source: [`packages/pipeline/pipeline-local/src/run-session.ts:86`](../packages/pipeline/pipeline-local/src/run-session.ts)
+
+<a id="pipelinerun-settled--log-only"></a>
+
+#### `pipeline/run-settled` — log-only
+
+```ts persistence-catalog
+/**
+ * Closes the run with its settled facts. Log-only and appended with the
+ * `ignorable` mark.
+ */
+'pipeline/run-settled': PipelineRunSettledData
+```
+
+Source: [`packages/pipeline/pipeline-local/src/run-session.ts:101`](../packages/pipeline/pipeline-local/src/run-session.ts)
+
 ### `plan/*`
 
 <a id="planmode--log-only"></a>
@@ -543,7 +602,7 @@ Source: [`packages/plan/plan-mode/src/index.ts:53`](../packages/plan/plan-mode/s
 'request/context': RequestContext
 ```
 
-Source: [`packages/core/session/src/types.ts:315`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:316`](../packages/core/session/src/types.ts)
 
 <a id="requestheader--log-only"></a>
 
@@ -557,7 +616,7 @@ Source: [`packages/core/session/src/types.ts:315`](../packages/core/session/src/
 'request/header': { header: EpochHeader; reason: RequestHeaderReason }
 ```
 
-Source: [`packages/core/session/src/types.ts:310`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:311`](../packages/core/session/src/types.ts)
 
 ### `sandbox/*`
 
@@ -632,7 +691,7 @@ Source: [`packages/schedule/schedule/src/types.ts:219`](../packages/schedule/sch
 'session/end-seed': Record<string, never>
 ```
 
-Source: [`packages/core/session/src/types.ts:338`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:339`](../packages/core/session/src/types.ts)
 
 <a id="sessiontitle--log-only"></a>
 
@@ -674,7 +733,7 @@ Source: [`packages/session/session-title-llm/src/index.ts:43`](../packages/sessi
 'step/end': { turn: number; step: number }
 ```
 
-Source: [`packages/core/session/src/types.ts:262`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:263`](../packages/core/session/src/types.ts)
 
 <a id="stepstart--log-only"></a>
 
@@ -685,7 +744,7 @@ Source: [`packages/core/session/src/types.ts:262`](../packages/core/session/src/
 'step/start': { turn: number; step: number }
 ```
 
-Source: [`packages/core/session/src/types.ts:260`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:261`](../packages/core/session/src/types.ts)
 
 ### `subagent/*`
 
@@ -719,7 +778,7 @@ Source: [`packages/subagent/subagent/src/descriptor.ts:37`](../packages/subagent
 
 Types: [TodoItem](subsystems/session.md)
 
-Source: [`packages/core/session/src/types.ts:305`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:306`](../packages/core/session/src/types.ts)
 
 ### `tool/*`
 
@@ -738,7 +797,7 @@ Source: [`packages/core/session/src/types.ts:305`](../packages/core/session/src/
 
 Types: [CallId](subsystems/core.md)
 
-Source: [`packages/core/session/src/types.ts:285`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:286`](../packages/core/session/src/types.ts)
 
 <a id="toolcode-dispatch--log-only"></a>
 
@@ -813,7 +872,7 @@ Source: [`packages/core/tools/src/types.ts:40`](../packages/core/tools/src/types
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:297`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:298`](../packages/core/session/src/types.ts)
 
 ### `tool-workflow/*`
 
@@ -893,7 +952,7 @@ Source: [`packages/workflow/tool-workflow/src/types.ts:47`](../packages/workflow
 
 Types: [TurnEndReason](subsystems/session.md)
 
-Source: [`packages/core/session/src/types.ts:258`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:259`](../packages/core/session/src/types.ts)
 
 <a id="turnstart--log-only"></a>
 
@@ -909,7 +968,7 @@ Source: [`packages/core/session/src/types.ts:258`](../packages/core/session/src/
 'turn/start': { turn: number }
 ```
 
-Source: [`packages/core/session/src/types.ts:249`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:250`](../packages/core/session/src/types.ts)
 
 ### `user/*`
 
@@ -928,7 +987,7 @@ Source: [`packages/core/session/src/types.ts:249`](../packages/core/session/src/
 'user/message': UserMessage
 ```
 
-Source: [`packages/core/session/src/types.ts:270`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:271`](../packages/core/session/src/types.ts)
 
 ### `web/*`
 

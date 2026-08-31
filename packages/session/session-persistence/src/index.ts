@@ -254,6 +254,17 @@ export abstract class SessionPersistence extends Service {
    * @returns one header and opaque revision per materialized session without loading full logs.
    */
   abstract listSnapshots(signal?: AbortSignal): Promise<SessionPersistenceSnapshot[]>
+
+  /**
+   * Delete one persisted session's durable log and metadata outright.
+   * Retention policies use this to retire pruned records. A live session
+   * must be disposed first: forgetting under an active writer would let the
+   * write-behind recreate the artifact.
+   * @param id - the persisted session to delete.
+   * @returns whether a stored log existed and was deleted.
+   * @throws when a live session with this id is still attached.
+   */
+  abstract forget(id: SessionId): Promise<boolean>
 }
 
 export default SessionPersistence

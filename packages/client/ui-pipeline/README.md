@@ -1,0 +1,21 @@
+# @deepseek-ai/dsh-client-ui-pipeline
+
+English | [简体中文](README.zh.md) | [繁體中文](README.zh-tw.md)
+
+Pipelines surface plugin, browser half: the sidebar `sidebar.pipelines` block (the feature-navigation seat below the session browser, owned by ui-sidebar's shell contract) and one full-window editor overlay in `shell.overlay` (order 20). Both entries share one root-scoped store — the open pipeline id — created at apply time so identity follows the plugin fiber, and one inject face over the generated `pipelines` Remote namespace (`list`, `get`, `save`, `delete`, `setEnabled`, `triggerNow`, `runs`, `run`). The navigation block lists every pipeline with live status, the failure-streak badge, and a per-row pause/resume toggle that re-reads the list after `setEnabled`; clicking a pipeline writes the store, opens the overlay, and requests sidebar expansion. The overlay renders nothing while no pipeline is open; when one is open it shows a header (name, run-now, close), a read-only DAG canvas — elkjs computes the layered layout because definitions carry no positions — and the runs list. Run-now awaits `triggerNow` and refreshes the runs.
+
+The `/client` exports are the plugin body (`apply`/`inject`), the shared store factory (`createPipelineUiStore`), the pure `layoutDag` helper with its `LaidOutNode` shape, and the inject/prop type vocabulary. The canvas is a presentation component over `@xyflow/react` in read-only mode (no dragging, no connecting, no positions persisted).
+
+## Model Experience
+
+None, as this package reads pipeline definitions and run records over the host's `pipelines` Remote namespace and adds no prompt, tool schema, request content, or model-visible result.
+
+#### KV Cache effect
+
+None.
+
+## Known Limitations and Deferred Work
+
+- **Template gallery covers Scheduled Search only** — the create view hosts the Scheduled Search form (name, query, cron, time zone, fetch cap, LLM-summary toggle) and the paste-JSON import; more templates arrive with later slices.
+- **Inspector edits node config only** — the inspector offers per-type config editing (trigger cron, llm prompt/model, builtin read-only ref), downstream-edge retargeting, and whole-definition commit via `save`; the input/output panes and provenance views land with the run-session slice.
+- **LLM nodes need engine config** — the editor cannot pick a model per node; llm nodes rely on the engine's `llmProvider`/`llmModel` defaults and fail loud with `LLM_NODE_UNCONFIGURED` otherwise.

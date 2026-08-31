@@ -88,6 +88,14 @@
       config:
         maxNoteBytes: 8192
 
+    # Pipelines: cron-scheduled and manually triggered workflow runs over the
+    # file-backed local registry. llm nodes fail loud with LLM_NODE_UNCONFIGURED
+    # until the model-selection wiring lands (the engine reads no session).
+    - id: pipeline-local
+      name: '@deepseek-ai/dsh-pipeline-local'
+      config:
+        storageDir: !!js dshHomePath('pipelines')
+
     # Browser Session export: `/export` command plus the shared download dialog.
     - id: session-log-download
       name: '@deepseek-ai/dsh-session-log-export'
@@ -281,6 +289,11 @@
     # Goal surface: GoalBar in the input dock over the goal session projection.
     - id: ui-goal
       name: '@deepseek-ai/dsh-client-ui-goal'
+
+    # Pipelines surface: sidebar navigation block + the full-window editor
+    # overlay, over the pipelines Remote namespace.
+    - id: ui-pipeline
+      name: '@deepseek-ai/dsh-client-ui-pipeline'
 
     # Per-message feedback: Like/Dislike plus an optional note in the
     # assistant-message action strip, over the messageFeedback Remote.

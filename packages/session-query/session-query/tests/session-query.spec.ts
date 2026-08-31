@@ -29,6 +29,11 @@ function eventLog(text = 'hello'): SessionEvent[] {
 }
 
 class TestPersistence extends SessionPersistence {
+
+  async forget(id: SessionIdType): Promise<boolean> {
+    return TestPersistence.entries.delete(id)
+  }
+
   override readonly supportsRawArtifacts = false
 
   static entries = new Map<SessionIdType, { meta: SessionHeader; events: SessionEvent[] }>()

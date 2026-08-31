@@ -451,7 +451,8 @@ declare class Session {
    *   declare how it joins the surface, the sole source of derived model
    *   history) and
    *   rejected by the compiler for non-surface types like `turn/start` or
-   *   `assistant/chunk`.
+   *   `assistant/chunk`. A log-only event may instead pass {@link LogIntent}
+   *   to set the envelope's `ignorable` reader-safety mark.
    * @returns the logged event — its assigned `seq`/`time` plus the SNAPSHOT of
    *   `data` that entered the log, so reading `event.data` back sees the logged
    *   value, never the caller's still-mutable input.
@@ -472,7 +473,7 @@ declare class Session {
   append<T extends SessionEventType>(
     type: T,
     data: SessionEventMap[T],
-    ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent] : []
+    ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent] : [opts?: LogIntent]
   ): SessionEvent<T>;
   /**
    * The {@link EpochHeader} in force after the log's last header event — the
@@ -759,7 +760,7 @@ fork(source: SessionForkSource, boundary?: number, childSessionId?: SessionId): 
 
 Types: [CreateSessionOptions](persistence.md) · [PrepareSessionOptions](persistence.md) · [SessionId](core.md)
 
-Source: [`packages/core/session/src/index.ts:797`](../../packages/core/session/src/index.ts)
+Source: [`packages/core/session/src/index.ts:801`](../../packages/core/session/src/index.ts)
 
 <a id="session-events"></a>
 

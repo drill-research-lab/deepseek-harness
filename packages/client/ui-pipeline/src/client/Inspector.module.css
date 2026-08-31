@@ -1,0 +1,52 @@
+.panel {
+  width: 280px;
+  border-left: 1px solid var(--dsh-border, #3a3a3a);
+  padding: 12px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.kind {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.6;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.panel h4 {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+
+.readonly {
+  font-family: monospace;
+  opacity: 0.8;
+}
+
+.empty {
+  opacity: 0.5;
+  margin: 0;
+}
+
+.commit {
+  border: 1px solid var(--dsh-border, #3a3a3a);
+  background: transparent;
+  color: inherit;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.commit:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

@@ -349,6 +349,17 @@ export class SqliteSessionPersistence extends SessionPersistence implements Pers
     return rows.map(rowToMeta)
   }
 
+  async forget(id: SessionId): Promise<boolean> {
+    return this.coordinator.forget(id, async () => {
+      await this.ready
+      const info = this.db
+        .prepare('DELETE FROM sessions WHERE id = ?')
+        .run(String(id))
+      this.db.prepare('DELETE FROM events WHERE session_id = ?').run(String(id))
+      return info.changes > 0
+    })
+  }
+
   /** List metadata with a source-qualified monotonic revision per session. */
   async listSnapshots(signal?: AbortSignal): Promise<SessionPersistenceSnapshot[]> {
     signal?.throwIfAborted()

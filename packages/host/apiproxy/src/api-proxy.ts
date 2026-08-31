@@ -15,6 +15,7 @@ import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { contentHasImage, createUserMessage, freezeMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { errorChain } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
+import type { OwnerPrincipal } from '@deepseek-ai/dsh-ownership'
 import { isAppendSurfaceEvent, isJsonValue, ownedSession, ownedSessions } from '@deepseek-ai/dsh-session'
 import type { JsonValue, Session, SessionEvent, SessionEventMap, SessionHeader, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
@@ -545,10 +546,17 @@ function sessionListUpdatedAt(header: SessionHeader, metadata: SessionListMetada
   return Math.max(header.createdAt, metadata?.lastPromptAt ?? 0)
 }
 
+/** Whether one session joins the visible conversation surface: pipeline run
+ * logs are engine-owned projections, never conversations. */
+function visibleConversationSession(session: Session, streamPrincipal: OwnerPrincipal | undefined): boolean {
+  return session.header.origin !== 'pipeline'
+    && (streamPrincipal === undefined || session.header.ownerUserId === streamPrincipal.userId)
+}
+
 /** Shared Session-header projection for list baselines and creation frames. */
 function sessionListFields(header: SessionHeader, events: readonly SessionEvent[] = []): {
   parentSessionId?: SessionId
-  origin?: 'subagent'
+  origin?: 'subagent' | 'pipeline'
   cwd?: string
   agentPreset?: string
 } {
@@ -1757,7 +1765,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         ...projections === undefined ? {} : { projections },
       }
     }
-    const items = ownedSessions(ctx).map(summarizeAttached)
+    const items = ownedSessions(ctx)
+      .filter(session => visibleConversationSession(session, ctx.root.get('ownership')?.currentPrincipal()))
+      .map(summarizeAttached)
     signal?.throwIfAborted()
     const attached = new Set(items.map(item => item.sessionId))
     const persistence = ctx.get('sessionPersistence')
@@ -3496,8 +3506,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     events: {
       mux(_request, signal) {
         const streamPrincipal = ctx.root.get('ownership')?.currentPrincipal()
-        const visibleSession = (session: Session): boolean => streamPrincipal === undefined
-          || session.header.ownerUserId === streamPrincipal.userId
+        const visibleSession = (session: Session): boolean => visibleConversationSession(session, streamPrincipal)
         const queue = new FrameQueue<RpcRequest<MuxFrame>>()
         muxQueues.set(queue, visibleSession)
         for (const session of ctx.sessions.list('trusted-internal')) {
@@ -3615,8 +3624,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       async *host(_request, signal) {
         const streamPrincipal = ctx.root.get('ownership')?.currentPrincipal()
         const settings = ctx.root.get('settings')
-        const visibleSession = (session: Session): boolean => streamPrincipal === undefined
-          || session.header.ownerUserId === streamPrincipal.userId
+        const visibleSession = (session: Session): boolean => visibleConversationSession(session, streamPrincipal)
         if (ctx.root.get('ownership') !== undefined) await ctx.workspaceRegistry.prepareOwner()
         const queue = new FrameQueue<RpcRequest<HostFrame>>()
         const committedWorkspaces = ctx.workspaceRegistry.list()
