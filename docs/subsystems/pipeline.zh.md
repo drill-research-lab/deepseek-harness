@@ -4,7 +4,9 @@
 
 Pipeline 接縫持久化 `WorkflowJSON` 定義——以 cron 觸發、節點為單次 LLM 詢問、多步驟 subagent 或 provider 註冊 builtin 步驟的 DAG——啟動其 run，並透過僅供觀察的 `pipeline/*` 事件回報生命週期。產品脈絡（Drill Pipelines 與 Scheduled Search tracer bullet）：[spec](https://github.com/drill-research-lab/drill-docs/blob/main/docs/features/pipeline/spec.md) · [dsh#24](https://github.com/drill-research-lab/deepseek-harness/issues/24)。
 
-Service Definition：[`dsh-pipeline`](../../packages/pipeline/pipeline)（`ctx.pipelineEngine` 與下方詞彙）。引擎 provider——檔案型 registry、cron 排程器、跑在 run session 上的 DAG 評估器——以及 model 面與 UI consumer 在同項工作的後續切片落地。`save` 是持久化 parser 邊界：每一份被保存的定義，無論來自何處，都先通過 `validateWorkflowJson`。`startRun` 套用重疊政策（每條 pipeline 同時只有一個執行中的 run；後續觸發被跳過並以資料回報，不進佇列），且每個變更只在 registry 提交後才發出 `pipeline/definition-changed`。run 資料本身存放在各 run 自己的 session log；`pipeline/*` 事件刻意不攜帶任何節點輸入或輸出值，觀察生命週期的 listener 因此永遠拿不到 run 資料的可變別名。
+Service Definition：[`dsh-pipeline`](../../packages/pipeline/pipeline)（`ctx.pipelineEngine` 與下方詞彙）。引擎 provider 是 [`dsh-pipeline-local`](../../packages/pipeline/pipeline-local)：檔案型 registry、cron 排程器、跑在 run session 上的 DAG 評估器。`save` 是持久化 parser 邊界：每一份被保存的定義，無論來自何處，都先通過 `validateWorkflowJson`。`startRun` 套用重疊政策（每條 pipeline 同時只有一個執行中的 run；後續觸發被跳過並以資料回報，不進佇列），且每個變更只在 registry 提交後才發出 `pipeline/definition-changed`。run 資料本身存放在各 run 自己的 session log；`pipeline/*` 事件刻意不攜帶任何節點輸入或輸出值，觀察生命週期的 listener 因此永遠拿不到 run 資料的可變別名。
+
+每次 run 都投影進自己的背景 session：origin `'pipeline'`（排除在可見 session 表面之外）、id 由 run id 加隨機後綴 mint，刪除重建週期永不與已存 log 相撞；四個 session log 事件型別——`pipeline/run-descriptor`、`pipeline/node-started`、`pipeline/node-settled`、`pipeline/run-settled`——在 envelope 的 `ignorable` 標記下攜帶節點輸出、耗時與錯誤，seam 之外的 session 讀取方能安全跳過；節點明細從持久化 log 折疊回來，retention 修剪退役 run 的紀錄與 log 一併註銷。瀏覽器端經 `dsh-apiproxy` 的 `pipelines` Typert RPC namespace（CRUD、pause/resume、立即觸發、runs、從範本建立）與 [`dsh-client-ui-pipeline`](../../packages/client/ui-pipeline) client plugin 消費引擎——sidebar 區塊、唯讀 canvas 編輯器與 inspector、run 歷史與明細；可跑的 keyless overlay 是 `examples/web-pipeline`。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
