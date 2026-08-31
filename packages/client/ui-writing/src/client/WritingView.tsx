@@ -31,7 +31,7 @@ interface Toast {
 
 /** The Writing editor surface. Report selection arrives from the shared source via `useReportSelection`. */
 export function WritingView(props: WritingViewProps): JSX.Element {
-  const { rename, getSource, updateSource, compile, versions, restore, select, renameReport, openConversation, t, useReportSelection } = props
+  const { rename, getSource, updateSource, compile, versions, restore, select, renameReport, t, useReportSelection } = props
   const selectedReportId = useReportSelection(state => state.selectedReportId)
   const reports = useReportSelection(state => state.reports)
   const [selectedTitle, setSelectedTitle] = useState('')
@@ -42,6 +42,7 @@ export function WritingView(props: WritingViewProps): JSX.Element {
   const [split, setSplit] = useState(50)
   const [showAllVersions, setShowAllVersions] = useState(false)
   const [toolbarOpen, setToolbarOpen] = useState(false)
+  const [composerVisible, setComposerVisible] = useState(false)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [previewModalOpen, setPreviewModalOpen] = useState(false)
   const [modalSplit, setModalSplit] = useState(50)
@@ -251,7 +252,7 @@ export function WritingView(props: WritingViewProps): JSX.Element {
   }
 
   return (
-    <div className={css.writing}>
+    <div className={composerVisible ? css.writing : `${css.writing} ${css.writingCover}`}>
       <div className={css.writingTopbar}>
         <span className={css.writingTitle}>{selectedTitle}</span>
         <div className={css.toolbarWrap}>
@@ -322,7 +323,7 @@ export function WritingView(props: WritingViewProps): JSX.Element {
         ))}
       </div>
 
-      <button className={css.chatBubble} title={t('chat')} onClick={openConversation}>
+      <button className={css.chatBubble} title={t('chat')} onClick={() => setComposerVisible(visible => !visible)}>
         💬
       </button>
 

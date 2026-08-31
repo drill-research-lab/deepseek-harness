@@ -31,8 +31,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-/** Required services: the conversation view slot, conversation actions, Remote mutations, sessions, and copy. */
-export const inject = ['slots', 'conversationViews', 'conversation', 'sessions', 'locale', 'remote', 'remote.writing']
+/** Required services: the conversation view slot, Remote mutations, sessions, and copy. */
+export const inject = ['slots', 'conversationViews', 'sessions', 'locale', 'remote', 'remote.writing']
 
 /**
  * Register the Writing editor view and its sidebar report panel over one shared
@@ -52,7 +52,6 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     label: () => t('view.writing'),
     inject: (_sessionId: SessionId): WritingViewInjected => ({
-      openConversation: () => ctx.conversation.showView(_sessionId, 'chat'),
       rename: async (reportId, title) => {
         const result = await ctx.remote.writing.rename({ reportId, title })
         if (!result.ok) throw new Error(result.error.message)

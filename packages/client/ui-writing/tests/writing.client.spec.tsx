@@ -51,7 +51,6 @@ function view(over: Partial<WritingViewInjected> = {}): WritingViewInjected {
     restore: vi.fn().mockResolvedValue('\\documentclass{article}'),
     select,
     renameReport,
-    openConversation: vi.fn(),
     hooks: { reportSelection: { getSnapshot, subscribe } },
     ...over,
   }
@@ -194,12 +193,13 @@ describe('WritingView', () => {
     prompt.mockRestore()
   })
 
-  it('opens the conversation from the chat bubble and closes the overlay', async () => {
-    const actions = view()
-    render(<WritingView {...props(actions)} />)
+  it('covers the composer by default and reveals it via the chat bubble', async () => {
+    const { container } = render(<WritingView {...props(view())} />)
     await waitFor(() => expect(screen.getByText('☰')).toBeTruthy())
+    const writing = container.querySelector('[class*="writing"]') as HTMLElement
+    expect(writing.className).toContain('writingCover')
     fireEvent.click(screen.getByText('💬'))
-    expect(actions.openConversation).toHaveBeenCalled()
+    expect(writing.className).not.toContain('writingCover')
     fireEvent.click(screen.getByTitle('close'))
     expect(state.selectedReportId).toBeUndefined()
   })

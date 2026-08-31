@@ -365,6 +365,13 @@
   background: var(--dsw-bg, #1e1e1e);
 }
 
+.writingCover {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  height: auto;
+}
+
 .writingEmpty {
   display: flex;
   align-items: center;
