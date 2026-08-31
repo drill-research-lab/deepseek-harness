@@ -4,7 +4,7 @@
  * into the shared report-selection source the Writing editor view reads.
  */
 import { useEffect, useRef, useState } from 'react'
-import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WritingReportsHooks, SidebarReportsInjected } from './types.ts'
 import css from './writing.module.css'
 
@@ -14,19 +14,15 @@ const MAX_HEIGHT = 480
 const DEFAULT_HEIGHT = 220
 const COLLAPSED_HEIGHT = 36
 
-/** Props: the slots shell share, the hooks share, the inject face, and locale. */
-export type SidebarReportsProps = Omit<SidebarReportsInjected, 'hooks'> & WritingReportsHooks & PropsLocale<'writing'> & {
-  readonly wide: boolean
-  readonly expandSidebar: () => void
-}
+/** Props: the runtime share (owner + global hooks), the hooks share, the inject face, and locale. */
+export type SidebarReportsProps = PropsRuntime<'sidebar.reports'> & Omit<SidebarReportsInjected, 'hooks'> & WritingReportsHooks & PropsLocale<'writing'>
 
 /** The report picker strip mounted below the workspace list in the sidebar. */
 export function SidebarReports(props: SidebarReportsProps): JSX.Element {
-  const { listReports, createReport, setReports, select, t, useReportSelection } = props
+  const { listReports, createReport, setReports, select, openWriting, t, useReportSelection, useSessions } = props
   const reports = useReportSelection(state => state.reports)
   const selected = useReportSelection(state => state.selectedReportId)
-  const selectedRef = useRef(selected)
-  selectedRef.current = selected
+  const currentSessionId = useSessions(state => state.current)
   const [newTitle, setNewTitle] = useState('')
   const [collapsed, setCollapsed] = useState(false)
   const [height, setHeight] = useState(DEFAULT_HEIGHT)
@@ -39,12 +35,9 @@ export function SidebarReports(props: SidebarReportsProps): JSX.Element {
       const listed = await listReports()
       if (!active) return
       setReports(listed)
-      if (listed.length > 0 && selectedRef.current === undefined) {
-        select(listed[0]!.reportId)
-      }
     })()
     return () => { active = false }
-  }, [listReports, setReports, select])
+  }, [listReports, setReports])
 
   const onResizeStart = (event: React.PointerEvent<HTMLDivElement>): void => {
     event.preventDefault()
@@ -69,7 +62,10 @@ export function SidebarReports(props: SidebarReportsProps): JSX.Element {
     const listed = await listReports()
     setReports(listed)
     const created = listed[0]
-    if (created !== undefined) select(created.reportId)
+    if (created !== undefined) {
+      select(created.reportId)
+      if (currentSessionId !== undefined) openWriting(currentSessionId)
+    }
   }
 
   return (
@@ -107,7 +103,10 @@ export function SidebarReports(props: SidebarReportsProps): JSX.Element {
             <li
               key={report.reportId}
               className={report.reportId === selected ? css.rowActive : css.row}
-              onClick={() => select(report.reportId)}
+              onClick={() => {
+                select(report.reportId)
+                if (currentSessionId !== undefined) openWriting(currentSessionId)
+              }}
             >
               {report.title}
             </li>

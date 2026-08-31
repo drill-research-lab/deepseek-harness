@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useSyncExternalStore } from 'react'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { WritingView, type WritingViewProps } from '../src/client/WritingView.tsx'
 import type { WritingReportsState } from '../src/client/reportSelection.ts'
@@ -140,17 +140,6 @@ describe('WritingView', () => {
     await waitFor(() => expect(vi.mocked(actions.compile).mock.calls.length).toBe(before + 1))
   })
 
-  it('opens and closes the preview modal from the toolbar', async () => {
-    const { container } = render(<WritingView {...props(view())} />)
-    await waitFor(() => expect(screen.getByText('☰')).toBeTruthy())
-    openToolbar()
-    fireEvent.click(screen.getByText('openPreview'))
-    const modal = container.querySelector('[class*="modal"]') as HTMLElement
-    expect(modal).toBeTruthy()
-    fireEvent.click(within(modal).getByText('×'))
-    expect(container.querySelector('[class*="modal"]')).toBeNull()
-  })
-
   it('downloads the current source from the toolbar as a .tex file', async () => {
     const actions = view()
     render(<WritingView {...props(actions)} />)
@@ -198,8 +187,9 @@ describe('WritingView', () => {
     await waitFor(() => expect(screen.getByText('☰')).toBeTruthy())
     const writing = container.querySelector('[class*="writing"]') as HTMLElement
     expect(writing.className).toContain('writingCover')
+    expect(writing.className).not.toContain('writingReveal')
     fireEvent.click(screen.getByText('💬'))
-    expect(writing.className).not.toContain('writingCover')
+    expect(writing.className).toContain('writingReveal')
     fireEvent.click(screen.getByTitle('close'))
     expect(state.selectedReportId).toBeUndefined()
   })

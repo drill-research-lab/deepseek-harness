@@ -6,6 +6,7 @@
 
 import type { CompileResultView, ReportVersionView } from '@deepseek-ai/dsh-writing-api/types'
 import type { HostObservable, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { WritingReportsState } from './reportSelection.ts'
 
 export type { CompileResultView, ReportTemplateView, ReportVersionView } from '@deepseek-ai/dsh-writing-api/types'
@@ -59,6 +60,8 @@ export interface SidebarReportsInjected {
   setReports(reports: ReportSummaryView[]): void
   /** Write the selected report id into the shared source. */
   select(reportId: string): void
+  /** Open the writing view for a session (switches its active conversation view). */
+  openWriting(sessionId: SessionId): void
   /** Report list + selection observable, bound to `useReportSelection`. */
   hooks: { readonly reportSelection: HostObservable<WritingReportsState> }
 }

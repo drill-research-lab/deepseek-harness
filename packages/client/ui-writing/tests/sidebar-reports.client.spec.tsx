@@ -26,37 +26,42 @@ const useReportSelection = <S,>(selector: (current: WritingReportsState) => S): 
 const setReports = (reports: ReportSummaryView[]): void => setState(current => ({ ...current, reports }))
 const select = (reportId: string): void => setState(current => ({ ...current, selectedReportId: reportId }))
 
+const useSessions = <S,>(selector: (state: { current?: string }) => S): S => selector(sessionState)
+let sessionState: { current?: string } = { current: 's1' }
+
 function inject(over: Partial<SidebarReportsInjected> = {}): SidebarReportsInjected {
   return {
     listReports: vi.fn().mockResolvedValue([{ reportId: 'r1', title: 'Paper', updatedAt: '2026-01-01' }]),
     createReport: vi.fn().mockResolvedValue(undefined),
     setReports,
     select,
+    openWriting: vi.fn(),
     hooks: { reportSelection: { getSnapshot, subscribe } },
     ...over,
   }
 }
 
 function props(face: SidebarReportsInjected): SidebarReportsProps {
-  return { useReportSelection, ...face, t, wide: true, expandSidebar: () => {} } as unknown as SidebarReportsProps
+  return { useReportSelection, useSessions, ...face, t, wide: true, expandSidebar: () => {} } as unknown as SidebarReportsProps
 }
 
 describe('SidebarReports', () => {
-  it('loads the report list and selects the first report', async () => {
+  it('loads the report list without auto-selecting', async () => {
     render(<SidebarReports {...props(inject())} />)
     expect(await screen.findByText('Paper')).toBeTruthy()
-    expect(state.selectedReportId).toBe('r1')
+    expect(state.selectedReportId).toBeUndefined()
   })
 
-  it('selects a report on click', async () => {
+  it('selects a report on click and opens the writing view', async () => {
     const face = inject({ listReports: vi.fn().mockResolvedValue([
       { reportId: 'r1', title: 'One', updatedAt: 't1' },
       { reportId: 'r2', title: 'Two', updatedAt: 't2' },
     ]) })
     render(<SidebarReports {...props(face)} />)
-    await waitFor(() => expect(state.selectedReportId).toBe('r1'))
+    await screen.findByText('One')
     fireEvent.click(screen.getByText('Two'))
     expect(state.selectedReportId).toBe('r2')
+    expect(face.openWriting).toHaveBeenCalledWith('s1')
   })
 
   it('creates a report from the trimmed title and selects the newest', async () => {
@@ -64,10 +69,12 @@ describe('SidebarReports', () => {
       listReports: vi.fn().mockResolvedValue([{ reportId: 'r9', title: 'New report', updatedAt: 't9' }]),
     })
     render(<SidebarReports {...props(face)} />)
-    await waitFor(() => expect(state.selectedReportId).toBe('r9'))
+    await screen.findByText('New report')
     fireEvent.input(screen.getByPlaceholderText('newPlaceholder'), { target: { value: '  New report  ' } })
     fireEvent.click(screen.getByText('create'))
     await waitFor(() => expect(face.createReport).toHaveBeenCalledWith('New report'))
+    expect(state.selectedReportId).toBe('r9')
+    expect(face.openWriting).toHaveBeenCalledWith('s1')
   })
 
   it('collapses and re-expands the report strip', async () => {

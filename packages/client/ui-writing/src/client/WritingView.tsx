@@ -44,14 +44,10 @@ export function WritingView(props: WritingViewProps): JSX.Element {
   const [toolbarOpen, setToolbarOpen] = useState(false)
   const [composerVisible, setComposerVisible] = useState(false)
   const [toasts, setToasts] = useState<Toast[]>([])
-  const [previewModalOpen, setPreviewModalOpen] = useState(false)
-  const [modalSplit, setModalSplit] = useState(50)
   const [showOutline, setShowOutline] = useState(false)
 
   const editorRef = useRef<HTMLDivElement>(null)
-  const modalRef = useRef<HTMLDivElement>(null)
   const mainTextareaRef = useRef<HTMLTextAreaElement>(null)
-  const modalTextareaRef = useRef<HTMLTextAreaElement>(null)
   const sourceRef = useRef('')
   const selectedRef = useRef<string | undefined>(undefined)
   const committedTitleRef = useRef('')
@@ -205,10 +201,6 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     renameReport(id, trimmed)
   }, [selectedTitle, rename, renameReport])
 
-  const openPreview = useCallback((): void => {
-    setPreviewModalOpen(true)
-  }, [])
-
   const jumpOutline = useCallback((line: number): void => {
     const textarea = mainTextareaRef.current
     if (textarea !== null) jumpToLine(textarea, sourceRef.current, line)
@@ -240,10 +232,6 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     beginSplitDrag(event, editorRef, setSplit, split)
   }, [beginSplitDrag, split])
 
-  const onModalDividerPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>): void => {
-    beginSplitDrag(event, modalRef, setModalSplit, modalSplit)
-  }, [beginSplitDrag, modalSplit])
-
   const pdfUrl = compileResult?.pdfUrl
 
   // No report selected yet: show a lightweight placeholder within the tab.
@@ -252,9 +240,20 @@ export function WritingView(props: WritingViewProps): JSX.Element {
   }
 
   return (
-    <div className={composerVisible ? css.writing : `${css.writing} ${css.writingCover}`}>
+    <div className={`${css.writing} ${css.writingCover} ${composerVisible ? css.writingReveal : ''}`}>
       <div className={css.writingTopbar}>
-        <span className={css.writingTitle}>{selectedTitle}</span>
+        <input
+          className={css.writingTitle}
+          value={selectedTitle}
+          onChange={event => setSelectedTitle(event.target.value)}
+          onBlur={() => { void onTitleCommit() }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              void onTitleCommit()
+              event.currentTarget.blur()
+            }
+          }}
+        />
         <div className={css.toolbarWrap}>
           <button
             className={css.toolbarToggle}
@@ -267,7 +266,6 @@ export function WritingView(props: WritingViewProps): JSX.Element {
             <div className={css.toolbarMenu}>
               <button className={css.button} onClick={() => { void onSave() }}>{t('save')}</button>
               <button className={css.button} onClick={() => { void onCompile() }}>{t('compile')}</button>
-              <button className={css.button} onClick={openPreview}>{t('openPreview')}</button>
               <button className={css.button} onClick={onDownload}>{t('download')}</button>
               {versionList.length > 0 && (
                 <button className={css.button} onClick={() => setShowAllVersions(visible => !visible)}>
@@ -326,44 +324,6 @@ export function WritingView(props: WritingViewProps): JSX.Element {
       <button className={css.chatBubble} title={t('chat')} onClick={() => setComposerVisible(visible => !visible)}>
         💬
       </button>
-
-      {previewModalOpen && (
-        <div className={css.modal}>
-          <div className={css.modalHeader}>
-            <input
-              className={css.modalTitleInput}
-              value={selectedTitle}
-              onChange={event => setSelectedTitle(event.target.value)}
-              onBlur={() => { void onTitleCommit() }}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  void onTitleCommit()
-                  event.currentTarget.blur()
-                }
-              }}
-            />
-            <button className={css.modalAction} onClick={() => { void onSave() }}>{t('save')}</button>
-            <button className={css.modalAction} onClick={() => { void onCompile() }}>{t('compile')}</button>
-            <button className={css.modalAction} onClick={onDownload}>{t('download')}</button>
-            <button className={css.modalClose} title={t('close')} onClick={() => setPreviewModalOpen(false)}>×</button>
-          </div>
-          <div
-            ref={modalRef}
-            className={css.modalEditor}
-            style={{ gridTemplateColumns: `${modalSplit}% 6px 1fr` }}
-          >
-            <SourceEditor value={source} onChange={onSourceEdit} textareaRef={modalTextareaRef} />
-            <div className={css.divider} onPointerDown={onModalDividerPointerDown} />
-            <div className={css.preview}>
-              {compiling
-                ? <div className={css.none}>{t('compiling')}</div>
-                : pdfUrl === undefined
-                  ? <div className={css.none}>{t('noPreview')}</div>
-                  : <iframe className={css.frame} src={pdfUrl} title={t('preview')} />}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

@@ -130,6 +130,8 @@ export function apply(ctx: Context): void {
 
   // Apply-time construction keeps store identity bound to this fiber.
   const chatStore = createChatStore()
+// Per-session bound `setView` for the shared chat store, captured at registration.
+const viewSwitchers = new Map<SessionId, (viewId: string) => void>()
   const submissionPolicy = new ComposerSubmissionPolicy(
     ctx.settingsScope.bind<ConversationSettings>({ namespace: CONVERSATION_SETTINGS_NAMESPACE }),
   )
@@ -244,6 +246,9 @@ export function apply(ctx: Context): void {
     store: chatStore,
     inject: (sessionId: SessionId, _actions: BoundActions<typeof chatStore>): ConversationSessionInjected => {
       const conversation = concreteConversation(ctx)
+      // Capture the framework's bound setView for this session's shared chat store
+      // so `conversation.showView` can write to the same instance components read.
+      viewSwitchers.set(sessionId, viewId => _actions.setView(viewId))
       return {
         views,
         releaseSessionImages: (id) => { conversation.releaseSessionImages(id) },
@@ -432,7 +437,7 @@ export function apply(ctx: Context): void {
   // registers itself as `conversation` and lives on its own child fiber.
   // Presentation registrants depend directly on their slot declarations;
   // this service remains only where conversation actions are required.
-  ctx.plugin(ConversationController, { input: inputHub, blocks: composerBlocks })
+  ctx.plugin(ConversationController, { input: inputHub, blocks: composerBlocks, switchView: (sessionId, viewId) => viewSwitchers.get(sessionId)?.(viewId) })
 
   // The plan strip rides the input dock above the queue rows (same posture).
   ctx.plugin(todoDockEntry)

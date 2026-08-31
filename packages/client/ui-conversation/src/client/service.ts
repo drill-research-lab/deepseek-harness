@@ -56,6 +56,12 @@ export interface IConversation {
    * @returns completion of the page pull.
    */
   loadOlder(): Promise<void>
+  /**
+   * Switch the given session's active conversation view (e.g. open the writing view).
+   * @param sessionId - the owning session.
+   * @param viewId - the conversation view id to activate.
+   */
+  showView(sessionId: SessionId, viewId: string): void
 }
 
 /** Create one browser-only draft descriptor; only its id enters input state. */
@@ -93,6 +99,7 @@ export class ConversationController extends Service implements IConversation {
   readonly input: SessionInputResolver
   /** The per-session composer-block registry. */
   readonly blocks: ComposerBlocks
+  private readonly switchView: (sessionId: SessionId, viewId: string) => void
   private readonly draftAttachments = new Map<DraftAttachmentId, ComposerAttachment>()
   private readonly imageUrls = new Map<string, ImageUrlEntry>()
   private readonly imageGenerations = new Map<SessionId, number>()
@@ -106,10 +113,11 @@ export class ConversationController extends Service implements IConversation {
    * constructed by the plugin apply (the same instances the slot inject
    * factories close over).
    */
-  constructor(ctx: Context, config: { input: SessionInputResolver; blocks: ComposerBlocks }) {
+  constructor(ctx: Context, config: { input: SessionInputResolver; blocks: ComposerBlocks; switchView: (sessionId: SessionId, viewId: string) => void }) {
     super(ctx, 'conversation')
     this.input = config.input
     this.blocks = config.blocks
+    this.switchView = config.switchView
     ctx.effect(() => () => {
       this.disposed = true
       for (const url of this.createdImageUrls) revokePreview(url)
@@ -285,6 +293,11 @@ export class ConversationController extends Service implements IConversation {
   /** Pull one older history page for the scoped Session. */
   async loadOlder(): Promise<void> {
     await this.scopedSession('loadOlder').loadOlder()
+  }
+
+  /** Switch the session's active conversation view. */
+  showView(sessionId: SessionId, viewId: string): void {
+    this.switchView(sessionId, viewId)
   }
 
   /** Resolve the caller scope's session face or throw on root contexts. */
