@@ -135,7 +135,7 @@ export function PipelineEditor({ useStore, actions, api, t }: PipelineEditorProp
               <dl className={styles.runDetail} data-testid="run-detail">
                 <dt>{t('run.duration')}</dt>
                 <dd>{Math.max(0, selectedRun.finishedAt - selectedRun.startedAt)} ms</dd>
-                <dt>{t('editor.runs')}</dt>
+                <dt>{t('run.nodes')}</dt>
                 <dd>{selectedRun.nodeCount}</dd>
                 {selectedRun.error !== undefined && (
                   <>
