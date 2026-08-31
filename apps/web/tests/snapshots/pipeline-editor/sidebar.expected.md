@@ -1,0 +1,4 @@
+- text: Pipelines
+- button "New pipeline"
+- button "Lab Digest"
+- button "Pause": ⏸
