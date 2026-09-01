@@ -585,6 +585,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'conversation\' (client-ui-conversation), so it exists while that entry is mounted',
     occupants: [
+      'client-ui-conversation LlmQueueIndicator id \'llm-queue\'',
       'client-ui-conversation QueueDock id \'queue\'',
       'client-ui-conversation TodoDock id \'todo\'',
       'client-ui-goal GoalDock id \'goal\'',
@@ -1398,6 +1399,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'sidebar.settings\' (client-ui-settings-general), so it exists while that entry is mounted',
     occupants: [
+      'client-ui-admin-queue AdminQueue id \'admin-queue\'',
       'client-ui-agent-preset AgentPresetSection id \'agent-presets\'',
       'client-ui-inference-dashboard InferenceDashboard id \'inference-dashboard\'',
       'client-ui-settings-general GeneralSection id \'general\'',

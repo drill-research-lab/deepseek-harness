@@ -109,6 +109,8 @@ export interface RpcErrorDetailsMap {
   'subagent-not-resumable': { childSessionId: SessionId }
   'subagent-unauthorized': { childSessionId: SessionId }
   'subagent-delivery-unavailable': { childSessionId: SessionId }
+  /** The authenticated caller lacks the admin identity the method requires (403 semantics on the wire). */
+  'forbidden': {}
   'internal': {}
 }
 

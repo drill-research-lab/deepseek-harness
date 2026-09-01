@@ -35,7 +35,7 @@ function scriptedApi(overrides: {
   const err = <T>(r: RpcRequest<unknown>): Promise<RpcResponse<T>> =>
     Promise.resolve({ rpcId: r.rpcId, result: { ok: false, error: { code: 'internal' as const, message: 'stub', details: {} } } })
   return {
-    auth: { me: r => ok(r, { userId: 'ldap:alice', username: 'Alice' }), ...overrides.auth },
+    auth: { me: r => ok(r, { userId: 'ldap:alice', username: 'Alice', isAdmin: false }), ...overrides.auth },
     sessions: {
       list: r => ok(r, { items: [] }),
       search: r => ok(r, { items: [], hasMore: false }),
@@ -131,6 +131,10 @@ function scriptedApi(overrides: {
       resources: err,
       discoverModels: err,
       ...overrides.llm,
+    },
+    queue: {
+      list: r => ok(r, { entries: [] }),
+      reorder: r => ok(r, {}),
     },
     events: { mux: () => empty<MuxFrame>(), host: () => empty<HostFrame>(), ...overrides.events },
     respond: overrides.respond ?? (() => Promise.resolve({ accepted: false as const, reason: 'not-pending' as const })),

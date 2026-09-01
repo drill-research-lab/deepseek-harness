@@ -22,7 +22,7 @@ import LocalAccountStore from '@deepseek-ai/dsh-auth-local'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import LdapAuthGateway from '../../../packages/identity/auth-gateway-ldap/src/index.ts'
 
-const LDAP_USER: AuthenticatedUser = { userId: authenticatedUserId('ldap:browser-uuid'), username: 'browser-user' }
+const LDAP_USER: AuthenticatedUser = { userId: authenticatedUserId('ldap:browser-uuid'), username: 'browser-user', isAdmin: false }
 const values = new Map<string, string>()
 
 class FixtureCredentials extends CredentialProvider {

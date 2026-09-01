@@ -19,7 +19,7 @@ export type {
   CredentialsApi, CredentialView, ConfigurableProviderView, DiscoveredModelView, InferenceMetricsView,
   InferenceResourcesView, LlmApi,
   SubagentsApi, SubagentAddress, SubagentCatalog, SubagentListEntry, SubagentPromptReceipt,
-  JobView,
+  JobView, QueueApi, QueueEntryView,
 } from '@deepseek-ai/dsh-host-apiproxy/api'
 export type { ToolCallView, ToolResultView } from '@deepseek-ai/dsh-tools/presentation'
 export type {

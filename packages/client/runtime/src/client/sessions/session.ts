@@ -83,6 +83,8 @@ export class Session implements SessionFace {
   private pendingCache: { rev: number; value: PendingInteraction[] } | null = null
   /** Authoritative stream-only inbox snapshot; pending work never hits history. */
   private readonly queueMirror = new SessionQueueMirror()
+  /** Latest `session/llm-queue` frame value; `null` when not queued. Stream-only, never in history. */
+  private llmQueue: { position: number; state: 'waiting' | 'running' } | null = null
   /** Session-owned business Context engine over the contiguous raw window. */
   private readonly conversation: ConversationNodeAssembler
   private running = false
@@ -475,6 +477,11 @@ export class Session implements SessionFace {
         this.notifier.markDirty()
         return
       }
+      case 'session/llm-queue': {
+        this.llmQueue = { position: frame.position, state: frame.state }
+        this.notifier.markDirty()
+        return
+      }
       case 'session/subscribed': {
         this.subscribedLastSeq = frame.lastSeq
         // New mux-generation baseline: the host pushes this session's queue
@@ -482,6 +489,10 @@ export class Session implements SessionFace {
         // stale mirror clears here — race-free against onConnected/resync
         // timing (clearing there could wipe a baseline that already landed).
         if (this.queueMirror.reset()) this.notifier.markDirty()
+        // The admission-queue baseline is likewise re-pushed after this frame
+        // only while still queued; drop the stale value so a completed request
+        // does not keep a position across a reconnect.
+        if (this.llmQueue !== null) { this.llmQueue = null; this.notifier.markDirty() }
         return
       }
       case 'approval/requested': {
@@ -745,6 +756,7 @@ export class Session implements SessionFace {
       runningCalls: legacy.runningCalls,
       pending: this.pendingCache.value,
       queue: this.queueMirror.snapshot(),
+      llmQueue: this.llmQueue,
       running: this.running,
       subagent: this.address === undefined
         ? null

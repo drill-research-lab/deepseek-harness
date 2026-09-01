@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { generateKeyPairSync } from 'node:crypto'
+import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -15,8 +15,8 @@ import type { WebRoute, WebServer } from '@deepseek-ai/dsh-host-webserver'
 import ExternalCookieAuthService from '@deepseek-ai/dsh-host-authentication'
 import LdapAuthGateway, { Config as GatewayConfig } from '../src/index.ts'
 
-const USER = { userId: authenticatedUserId('ldap:uuid-alice'), username: 'alice' }
-const LOCAL_USER = { userId: authenticatedUserId('local:uuid-bob'), username: 'bob' }
+const USER = { userId: authenticatedUserId('ldap:uuid-alice'), username: 'alice', isAdmin: true }
+const LOCAL_USER = { userId: authenticatedUserId('local:uuid-bob'), username: 'bob', isAdmin: false }
 
 function request(path: string, body: Record<string, unknown>): IncomingMessage {
   const req = Readable.from([Buffer.from(JSON.stringify(body))]) as unknown as IncomingMessage
@@ -93,10 +93,19 @@ async function mounted(config: { cookieExpireSeconds?: number } = {}) {
   await fiber.await()
   return {
     routes, authenticate, authenticateLocal, createLocal,
+    privateKey: pair.privateKey,
     publicKey: pair.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
     sessionDirectory: join(root, 'sessions'),
     dispose: async () => { await fiber.dispose(); await rm(root, { recursive: true, force: true }) },
   }
+}
+
+/** Sign an identity token with the gateway's key and the given payload claims. */
+function signToken(privateKey: KeyObject, claims: Record<string, unknown>): string {
+  const header = Buffer.from(JSON.stringify({ alg: 'EdDSA', typ: 'JWT' })).toString('base64url')
+  const payload = Buffer.from(JSON.stringify(claims)).toString('base64url')
+  const signature = sign(null, Buffer.from(`${header}.${payload}`), privateKey).toString('base64url')
+  return `${header}.${payload}.${signature}`
 }
 
 function identityCookie(cookie: string | undefined): string {
@@ -154,7 +163,8 @@ describe('LDAP authentication gateway', () => {
     expect(payload).toMatchObject({
       v: 1, iss: 'https://auth.islab.local', aud: 'dsh', sub: 'ldap:uuid-alice', username: 'alice',
     })
-    expect(Object.keys(payload).sort()).toEqual(['aud', 'exp', 'iat', 'iss', 'sid', 'sub', 'username', 'v'])
+    expect(Object.keys(payload).sort()).toEqual(['aud', 'exp', 'iat', 'isAdmin', 'iss', 'sid', 'sub', 'username', 'v'])
+    expect(payload['isAdmin']).toBe(true)
     expect(payload['exp']).toBe((payload['iat'] as number) + 300)
     expect(JSON.stringify(payload)).not.toContain('correct')
     const dsh = await verifier(app.publicKey, app.sessionDirectory)
@@ -305,6 +315,44 @@ describe('LDAP authentication gateway', () => {
     expect(result.state.status).toBe(201)
     expect(JSON.parse(result.state.body)).toEqual({ user: LOCAL_USER })
     expect(result.state.cookie).toContain('HttpOnly')
+    await app.dispose()
+  })
+})
+
+describe('LDAP authentication gateway — isAdmin payload verification', () => {
+  /** Log in as the admin fixture user and return that cookie's decoded payload claims. */
+  async function loginClaims(app: Awaited<ReturnType<typeof mounted>>): Promise<Record<string, unknown>> {
+    const result = response()
+    await app.routes.get('/auth/login')!.handler(request('/auth/login', { username: 'alice', password: 'correct' }), result.value)
+    const [, payload] = identityCookie(result.state.cookie).split('.')
+    return JSON.parse(Buffer.from(payload!, 'base64url').toString('utf8')) as Record<string, unknown>
+  }
+
+  async function meBody(app: Awaited<ReturnType<typeof mounted>>, cookie: string): Promise<{ status: number | undefined; body: unknown }> {
+    const meRequest = browserRequest('/auth/me', 'GET')
+    meRequest.headers.cookie = `dsh_identity=${cookie}`
+    const me = response()
+    await app.routes.get('/auth/me')!.handler(meRequest, me.value)
+    return { status: me.state.status, body: JSON.parse(me.state.body) }
+  }
+
+  it('rejects a re-signed cookie whose isAdmin claim is not a boolean', async () => {
+    const app = await mounted()
+    const claims = await loginClaims(app)
+    const forged = signToken(app.privateKey, { ...claims, isAdmin: 'yes' })
+    expect(await meBody(app, forged)).toEqual({ status: 401, body: { authenticated: false } })
+    await app.dispose()
+  })
+
+  it('accepts a re-signed cookie that omits isAdmin, treating the user as non-admin', async () => {
+    const app = await mounted()
+    const claims = await loginClaims(app)
+    delete claims['isAdmin']
+    const legacy = signToken(app.privateKey, claims)
+    expect(await meBody(app, legacy)).toEqual({
+      status: 200,
+      body: { authenticated: true, user: { userId: 'ldap:uuid-alice', username: 'alice', isAdmin: false } },
+    })
     await app.dispose()
   })
 })

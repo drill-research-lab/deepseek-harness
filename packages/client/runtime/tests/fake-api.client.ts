@@ -74,7 +74,7 @@ export class FakeApiClient implements IApiClient {
   readonly calls: { method: string; payload: unknown }[] = []
 
   readonly auth: IApiClient['auth'] = {
-    me: () => Promise.resolve(ok({ userId: 'test:user', username: 'Test User' })),
+    me: () => Promise.resolve(ok({ userId: 'test:user', username: 'Test User', isAdmin: false })),
   }
 
   // Programmable slots (defaults answer OK-empty); reassign per case.
@@ -287,6 +287,11 @@ export class FakeApiClient implements IApiClient {
       sampledAt: 0, refreshAfterMs: 2000, storage: [], networkInterfaces: [],
     }))),
     discoverModels: payload => this.record('llm.discoverModels', payload, Promise.resolve(ok({ models: [] }))),
+  }
+
+  readonly queue: IApiClient['queue'] = {
+    list: payload => this.record('queue.list', payload, Promise.resolve(ok({ entries: [] }))),
+    reorder: payload => this.record('queue.reorder', payload, Promise.resolve(ok({}))),
   }
 
   /** When true, streams never fire onOpen (misbehaving-carrier material for the handshake timeout guard). */

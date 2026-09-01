@@ -42,7 +42,7 @@ async function bench(isLoopback = true) {
   }))
   const authMe = vi.fn(() => Promise.resolve({
     rpcId: 'auth-me' as never,
-    result: { ok: true as const, value: { userId: 'ldap:alice', username: 'Alice' } },
+    result: { ok: true as const, value: { userId: 'ldap:alice', username: 'Alice', isAdmin: false } },
   }))
   const settingsOpenDocument = vi.fn(() => Promise.resolve({
     rpcId: 'settings-open' as never,
@@ -96,7 +96,7 @@ describe('ui-settings-general apply', () => {
     expect(before.slots.spec('settings.general.item')).toEqual({ kind: 'list', scope: 'root' })
     expect(before.slots.entries('settings.general.item')).toEqual([])
     const sectionInjected = (entry.inject as unknown as () => { loadCurrentUser(): Promise<unknown> })()
-    await expect(sectionInjected.loadCurrentUser()).resolves.toEqual({ userId: 'ldap:alice', username: 'Alice' })
+    await expect(sectionInjected.loadCurrentUser()).resolves.toEqual({ userId: 'ldap:alice', username: 'Alice', isAdmin: false })
     expect(before.authMe).toHaveBeenCalledWith({})
     // The onboarding hole stays declared for feature-owned steps; this plugin
     // no longer seats one.

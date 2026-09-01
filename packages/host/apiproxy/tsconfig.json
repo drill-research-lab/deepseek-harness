@@ -42,6 +42,9 @@
       "path": "../../llm/llm"
     },
     {
+      "path": "../../llm/llm-admission-queue"
+    },
+    {
       "path": "../../core/agent"
     },
     {

@@ -73,6 +73,14 @@ export interface SessionHeader {
   readonly createdAt: number
   /** Immutable authenticated owner; absent only on unsupported legacy or non-product detached sessions. */
   readonly ownerUserId?: AuthenticatedUserId
+  /**
+   * Human-readable login name of the owner, captured from the authenticated
+   * request scope when the session is created. Presentation only — ownership
+   * and every authority check key on {@link ownerUserId}, never this. Absent
+   * for background-created sessions (no request scope) and sessions written
+   * before this field existed.
+   */
+  readonly ownerUsername?: string
   /** Absolute working directory the session was created in (if any). */
   readonly cwd?: string
   /** The session this one was forked from (seed lineage), if any. */

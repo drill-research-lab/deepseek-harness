@@ -414,7 +414,7 @@ describe.runIf(process.platform === 'linux')('A3: Drill production capability cl
       const sessions = new FileSessionStore(authSessionDirectory)
       async function login(sub: string, username: string): Promise<string> {
         const now = Math.floor(Date.now() / 1000)
-        const sid = await sessions.create({ userId: authenticatedUserId(sub), username }, now + 600)
+        const sid = await sessions.create({ userId: authenticatedUserId(sub), username, isAdmin: false }, now + 600)
         const header = Buffer.from(JSON.stringify({ alg: 'EdDSA', typ: 'JWT' })).toString('base64url')
         const payload = Buffer.from(JSON.stringify({
           v: 1, iss: ISSUER, aud: AUDIENCE, sub, username, sid, iat: now, exp: now + 600,

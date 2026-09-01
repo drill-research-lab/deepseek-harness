@@ -118,7 +118,9 @@ export class LocalAccountStore extends Service {
     const actual = await derive(password, Buffer.from(account.salt, 'base64url'))
     const expected = Buffer.from(account.passwordHash, 'base64url')
     if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return undefined
-    return { userId: authenticatedUserId(`local:${account.id}`), username: account.username }
+    // Gateway-local accounts never carry admin: there is no directory group to
+    // read one from, and admin is a deliberate LDAP-only capability.
+    return { userId: authenticatedUserId(`local:${account.id}`), username: account.username, isAdmin: false }
   }
 
   /**
@@ -148,7 +150,7 @@ export class LocalAccountStore extends Service {
       }
       document.accounts.push(account)
       await writeFileAtomic(this.filename, `${JSON.stringify(document, null, 2)}\n`, { mode: 0o600, dirMode: 0o700 })
-      return { userId: authenticatedUserId(`local:${account.id}`), username: account.username }
+      return { userId: authenticatedUserId(`local:${account.id}`), username: account.username, isAdmin: false }
     })
   }
 }

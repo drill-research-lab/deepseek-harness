@@ -15,6 +15,7 @@ import type { GoalsApi } from './goals.ts'
 import type { SettingsApi } from './settings.ts'
 import type { CredentialsApi } from './credentials.ts'
 import type { LlmApi } from './llm.ts'
+import type { QueueApi } from './queue.ts'
 import type { DownloadsApi } from './downloads.ts'
 import type { AuthApi } from './auth.ts'
 import type { ClientResponse, RpcReceipt } from './rpc.ts'
@@ -33,6 +34,7 @@ export interface ApiProxy {
   settings: SettingsApi
   credentials: CredentialsApi
   llm: LlmApi
+  queue: QueueApi
   /** Host-only download surfaces (GET, no wire envelope); absent from IApiClient. */
   downloads: DownloadsApi
   /**
@@ -67,6 +69,7 @@ export type {
   InferenceGpuResourcesView, InferenceMetricsView, InferenceNetworkInterfaceView,
   InferenceResourcesView, InferenceStorageResourceView, LlmApi,
 } from './llm.ts'
+export type { QueueApi, QueueEntryView } from './queue.ts'
 export type { DownloadsApi } from './downloads.ts'
 export type { AuthApi, CurrentUserView } from './auth.ts'
 export type { ApprovalResponsePayload } from './approvals.ts'

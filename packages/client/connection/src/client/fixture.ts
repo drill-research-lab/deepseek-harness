@@ -2180,7 +2180,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
 
   const api: ApiProxy = {
     auth: {
-      me: request => ok(request, { userId: 'fixture:user', username: 'Fixture User' }),
+      me: request => ok(request, { userId: 'fixture:user', username: 'Fixture User', isAdmin: false }),
     },
     sessions: {
       list: request => ok(request, { items: [...sessions].sort((a, b) => b.updatedAt - a.updatedAt) }),
@@ -2974,6 +2974,10 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         models: fixtureModelGroups().flatMap(group => group.models.map(model => ({ id: model.id, name: model.name }))),
       }),
     },
+    queue: {
+      list: request => ok(request, { entries: [] }),
+      reorder: request => ok(request, {}),
+    },
     respond(message: ClientResponse): Promise<RpcReceipt> {
       // Same routing discipline as the host: rpcId first, then the payload's
       // audit correlation; a settled or unknown id is not-pending.
@@ -3144,6 +3148,8 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'llm.metrics': return this.api.llm.metrics(request, signal)
       case 'llm.resources': return this.api.llm.resources(request, signal)
       case 'llm.discoverModels': return this.api.llm.discoverModels(request, signal)
+      case 'queue.list': return this.api.queue.list(request)
+      case 'queue.reorder': return this.api.queue.reorder(request)
     }
   }
 
