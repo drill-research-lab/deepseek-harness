@@ -145,10 +145,12 @@ describe('JsonlSessionPersistence owner namespaces', () => {
     const alice: AuthenticatedUser = {
       userId: authenticatedUserId('ldap:test-alice'),
       username: 'alice',
+      isAdmin: false,
     }
     const bob: AuthenticatedUser = {
       userId: authenticatedUserId('ldap:test-bob'),
       username: 'bob',
+      isAdmin: false,
     }
     const aliceId = SessionId('known-alice-id')
     const bobId = SessionId('known-bob-id')

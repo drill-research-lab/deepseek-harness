@@ -511,6 +511,7 @@ describe('SubagentRuntime.followup residency routing', () => {
     const alice: AuthenticatedUser = {
       userId: authenticatedUserId('ldap:continuation-alice'),
       username: 'alice',
+      isAdmin: false,
     }
     const first = await setupOwnedContinuation([textResponse('first')], persistenceRoot, usersRoot, alice)
     parkParent(first.ctx, first.parent)

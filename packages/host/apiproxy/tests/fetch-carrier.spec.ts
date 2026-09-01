@@ -18,7 +18,7 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
   return {
     auth: {
       async me(request) {
-        return { rpcId: request.rpcId, result: { ok: true, value: { userId: 'ldap:alice', username: 'Alice' } } }
+        return { rpcId: request.rpcId, result: { ok: true, value: { userId: 'ldap:alice', username: 'Alice', isAdmin: false } } }
       },
     },
     sessions: {

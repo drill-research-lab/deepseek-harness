@@ -37,6 +37,8 @@ interface IdentityPayload {
   aud: string
   sub: string
   username: string
+  /** Login-time admin snapshot. Absent in tokens issued before this field existed; read as `false`. */
+  isAdmin?: boolean
   iat: number
   exp: number
   sid: string
@@ -164,8 +166,12 @@ export class ExternalCookieAuthService extends AuthService {
         || typeof payload.username !== 'string' || payload.username.trim().length === 0
         || typeof payload.sid !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(payload.sid)
         || typeof payload.iat !== 'number' || !Number.isInteger(payload.iat) || payload.iat > now
-        || typeof payload.exp !== 'number' || !Number.isInteger(payload.exp) || payload.exp <= now) return undefined
-      return { user: { userId: authenticatedUserId(payload.sub), username: payload.username }, sessionId: payload.sid }
+        || typeof payload.exp !== 'number' || !Number.isInteger(payload.exp) || payload.exp <= now
+        || (payload.isAdmin !== undefined && typeof payload.isAdmin !== 'boolean')) return undefined
+      return {
+        user: { userId: authenticatedUserId(payload.sub), username: payload.username, isAdmin: payload.isAdmin === true },
+        sessionId: payload.sid,
+      }
     } catch {
       return undefined
     }
@@ -178,7 +184,10 @@ export class ExternalCookieAuthService extends AuthService {
     if (identity === undefined) return undefined
     const stored = await this.sessions.find(identity.sessionId)
     if (stored?.userId !== identity.user.userId || stored.username !== identity.user.username) return undefined
-    return identity.user
+    // The revocable server-side record is authoritative for privilege: the
+    // cookie's `isAdmin` is only a hint, so a token whose signature verifies but
+    // whose record says otherwise cannot elevate.
+    return { ...identity.user, isAdmin: stored.isAdmin }
   }
 }
 

@@ -2089,9 +2089,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   return {
     auth: {
       me(request) {
-        const user = ctx.get('auth')?.currentUser()
-        if (user === undefined) throw new Error('auth.me requires an authenticated request scope')
-        return Promise.resolve(ok(request, { userId: user.userId, username: user.username }))
+        // `.then` wrapper turns the no-scope throw into a rejection (the queue.* pattern).
+        return Promise.resolve().then(() => {
+          const user = ctx.get('auth')?.currentUser()
+          if (user === undefined) throw new Error('auth.me requires an authenticated request scope')
+          return ok(request, { userId: user.userId, username: user.username, isAdmin: user.isAdmin })
+        })
       },
     },
     sessions: {

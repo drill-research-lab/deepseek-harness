@@ -52,9 +52,11 @@ describe('RpcId', () => {
 describe('auth domain schemas', () => {
   it('accepts the empty request and complete current-user view', () => {
     expect(authMeRequestSchema.parse({})).toEqual({})
-    expect(authMeValueSchema.parse({ userId: 'ldap:alice', username: 'Alice' }))
-      .toEqual({ userId: 'ldap:alice', username: 'Alice' })
+    expect(authMeValueSchema.parse({ userId: 'ldap:alice', username: 'Alice', isAdmin: true }))
+      .toEqual({ userId: 'ldap:alice', username: 'Alice', isAdmin: true })
     expect(() => authMeValueSchema.parse({ userId: 'ldap:alice' })).toThrow()
+    expect(() => authMeValueSchema.parse({ userId: 'ldap:alice', username: 'Alice' })).toThrow()
+    expect(() => authMeValueSchema.parse({ userId: 'ldap:alice', username: 'Alice', isAdmin: 'yes' })).toThrow()
   })
 })
 

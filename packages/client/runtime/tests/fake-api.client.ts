@@ -74,7 +74,7 @@ export class FakeApiClient implements IApiClient {
   readonly calls: { method: string; payload: unknown }[] = []
 
   readonly auth: IApiClient['auth'] = {
-    me: () => Promise.resolve(ok({ userId: 'test:user', username: 'Test User' })),
+    me: () => Promise.resolve(ok({ userId: 'test:user', username: 'Test User', isAdmin: false })),
   }
 
   // Programmable slots (defaults answer OK-empty); reassign per case.

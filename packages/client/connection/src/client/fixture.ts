@@ -2180,7 +2180,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
 
   const api: ApiProxy = {
     auth: {
-      me: request => ok(request, { userId: 'fixture:user', username: 'Fixture User' }),
+      me: request => ok(request, { userId: 'fixture:user', username: 'Fixture User', isAdmin: false }),
     },
     sessions: {
       list: request => ok(request, { items: [...sessions].sort((a, b) => b.updatedAt - a.updatedAt) }),

@@ -10,6 +10,13 @@ export type AuthenticatedUserId = Branded<'AuthenticatedUserId'>
 export interface AuthenticatedUser {
   readonly userId: AuthenticatedUserId
   readonly username: string
+  /**
+   * Whether the authenticating directory placed this user in the deployment's
+   * admin group, captured once at login. A login-time snapshot: it does not
+   * track later group changes within the session's lifetime, and a token or
+   * record that omits it is read as `false`.
+   */
+  readonly isAdmin: boolean
 }
 
 /**

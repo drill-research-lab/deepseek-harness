@@ -25,8 +25,8 @@ const ACCOUNT_EXPECTED = join(SNAPSHOT_DIR, 'account.expected.md')
 const ISSUER = 'https://auth.islab.local'
 const AUDIENCE = 'dsh'
 const USERS = new Map<string, AuthenticatedUser>([
-  ['alice', { userId: authenticatedUserId('ldap:alice'), username: 'Alice' }],
-  ['bob', { userId: authenticatedUserId('ldap:bob'), username: 'Bob' }],
+  ['alice', { userId: authenticatedUserId('ldap:alice'), username: 'Alice', isAdmin: false }],
+  ['bob', { userId: authenticatedUserId('ldap:bob'), username: 'Bob', isAdmin: false }],
 ])
 const credentialValues = new Map<string, string>()
 
