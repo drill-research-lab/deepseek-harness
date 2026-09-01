@@ -41,10 +41,13 @@ import type {} from '@deepseek-ai/dsh-tools'
 import type {
   ApiProxy, ConfigurableProviderView, CredentialView, GoalRef, HistoryEntry, HostFrame,
   ModelCatalogFailure, ModelProviderGroup,
-  ModelReasoning, MuxFrame, PromptContentPart, QuestionResponsePayload, SessionListMetadata, SessionProjectionsBlock, SessionSearchItem,
+  ModelReasoning, MuxFrame, PromptContentPart, QuestionResponsePayload, QueueEntryView,
+  SessionListMetadata, SessionProjectionsBlock, SessionSearchItem,
   QueuedInboxItem, SessionSummary, SettingsNamespaceView, SubagentAddress, JobView, ToolEventView,
   WorkspaceId, WorkspaceView,
 } from './api/index.ts'
+// Brings the `Context.llmAdmissionQueue` augmentation and the queue view types.
+import type { QueueEntrySnapshot } from '@deepseek-ai/dsh-llm-admission-queue/types'
 import {
   DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
   flushLiveSessionLog,
@@ -401,6 +404,56 @@ async function buildModelCatalog(ctx: Context): Promise<{
 /** Wrap an error result echoing the request's rpcId. */
 function err<T>(request: RpcRequest<unknown>, error: RpcError): RpcResponse<T> {
   return { rpcId: request.rpcId, result: { ok: false, error } }
+}
+
+/**
+ * First gate of every `queue.*` handler: require an admin identity from the
+ * request scope. A missing scope throws like `auth.me` (the Web carrier's 401
+ * boundary already ran before dispatch); an authenticated non-admin is refused
+ * with `forbidden` before any queue access. Returns the identity on success.
+ * @param ctx - request context carrying the auth scope.
+ * @param request - the RPC request, for the refusal's echoed rpcId.
+ * @param method - method name, for the diagnostic message.
+ */
+function requireAdmin(
+  ctx: Context,
+  request: RpcRequest<unknown>,
+  method: string,
+): { refused: RpcResponse<never> } | { user: { userId: string; username: string } } {
+  const user = ctx.get('auth')?.currentUser() as
+    | { userId: string; username: string; isAdmin?: boolean }
+    | undefined
+  if (user === undefined) throw new Error(`${method} requires an authenticated request scope`)
+  if (user.isAdmin !== true) {
+    return {
+      refused: err(request, { code: 'forbidden', message: `${method} requires an admin identity`, details: {} }),
+    }
+  }
+  return { user: { userId: user.userId, username: user.username } }
+}
+
+/** The refusal a `queue.*` handler returns when the admission-queue plugin is not composed. */
+function queueUnavailable(request: RpcRequest<unknown>): RpcResponse<never> {
+  return err(request, {
+    code: 'internal',
+    message: 'the admission queue plugin is not composed in this deployment',
+    details: {},
+  })
+}
+
+/**
+ * Widen one admission-queue snapshot to its browser wire view (branded ids →
+ * string). `ownerUsername` is resolved by the caller from the session header.
+ */
+function queueEntryView(snapshot: QueueEntrySnapshot, ownerUsername: string | undefined): QueueEntryView {
+  return {
+    queueId: String(snapshot.queueId),
+    position: snapshot.position,
+    state: snapshot.state,
+    enqueuedAt: snapshot.enqueuedAt,
+    ...snapshot.sessionId === undefined ? {} : { sessionId: String(snapshot.sessionId) },
+    ...ownerUsername === undefined ? {} : { ownerUsername },
+  }
 }
 
 /**
@@ -1339,6 +1392,24 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   ctx.inject(['sessionProjections'], (projectionCtx) => {
     projectionCtx.sessionProjections.onChanged((session, key, value, seq) => {
       broadcast(session, { type: 'session/projection', sessionId: session.id, key, value, seq })
+    })
+  })
+
+  // Admission-queue position feed → session/llm-queue push frames. The child
+  // activates only when the admission-queue plugin is composed; a change for a
+  // call with no live session (an auxiliary title/compaction request) or for a
+  // session that is not live has nothing to show and is dropped.
+  ctx.inject(['llmAdmissionQueue'], (queueCtx) => {
+    queueCtx.llmAdmissionQueue.onChange((change) => {
+      if (change.sessionId === undefined) return
+      const session = ctx.sessions.get(change.sessionId, 'trusted-internal')
+      if (session === undefined) return
+      broadcast(session, {
+        type: 'session/llm-queue',
+        sessionId: session.id,
+        position: change.position,
+        state: change.state,
+      })
     })
   })
 
@@ -3594,6 +3665,46 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       },
     },
 
+    queue: {
+      // Admin gate first: a non-admin (or missing scope) is refused before the
+      // admission queue is even read, so `listAll()` never runs for them. The
+      // `.then` wrapper turns `requireAdmin`'s no-scope throw into a rejection.
+      list(request) {
+        return Promise.resolve().then(() => {
+          const gate = requireAdmin(ctx, request, 'queue.list')
+          if ('refused' in gate) return gate.refused
+          const queue = ctx.get('llmAdmissionQueue')
+          if (queue === undefined) return queueUnavailable(request)
+          // Resolve each entry's owner login name from its session header
+          // (identity only, never conversation content).
+          const ownerFor = (sessionId: string | undefined): string | undefined =>
+            sessionId === undefined
+              ? undefined
+              : ctx.sessions.get(sessionId as SessionId, 'trusted-internal')?.header.ownerUsername
+          return ok(request, {
+            entries: queue.listAll().map(entry => queueEntryView(entry, ownerFor(entry.sessionId))),
+          })
+        })
+      },
+
+      reorder(request) {
+        return Promise.resolve().then(() => {
+          const gate = requireAdmin(ctx, request, 'queue.reorder')
+          if ('refused' in gate) return gate.refused
+          const queue = ctx.get('llmAdmissionQueue')
+          if (queue === undefined) return queueUnavailable(request)
+          const { orderedQueueIds } = request.payload
+          queue.reorder(orderedQueueIds)
+          queue.audit({
+            action: 'reorder',
+            operator: { userId: gate.user.userId, username: gate.user.username },
+            order: orderedQueueIds,
+          })
+          return ok(request, {})
+        })
+      },
+    },
+
     events: {
       mux(_request, signal) {
         const streamPrincipal = ctx.root.get('ownership')?.currentPrincipal()
@@ -3628,6 +3739,22 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           const agent = ctx.agents.get(session.id, 'trusted-internal')
           if (agent?.session === session && agent.inbox.hasPending) {
             queue.push(frame({ type: 'session/queue', sessionId: session.id, items: queueItems(agent) }))
+          }
+        }
+        // Admission-queue position baseline: only for a session currently in
+        // the queue. Absence of this frame means "not queued" — the client
+        // clears its indicator on reconnect from the frames it does receive.
+        const admissionQueue = ctx.get('llmAdmissionQueue')
+        if (admissionQueue !== undefined) {
+          for (const session of ctx.sessions.list('trusted-internal')) {
+            if (!visibleSession(session)) continue
+            const place = admissionQueue.positionFor(session.id)
+            if (place !== undefined) {
+              queue.push(frame({
+                type: 'session/llm-queue', sessionId: session.id,
+                position: place.position, state: place.state,
+              }))
+            }
           }
         }
         // Background-task baseline. `ctx.agents.get` is the non-resuming read:

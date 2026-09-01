@@ -83,7 +83,8 @@ function bufferedRequestKey(envelope: RpcRequest<MuxFrame>): string | undefined 
     case 'approval/requested': return `a:${frame.approvalId}`
     case 'question/requested': return `q:${envelope.rpcId}`
     case 'session/queue': return 'queue'
-    /* v8 ignore next -- pendingBuffers contains only the three frame types above. */
+    case 'session/llm-queue': return 'llm-queue'
+    /* v8 ignore next -- pendingBuffers contains only the frame types above. */
     default: return undefined
   }
 }
@@ -726,7 +727,8 @@ export class SessionManager {
       // This is the same re-baseline signal Session uses for its own mirror.
       const buffered = this.pendingBuffers.get(frame.sessionId)
       if (buffered !== undefined) {
-        const kept = buffered.filter(item => item.payload.type !== 'session/queue')
+        const kept = buffered.filter(item =>
+          item.payload.type !== 'session/queue' && item.payload.type !== 'session/llm-queue')
         if (kept.length !== buffered.length) {
           if (kept.length === 0) this.pendingBuffers.delete(frame.sessionId)
           else this.pendingBuffers.set(frame.sessionId, kept)
@@ -758,11 +760,14 @@ export class SessionManager {
       switch (frame.type) {
         case 'approval/requested':
         case 'question/requested':
-        case 'session/queue': {
+        case 'session/queue':
+        case 'session/llm-queue': {
           const buffer = this.pendingBuffers.get(frame.sessionId) ?? []
           const key = frame.type === 'approval/requested'
             ? `a:${frame.approvalId}`
-            : frame.type === 'question/requested' ? `q:${envelope.rpcId}` : 'queue'
+            : frame.type === 'question/requested'
+              ? `q:${envelope.rpcId}`
+              : frame.type === 'session/llm-queue' ? 'llm-queue' : 'queue'
           const prior = buffer.findIndex(item => bufferedRequestKey(item) === key)
           if (prior === -1) buffer.push(envelope)
           else buffer[prior] = envelope

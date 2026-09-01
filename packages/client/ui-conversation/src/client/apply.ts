@@ -32,6 +32,7 @@ import { StatsLine } from './chat/StatsLine.tsx'
 import { ApprovalPanel } from './skeleton/ApprovalPanel.tsx'
 import { todoDockEntry } from './skeleton/TodoPanel.tsx'
 import { queueDockEntry } from './queue/QueueDock.tsx'
+import { llmQueueIndicatorEntry } from './queue/LlmQueueIndicator.tsx'
 import { ConversationRoot } from './skeleton/ConversationRoot.tsx'
 import { ConversationSession, ConversationSessionHeader } from './skeleton/ConversationSession.tsx'
 import { DetailsPanel } from './skeleton/DetailsPanel.tsx'
@@ -436,6 +437,10 @@ export function apply(ctx: Context): void {
 
   // The plan strip rides the input dock above the queue rows (same posture).
   ctx.plugin(todoDockEntry)
+
+  // The admission-queue position strip rides the input dock above the
+  // queued-message rows: a waiting user sees their place in line.
+  ctx.plugin(llmQueueIndicatorEntry)
 
   // The read-only queue dock entry rides the same
   // registration path into the input dock declared above.

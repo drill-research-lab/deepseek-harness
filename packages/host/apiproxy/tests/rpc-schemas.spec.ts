@@ -38,6 +38,10 @@ import { askUserQuestionAnswerSchema, questionResponsePayloadSchema } from '../s
 import { goalEditRequestSchema } from '../src/api/goals.schema.ts'
 import { subagentPromptRequestSchema } from '../src/api/subagents.schema.ts'
 import { authMeRequestSchema, authMeValueSchema } from '../src/api/auth.schema.ts'
+import {
+  queueEntryViewSchema, queueListRequestSchema, queueListValueSchema,
+  queueReorderRequestSchema, queueReorderValueSchema,
+} from '../src/api/queue.schema.ts'
 
 describe('RpcId', () => {
   it('brands a raw string at zero runtime cost', () => {
@@ -57,6 +61,27 @@ describe('auth domain schemas', () => {
     expect(() => authMeValueSchema.parse({ userId: 'ldap:alice' })).toThrow()
     expect(() => authMeValueSchema.parse({ userId: 'ldap:alice', username: 'Alice' })).toThrow()
     expect(() => authMeValueSchema.parse({ userId: 'ldap:alice', username: 'Alice', isAdmin: 'yes' })).toThrow()
+  })
+})
+
+describe('queue domain schemas', () => {
+  it('round-trips queue.list request/value with an entry row', () => {
+    expect(queueListRequestSchema.parse({})).toEqual({})
+    const entry = { queueId: 'q1', position: 2, state: 'waiting', enqueuedAt: 1_725_000_000_000, sessionId: 'session-x', ownerUsername: 'alice' }
+    expect(queueEntryViewSchema.parse(entry)).toEqual(entry)
+    expect(queueListValueSchema.parse({ entries: [entry] })).toEqual({ entries: [entry] })
+    // A running entry omits sessionId/ownerUsername and sits at position 0.
+    expect(queueEntryViewSchema.parse({ queueId: 'q2', position: 0, state: 'running', enqueuedAt: 1 }))
+      .toEqual({ queueId: 'q2', position: 0, state: 'running', enqueuedAt: 1 })
+    expect(() => queueEntryViewSchema.parse({ queueId: 'q3', position: 1, state: 'paused', enqueuedAt: 1 })).toThrow()
+  })
+
+  it('round-trips queue.reorder request/value', () => {
+    expect(queueReorderRequestSchema.parse({ orderedQueueIds: ['q1', 'q2'] })).toEqual({ orderedQueueIds: ['q1', 'q2'] })
+    expect(queueReorderRequestSchema.parse({ orderedQueueIds: [] })).toEqual({ orderedQueueIds: [] })
+    expect(() => queueReorderRequestSchema.parse({})).toThrow()
+    expect(() => queueReorderRequestSchema.parse({ orderedQueueIds: [''] })).toThrow()
+    expect(queueReorderValueSchema.parse({})).toEqual({})
   })
 })
 
@@ -91,6 +116,8 @@ describe('rpcErrorSchema', () => {
     expect(rpcErrorSchema.parse({ code: 'title-invalid', message: 'm', details: { sessionId: 's' } }).code).toBe('title-invalid')
     // The credentials producer still emits this code, so the branch has to stay.
     expect(rpcErrorSchema.parse({ code: 'credential-rejected', message: 'm', details: { ref: 'r' } }).code).toBe('credential-rejected')
+    expect(rpcErrorSchema.parse({ code: 'forbidden', message: 'm', details: {} }).code).toBe('forbidden')
+    expect(() => rpcErrorSchema.parse({ code: 'forbidden', message: 'm' })).toThrow()
     expect(rpcErrorSchema.parse({ code: 'internal', message: 'm', details: {} }).code).toBe('internal')
   })
 
@@ -467,6 +494,8 @@ describe('events frame schemas', () => {
         },
       ] },
       { type: 'session/projection', sessionId: 's', key: 'todos', value: [{ content: 'x', status: 'pending' }], seq: 7 },
+      { type: 'session/llm-queue', sessionId: 's', position: 3, state: 'waiting' },
+      { type: 'session/llm-queue', sessionId: 's', position: 0, state: 'running' },
       { type: 'session/jobs', sessionId: 's', jobs: [] },
       { type: 'session/jobs', sessionId: 's', jobs: [
         { id: 'bash-1', kind: 'bash', label: 'pnpm run build', status: 'running', startedAt: 5 },
@@ -488,6 +517,9 @@ describe('events frame schemas', () => {
       { type: 'session/jobs', sessionId: 's', jobs: [{ id: 'bash-1', kind: 'bash', label: 'l', status: 'pending', startedAt: 0 }] },
       { type: 'session/jobs', sessionId: 's', jobs: [{ id: 'bash-1', kind: 'bash', label: 'l', status: 'running', startedAt: -1 }] },
       { type: 'session/jobs', sessionId: 's', jobs: [{ id: 'bash-1', kind: 'bash', label: 'l', status: 'completed', startedAt: 0, finishedAt: 0.5 }] },
+      { type: 'session/llm-queue', sessionId: 's', position: -1, state: 'waiting' },
+      { type: 'session/llm-queue', sessionId: 's', position: 1.5, state: 'waiting' },
+      { type: 'session/llm-queue', sessionId: 's', position: 1, state: 'paused' },
     ]) expect(() => muxFrameSchema.parse(invalid)).toThrow()
     expect(askUserQuestionItemSchema.parse({ id: 'q', question: 'Q?' }).id).toBe('q')
   })

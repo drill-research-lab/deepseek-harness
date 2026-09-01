@@ -235,6 +235,11 @@ export class FakeApiClient implements IApiClient {
     discoverModels: payload => this.record('llm.discoverModels', payload, Promise.resolve(ok({ models: [] }))),
   }
 
+  readonly queue: IApiClient['queue'] = {
+    list: payload => this.record('queue.list', payload, Promise.resolve(ok({ entries: [] }))),
+    reorder: payload => this.record('queue.reorder', payload, Promise.resolve(ok({}))),
+  }
+
   /** When true, streams never fire onOpen (misbehaving-carrier material for the handshake timeout guard). */
   suppressStreamOpen = false
 

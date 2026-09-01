@@ -30,7 +30,7 @@ function mountBar(shell: SessionInputShell, over?: { running?: boolean; disabled
   const session = createSnapshotStore<ConversationSnapshot>({
     sessionId: SID, views: EMPTY_CONVERSATION_VIEWS, chat: EMPTY_CHAT_SNAPSHOT,
     nodes: [], turnTimings: new Map(), turnEnds: new Map(), partial: null, runningCalls: [],
-    pending: [], queue: [], running: over?.running ?? false, composerPhase: 'active',
+    pending: [], queue: [], llmQueue: null, running: over?.running ?? false, composerPhase: 'active',
     removed: over?.disabled ?? false, openState: 'open', openError: null, hasMore: false,
     loadingOlder: false, promptError: null, blank: false, subagent: null, lastAgentError: null,
   })

@@ -65,6 +65,7 @@ import {
   llmDiscoverModelsValueSchema, llmMetricsValueSchema, llmModelsValueSchema, llmProvidersValueSchema,
   llmResourcesValueSchema,
 } from '../api/llm.schema.ts'
+import { queueListValueSchema, queueReorderValueSchema } from '../api/queue.schema.ts'
 import {
   subagentHistoryValueSchema,
   subagentInterruptValueSchema,
@@ -170,6 +171,10 @@ export interface IApiClient {
     resources(payload: RequestPayload<'llm.resources'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.resources'>>>
     discoverModels(payload: RequestPayload<'llm.discoverModels'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.discoverModels'>>>
   }
+  queue: {
+    list(payload: RequestPayload<'queue.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'queue.list'>>>
+    reorder(payload: RequestPayload<'queue.reorder'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'queue.reorder'>>>
+  }
   /** client-response passthrough (rpcId is a backfill of the server-request's id — never minted here). */
   respond(message: ClientResponse, signal?: AbortSignal): Promise<RpcReceipt>
 }
@@ -234,6 +239,8 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'llm.metrics': llmMetricsValueSchema,
   'llm.resources': llmResourcesValueSchema,
   'llm.discoverModels': llmDiscoverModelsValueSchema,
+  'queue.list': queueListValueSchema,
+  'queue.reorder': queueReorderValueSchema,
 }
 
 /** Default timeout for bounded unary calls (rpc-compare 2026-07-19: a hung host must not leave callers pending forever). */
@@ -516,6 +523,11 @@ export abstract class AbstractApiClient implements IApiClient {
     metrics: (payload, signal) => this.callUnary('llm.metrics', payload, signal),
     resources: (payload, signal) => this.callUnary('llm.resources', payload, signal),
     discoverModels: (payload, signal) => this.callUnary('llm.discoverModels', payload, signal),
+  }
+
+  readonly queue: IApiClient['queue'] = {
+    list: (payload, signal) => this.callUnary('queue.list', payload, signal),
+    reorder: (payload, signal) => this.callUnary('queue.reorder', payload, signal),
   }
 
   readonly events: IApiClient['events'] = {
