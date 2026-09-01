@@ -49,6 +49,25 @@ export interface LlmApi {
   models(request: RpcRequest<{}>): Promise<RpcResponse<{ groups: ModelProviderGroup[]; failures: ModelCatalogFailure[] }>>
 
   /**
+   * Read one bounded metrics sample from the deployment's configured vLLM
+   * Prometheus endpoint. The response exposes the curated runtime values used
+   * by the in-product dashboard, while the internal endpoint remains Host-only.
+   */
+  metrics(
+    request: RpcRequest<{}>,
+    signal?: AbortSignal,
+  ): Promise<RpcResponse<InferenceMetricsView>>
+
+  /**
+   * Read the bounded GPU, storage, and network projection from the deployment's
+   * configured SparkDash metrics endpoint. The source endpoint remains Host-only.
+   */
+  resources(
+    request: RpcRequest<{}>,
+    signal?: AbortSignal,
+  ): Promise<RpcResponse<InferenceResourcesView>>
+
+  /**
    * Interrogate a provider endpoint the configuration surface is still
    * drafting, and return the models it advertises for the user to adopt.
    *
@@ -74,6 +93,136 @@ export interface LlmApi {
     }>,
     signal?: AbortSignal,
   ): Promise<RpcResponse<{ models: DiscoveredModelView[] }>>
+}
+
+/** Authenticated browser projection of one vLLM metrics sample. */
+export interface InferenceMetricsView {
+  /** Recognized inference backend. */
+  backend: 'vllm'
+  /** Host sample time in Unix milliseconds. */
+  sampledAt: number
+  /** Delay before the browser requests another successful sample. */
+  refreshAfterMs: number
+  /** Served model id, when vLLM labels or model metadata disclose it. */
+  modelId?: string
+  /** Maximum model context from `/v1/models`, when disclosed. */
+  contextLength?: number
+  /** Current engine residency inferred from the labeled sleep-state gauges. */
+  engineState?: 'active' | 'weights-offloaded' | 'discarded'
+  /** Requests in model execution batches. */
+  requestsRunning: number
+  /** Requests accepted but waiting for processing. */
+  requestsWaiting: number
+  /** KV-cache occupancy as a fraction from zero through one, when exposed. */
+  kvCacheUsage?: number
+  /** Cumulative prompt tokens, when exposed. */
+  promptTokensTotal?: number
+  /** Cumulative generated tokens, when exposed. */
+  generationTokensTotal?: number
+  /** Cumulative scheduler preemptions, when exposed. */
+  preemptionsTotal?: number
+  /** Cumulative engine-step tokens used to derive live prefill throughput. */
+  iterationTokensTotal?: number
+  /** Cumulative TTFT seconds used to derive completed-prefill throughput. */
+  ttftSecondsTotal?: number
+  /** Lifetime prefix-cache hit fraction, when both source counters exist. */
+  prefixCacheHitRate?: number
+  /** Lifetime speculative-token acceptance fraction, when enabled. */
+  mtpAcceptanceRate?: number
+  /** Histogram-derived time-to-first-token p95 in seconds. */
+  ttftP95Seconds?: number
+  /** Histogram-derived end-to-end request-latency p95 in seconds. */
+  e2eP95Seconds?: number
+  /** Histogram-derived inter-token-latency p95 in seconds. */
+  itlP95Seconds?: number
+}
+
+/** GPU process row disclosed by the authenticated resources dashboard. */
+export interface InferenceGpuProcessView {
+  /** Host process id. */
+  pid: number
+  /** Bounded process display name. */
+  name: string
+  /** GPU memory attributed to the process in MiB. */
+  vramMb: number
+}
+
+/** GPU resources disclosed by the authenticated dashboard. */
+export interface InferenceGpuResourcesView {
+  /** Current device utilization percentage. */
+  usagePercent: number
+  /** Current device temperature in degrees Celsius. */
+  temperatureC: number
+  /** Current GPU board draw in watts. */
+  powerDrawWatts: number
+  /** Configured GPU power limit in watts. */
+  powerLimitWatts: number
+  /** Current streaming-multiprocessor clock in MHz. */
+  smClockMhz?: number
+  /** Maximum streaming-multiprocessor clock in MHz. */
+  smClockMaxMhz?: number
+  /** Current GPU memory allocation in MiB. */
+  vramUsedMb: number
+  /** Total GPU memory in MiB. */
+  vramTotalMb: number
+  /** Available GPU memory in MiB. */
+  vramAvailableMb: number
+  /** Whether the source reports an active throttle reason. */
+  throttled: boolean
+  /** Bounded source throttle summary. */
+  throttleReason: string
+  /** At most five GPU process rows. */
+  processes: InferenceGpuProcessView[]
+}
+
+/** Mounted storage row disclosed by the authenticated dashboard. */
+export interface InferenceStorageResourceView {
+  /** Kernel device name. */
+  device: string
+  /** Mounted path or source label. */
+  label: string
+  /** Used capacity in MiB. */
+  usedMb: number
+  /** Total capacity in MiB. */
+  totalMb: number
+  /** Available capacity in MiB. */
+  availableMb: number
+  /** Current read throughput in bytes per second. */
+  readBytesPerSecond: number
+  /** Current write throughput in bytes per second. */
+  writeBytesPerSecond: number
+}
+
+/** Active network interface row disclosed by the authenticated dashboard. */
+export interface InferenceNetworkInterfaceView {
+  /** Kernel interface name. */
+  name: string
+  /** Source-reported interface address. */
+  ip: string
+  /** Whether this is the source's primary interface. */
+  primary: boolean
+  /** Current receive throughput in bytes per second. */
+  rxBytesPerSecond: number
+  /** Current transmit throughput in bytes per second. */
+  txBytesPerSecond: number
+}
+
+/** Authenticated browser projection of one SparkDash resource sample. */
+export interface InferenceResourcesView {
+  /** Host sample time in Unix milliseconds. */
+  sampledAt: number
+  /** Delay before the browser requests another successful sample. */
+  refreshAfterMs: number
+  /** GPU details when the monitored host exposes a GPU. */
+  gpu?: InferenceGpuResourcesView
+  /** Enabled mounted storage rows. */
+  storage: InferenceStorageResourceView[]
+  /** Source primary network interface, when identified. */
+  primaryNetworkInterface?: string
+  /** Source-reported primary link speed in Mbps, when known. */
+  networkLinkSpeedMbps?: number
+  /** Active addressed network interfaces. */
+  networkInterfaces: InferenceNetworkInterfaceView[]
 }
 
 /** Wire view of one model an interrogated endpoint advertises. */

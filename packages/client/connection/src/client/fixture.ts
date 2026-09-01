@@ -2960,6 +2960,13 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         ],
       }),
       models: request => ok(request, { groups: fixtureModelGroups(), failures: [] }),
+      metrics: request => ok(request, {
+        backend: 'vllm', sampledAt: Date.now(), refreshAfterMs: 2000,
+        requestsRunning: 1, requestsWaiting: 0, kvCacheUsage: 0.25,
+      }),
+      resources: request => ok(request, {
+        sampledAt: Date.now(), refreshAfterMs: 2000, storage: [], networkInterfaces: [],
+      }),
       // The fixture endpoint is imaginary, so the interrogation answers the
       // catalog it already serves — enough for a surface to exercise adopting
       // candidates without a reachable provider.
@@ -3134,6 +3141,8 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'credentials.unset': return this.api.credentials.unset(request)
       case 'llm.providers': return this.api.llm.providers(request)
       case 'llm.models': return this.api.llm.models(request)
+      case 'llm.metrics': return this.api.llm.metrics(request, signal)
+      case 'llm.resources': return this.api.llm.resources(request, signal)
       case 'llm.discoverModels': return this.api.llm.discoverModels(request, signal)
     }
   }

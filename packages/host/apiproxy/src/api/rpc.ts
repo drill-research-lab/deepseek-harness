@@ -89,6 +89,14 @@ export interface RpcErrorDetailsMap {
    * details name the endpoint asked, never the credential offered.
    */
   'model-discovery-failed': { settingsNs: string; baseURL?: string }
+  /** The deployment did not configure a Prometheus endpoint for the dashboard. */
+  'inference-metrics-unconfigured': {}
+  /** The configured Prometheus endpoint could not return a successful response. */
+  'inference-metrics-unavailable': {}
+  /** The Prometheus response exceeded the configured byte limit. */
+  'inference-metrics-too-large': {}
+  /** The response did not contain valid vLLM request gauges. */
+  'inference-metrics-invalid': {}
   'title-invalid': { sessionId: SessionId }
   'fork-unavailable': { sessionId: SessionId }
   'subagent-parent-unavailable': { parentSessionId: SessionId }

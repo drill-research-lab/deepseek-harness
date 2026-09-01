@@ -6,7 +6,12 @@
 import { z } from 'zod'
 import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
-import type { ConfigurableProviderView, DiscoveredModelView } from './llm.ts'
+import type {
+  ConfigurableProviderView,
+  DiscoveredModelView,
+  InferenceMetricsView,
+  InferenceResourcesView,
+} from './llm.ts'
 import { modelCatalogFailureSchema, modelProviderGroupSchema } from './sessions.schema.ts'
 
 /** ConfigurableProviderView row of llm.providers. */
@@ -35,6 +40,77 @@ export const llmModelsValueSchema = z.object({
   groups: z.array(modelProviderGroupSchema),
   failures: z.array(modelCatalogFailureSchema),
 }) satisfies z.ZodType<Wire<ResponseValue<'llm.models'>>>
+
+/** llm.metrics request payload. */
+export const llmMetricsRequestSchema = z.object({}) satisfies z.ZodType<Wire<RequestPayload<'llm.metrics'>>>
+
+/** llm.metrics response value. */
+export const llmMetricsValueSchema = z.object({
+  backend: z.literal('vllm'),
+  sampledAt: z.number().int().nonnegative(),
+  refreshAfterMs: z.number().int().positive(),
+  modelId: z.string().min(1).optional(),
+  contextLength: z.number().int().positive().optional(),
+  engineState: z.enum(['active', 'weights-offloaded', 'discarded']).optional(),
+  requestsRunning: z.number().int().nonnegative(),
+  requestsWaiting: z.number().int().nonnegative(),
+  kvCacheUsage: z.number().min(0).max(1).optional(),
+  promptTokensTotal: z.number().nonnegative().optional(),
+  generationTokensTotal: z.number().nonnegative().optional(),
+  preemptionsTotal: z.number().nonnegative().optional(),
+  iterationTokensTotal: z.number().nonnegative().optional(),
+  ttftSecondsTotal: z.number().nonnegative().optional(),
+  prefixCacheHitRate: z.number().min(0).max(1).optional(),
+  mtpAcceptanceRate: z.number().min(0).max(1).optional(),
+  ttftP95Seconds: z.number().nonnegative().optional(),
+  e2eP95Seconds: z.number().nonnegative().optional(),
+  itlP95Seconds: z.number().nonnegative().optional(),
+}) satisfies z.ZodType<Wire<InferenceMetricsView>>
+
+/** llm.resources request payload. */
+export const llmResourcesRequestSchema = z.object({}) satisfies z.ZodType<Wire<RequestPayload<'llm.resources'>>>
+
+/** llm.resources response value. */
+export const llmResourcesValueSchema = z.object({
+  sampledAt: z.number().int().nonnegative(),
+  refreshAfterMs: z.number().int().positive(),
+  gpu: z.object({
+    usagePercent: z.number().min(0).max(100),
+    temperatureC: z.number().nonnegative(),
+    powerDrawWatts: z.number().nonnegative(),
+    powerLimitWatts: z.number().nonnegative(),
+    smClockMhz: z.number().nonnegative().optional(),
+    smClockMaxMhz: z.number().nonnegative().optional(),
+    vramUsedMb: z.number().nonnegative(),
+    vramTotalMb: z.number().nonnegative(),
+    vramAvailableMb: z.number().nonnegative(),
+    throttled: z.boolean(),
+    throttleReason: z.string(),
+    processes: z.array(z.object({
+      pid: z.number().int().nonnegative(),
+      name: z.string(),
+      vramMb: z.number().nonnegative(),
+    })),
+  }).optional(),
+  storage: z.array(z.object({
+    device: z.string(),
+    label: z.string(),
+    usedMb: z.number().nonnegative(),
+    totalMb: z.number().nonnegative(),
+    availableMb: z.number().nonnegative(),
+    readBytesPerSecond: z.number().nonnegative(),
+    writeBytesPerSecond: z.number().nonnegative(),
+  })),
+  primaryNetworkInterface: z.string().optional(),
+  networkLinkSpeedMbps: z.number().nonnegative().optional(),
+  networkInterfaces: z.array(z.object({
+    name: z.string(),
+    ip: z.string(),
+    primary: z.boolean(),
+    rxBytesPerSecond: z.number().nonnegative(),
+    txBytesPerSecond: z.number().nonnegative(),
+  })),
+}) satisfies z.ZodType<Wire<InferenceResourcesView>>
 
 /** DiscoveredModelView row of llm.discoverModels. */
 export const discoveredModelViewSchema = z.object({
