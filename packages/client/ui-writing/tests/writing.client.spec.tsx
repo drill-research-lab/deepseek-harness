@@ -183,11 +183,12 @@ describe('WritingView', () => {
     prompt.mockRestore()
   })
 
-  it('forwards compile errors to the agent after a failed compile', async () => {
+  it('forwards the compiler error message to the agent after a failed compile', async () => {
     const actions = view({
       compile: vi.fn().mockResolvedValue({
         ok: false,
         diagnostics: [{ severity: 'error', line: 3, message: 'Undefined control sequence.' }],
+        compilerMessage: '! Undefined control sequence.\nl.5 \\foo',
         versionCreated: false,
       }),
     })
@@ -196,7 +197,7 @@ describe('WritingView', () => {
     openToolbar()
     fireEvent.click(screen.getByText('compile'))
     await waitFor(() => expect(actions.forwardToAgent).toHaveBeenCalled())
-    expect(actions.forwardToAgent).toHaveBeenCalledWith(expect.stringContaining('Undefined control sequence.'))
+    expect(actions.forwardToAgent).toHaveBeenCalledWith('! Undefined control sequence.\nl.5 \\foo')
   })
 
   it('covers the composer by default and reveals it via the chat bubble', async () => {

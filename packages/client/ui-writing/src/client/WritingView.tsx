@@ -78,7 +78,7 @@ export function WritingView(props: WritingViewProps): JSX.Element {
         const messages = errors.map(diagnostic =>
           `${diagnostic.line === undefined ? '' : `@ ${diagnostic.line} `}: ${diagnostic.message}`).join('；')
         pushToast('error', `${errors.length} ${t('errorSummary')}：${messages}`)
-        forwardToAgent(`${t('forwardError')}\n${messages}`)
+        forwardToAgent(result.compilerMessage ?? messages)
       }
     } finally {
       setCompiling(false)

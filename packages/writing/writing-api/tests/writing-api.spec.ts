@@ -63,6 +63,8 @@ describe('WritingGateway public contract', () => {
     expect(result.versionCreated).toBe(false)
     expect(result.pdfUrl).toBeUndefined()
     expect(await ctx.writing.versions({ reportId: created.reportId })).toHaveLength(0)
+    // The compiler message is absent only because the fake emits no stdout.
+    expect(result.compilerMessage).toBeUndefined()
     // The failed compile still wrote the artifact dir under the harness root.
     expect(root).toBeTruthy()
   })

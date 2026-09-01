@@ -76,6 +76,7 @@ export function apply(ctx: ClientContext): void {
         return {
           ok: value.ok,
           diagnostics: value.diagnostics,
+          ...(value.compilerMessage === undefined ? {} : { compilerMessage: value.compilerMessage }),
           versionCreated: value.versionCreated,
           ...(value.pdfUrl === undefined ? {} : { pdfUrl: value.pdfUrl }),
         }

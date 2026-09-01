@@ -47,6 +47,8 @@ export interface CompileDiagnosticView {
 export interface CompileResultView {
   readonly ok: boolean
   readonly diagnostics: readonly CompileDiagnosticView[]
+  /** Raw compiler console output (error messages), present when the compile failed. */
+  readonly compilerMessage?: string
   readonly versionCreated: boolean
   readonly pdfUrl?: string
 }

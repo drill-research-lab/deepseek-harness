@@ -12,7 +12,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { ReportId, TemplateId } from '@deepseek-ai/dsh-writing'
 import type { Report, ReportTemplate } from '@deepseek-ai/dsh-writing'
-import type { GitVersion } from '@deepseek-ai/dsh-writing-compile'
+import type { CompileOutput, GitVersion } from '@deepseek-ai/dsh-writing-compile'
 import type {} from '@deepseek-ai/dsh-writing-compile'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-auth'
@@ -147,6 +147,7 @@ export class WritingGateway extends TypertRemoteService {
       await this.ctx.latexCompile.commitVersion(request.reportId, `successful compile #${count}`)
       versionCreated = true
     }
+    const compilerMessage = output.ok ? undefined : compilerMessageOf(output)
     return {
       ok: output.ok,
       diagnostics: output.diagnostics.map(diagnostic => ({
@@ -154,6 +155,7 @@ export class WritingGateway extends TypertRemoteService {
         ...(diagnostic.line === undefined ? {} : { line: diagnostic.line }),
         message: diagnostic.message,
       })),
+      ...(compilerMessage === undefined ? {} : { compilerMessage }),
       versionCreated,
       ...(output.ok ? { pdfUrl: `${PDF_PATH_PREFIX}/${request.reportId}/pdf` } : {}),
     }
@@ -265,6 +267,12 @@ function versionView(reportId: string, version: GitVersion): ReportVersionView {
     ...(version.command === undefined ? {} : { command: version.command }),
     createdAt: version.createdAt,
   }
+}
+
+/** Trim and cap the raw compiler console output for forwarding to the agent. */
+function compilerMessageOf(output: CompileOutput): string | undefined {
+  const raw = output.stdout.trim() || output.stderr.trim()
+  return raw.length === 0 ? undefined : raw.slice(0, 4000)
 }
 
 /** Project a template entity to its wire view. */
