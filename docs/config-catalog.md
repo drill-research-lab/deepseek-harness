@@ -1001,6 +1001,31 @@ export interface Config {
 
 Source: [`packages/jobs/jobs-local/src/index.ts:31`](../packages/jobs/jobs-local/src/index.ts)
 
+<a id="deepseek-aidsh-llm-admission-queue"></a>
+
+## `@deepseek-ai/dsh-llm-admission-queue`
+
+Requires: `llm`
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /**
+   * Maximum concurrent gated requests. `0` admits every gated call immediately
+   * (counted but never blocked). Omission defaults to {@link DEFAULT_LIMIT}.
+   */
+  limit: number
+  /**
+   * Allowlist of provider ids to queue — the internal vLLM route(s). Any
+   * provider not listed here (including every external pay-per-use API and any
+   * provider added later) bypasses the queue entirely. Omission gates nothing.
+   */
+  gatedProviders: string[]
+}
+```
+
+Source: [`packages/llm/llm-admission-queue/src/index.ts:52`](../packages/llm/llm-admission-queue/src/index.ts)
+
 <a id="deepseek-aidsh-llm-deepseek"></a>
 
 ## `@deepseek-ai/dsh-llm-deepseek`
