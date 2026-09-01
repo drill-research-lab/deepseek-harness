@@ -13,13 +13,14 @@
 - `mode`：部署預設 `SandboxMode`（`read-only`／`workspace-write`／`danger-full-access`），載入時驗證。預設為 `read-only`（故障安全）。
 - `maximumMode`：部署允許其預設值、持久工作階段覆蓋或單次升權達到的最寬模式。預設為 `danger-full-access`。預設模式寬於此上限時，外掛程式會在載入時拒絕。
 - `workspaceRoot`：無 agent（代理）的呼叫或沒有 cwd 的工作階段在 `workspace-write` 下可寫入的回退目錄。預設為 `process.cwd()`；無論顯式設定還是採用預設值，都會解析為其絕對檔案系統標識。普通 agent 呼叫改用其工作階段頭中不可變的 `cwd`。
+- `workspaceViewRoot`：可選的固定模型可見路徑，適用於已設定 runner 將每個工作階段工作區映射到同一可見位置的部署。隨附的本地 Linux 組合將其設為 `/workspace`；其他組合不設定，並顯示規範化的工作區根目錄。設定後，`resolve()` 會將其帶到每個回傳的 `SandboxExecutionPolicy` 上，行程內檔案系統工具用 `fromWorkspaceView` / `toWorkspaceView`（[`dsh-sandbox`](../sandbox/README.md)）轉換前綴，使模型給出的 `/workspace/...` 路徑抵達真實工作區根目錄，而回傳的每個路徑都讀作 `/workspace/...`。
 
 ## 介面
 
-- `ctx.sandboxPolicy.resolve({ session?, mode? })`：解析一項完整的逐呼叫策略。顯式批准的模式優先於工作階段最後一條 `sandbox/mode` 事件，後者又優先於 `defaultMode`；所有來源都必須不寬於 `maximumMode`。工作階段不可變的 `cwd` 會先按檔案系統語義規範化，再成為 `workspaceRoot`，否則使用設定的回退值。規範化先於詞法歸一化，因此 `symlink/..` 與行程工作目錄解析保持一致。
+- `ctx.sandboxPolicy.resolve({ session?, mode? })`：解析一項完整的逐呼叫策略。顯式批准的模式優先於工作階段最後一條 `sandbox/mode` 事件，後者又優先於 `defaultMode`；所有來源都必須不寬於 `maximumMode`。工作階段不可變的 `cwd` 會先按檔案系統語義規範化，再成為 `workspaceRoot`，否則使用設定的回退值。規範化先於詞法歸一化，因此 `symlink/..` 與行程工作目錄解析保持一致。當部署設定了 `workspaceViewRoot` 時，解析出的策略也會攜帶它。
 - `ctx.sandboxPolicy.defaultMode`／`maximumMode`／`workspaceRoot`：`resolve()` 使用的部署預設值、部署上限與回退根目錄。
 - `ctx.sandboxPolicy.escalationTargets`：按 `maximumMode` 篩選後的封閉升權詞彙。負責強制執行的工具會用同一個值進行 schema 展示與執行時授權。
-- `sandbox:policy`：直接派生自 `resolve({ session })` 的請求時快取安全上下文貢獻。它說明該模式中與具體能力無關的文件操作約定，以及 `workspace-write` 下規範化的工作階段工作區；工具歸屬方仍負責特定於操作的拒絕與升權引導。
+- `sandbox:policy`：直接派生自 `resolve({ session })` 的請求時快取安全上下文貢獻。在 `workspace-write` 下，它顯示設定的 `workspaceViewRoot`，未設定時則顯示規範化的工作階段工作區；工具歸屬方仍負責特定於操作的拒絕與升權引導。
 - `effectiveSandboxMode(events)`：工作階段 `sandbox/mode` 事件的純 fold（最後一次切換勝出，沒有則為 `undefined`），在 `resolve()` 內使用。
 - `setSandboxMode(session, mode)`：逐工作階段覆蓋的唯一寫入路徑：恰好追加一條 `sandbox/mode` 事件。切換本身就是事件；不會在帶外修改模式。
 - `SANDBOX_MODES`：所有模式，用於選項展示與執行時期驗證。
@@ -58,7 +59,7 @@ Current DSH file policy: danger-full-access. The DSH file sandbox does not restr
 
 #### Token 影響
 
-首次請求和有效策略每次變化時增加一條簡潔的持久上下文訊息；未變化的請求不增加內容。`workspace-write` 只攜帶規範化的工作階段工作區路徑；平臺特定的臨時路徑會以摘要表述，不會加入相依性主機的位元組。
+首次請求和有效策略每次變化時增加一條簡潔的持久上下文訊息；未變化的請求不增加內容。`workspace-write` 只攜帶平臺可見的工作區路徑；平臺特定的臨時路徑會以摘要表述，不會加入相依性主機的位元組。工作階段標頭另行保留規範化 host 路徑，用於 ownership 與稽核。
 
 #### KV Cache 影響
 

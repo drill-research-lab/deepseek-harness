@@ -10,6 +10,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { DiffCallView, DiffResultView, ToolResult } from '@deepseek-ai/dsh-tools'
 import type { FsWriteOutcome } from '@deepseek-ai/dsh-fs'
 import type {} from '@deepseek-ai/dsh-fs'
+import { fromWorkspaceView, toWorkspaceView } from '@deepseek-ai/dsh-sandbox'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { computeHunkDiffs, diffsFromMeta } from './diff.ts'
 import { remediateFsError } from './error.ts'
@@ -105,7 +106,8 @@ export function applyWriteTool(ctx: Context, sandbox: FsSandboxController): void
       // > backend default, plus the session cwd root) BEFORE anything executes;
       // an escalating call throws its distinct text on any non-grant.
       const sandboxPolicy = await sandbox.resolvePolicy('write', args, exec)
-      const target = await ctx.fs.resolve(input.filePath, sessionResolveOptions(exec, input.filePath, sandboxPolicy?.workspaceRoot))
+      const realPath = fromWorkspaceView(input.filePath, sandboxPolicy)
+      const target = await ctx.fs.resolve(realPath, sessionResolveOptions(exec, realPath, sandboxPolicy?.workspaceRoot))
       // Single-slot decision: the policy plugin produces createIfAbsent/
       // replaceIfVersion; the bare default is undefined (unconditional). No stat.
       const intent = await ctx.waterfall('fs/write-intent', target, exec, () => undefined)
@@ -121,7 +123,7 @@ export function applyWriteTool(ctx: Context, sandbox: FsSandboxController): void
       // Record the present observation (a no-op when no policy plugin listens).
       ctx.emit('fs/observed', target, { kind: 'present', version: outcome.version }, exec)
       return {
-        path: target.displayPath,
+        path: toWorkspaceView(target.displayPath, sandboxPolicy),
         operation: outcome.operation,
         before: outcome.before,
         after: outcome.after,

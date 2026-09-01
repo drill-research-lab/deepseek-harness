@@ -29,6 +29,7 @@
   config:
     mode: !!js "process.env.DSH_PERMISSION_MODE ?? (process.env.DSH_SNAPSHOT === undefined ? 'workspace-write' : 'danger-full-access')"
     workspaceRoot: !!js process.cwd()
+    workspaceViewRoot: !!js "process.platform === 'linux' ? '/workspace' : undefined"
 
 # Managed child-process groups for the bash executor (spawn/kill/output plumbing).
 - id: subprocess

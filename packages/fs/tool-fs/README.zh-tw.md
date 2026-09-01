@@ -51,6 +51,8 @@ await ctx.plugin(ToolFs)                                  // this package — re
 
 工具在每次分派中把 `exec`（工具執行上下文）作為不透明 `actor` 傳入。預設 thunk 返回 `undefined`（不受約束的裸提供方）。載入 `@deepseek-ai/dsh-fs-observation-policy` 後，它會佔用單個決策槽：返回 `createIfAbsent`/`replaceIfVersion`/`{ version }` 或拋出 `FS_NOT_OBSERVED`，並在 `fs/observed` 時記錄。後端錯誤（`FsError`）和拋出的 `FS_NOT_OBSERVED` 會流經 `ToolRuntime.execute()`，變成 `isError` 工具結果，並附帶 `{ name, code }`。
 
+當解析出的策略帶有 `workspaceViewRoot` 時（本地 Linux 組合設為 `/workspace`），每個工具會在 `ctx.fs.resolve` 之前用 `fromWorkspaceView` 把模型給出的路徑映射到真實工作區根目錄，並用 `toWorkspaceView` 把解析出的 `displayPath` 映射回去，用於它回傳的每個路徑——read/write/edit 信封、`path` 欄位，以及 not-found / 非正規檔案的訊息。`ctx.fs` 中的施加限制不變，仍以真實根目錄為準。
+
 當 `ctx.fs.sandboxMode` 表明提供方施加沙盒限制時，write/edit 會公開 `sandbox_permissions` 與 `justification`，並透過 `ctx.approval` 處理獲批後的重試。策略歸屬方會貢獻與具體能力無關的常駐策略；工具結果仍保留針對具體操作的拒絕與重試引導。
 
 ## `fs/observed` 發後即忘

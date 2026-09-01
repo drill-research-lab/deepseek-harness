@@ -50,3 +50,4 @@ schema 提供针对绝对路径的 `view`、`create`、`str_replace` 与 `insert
 - 操作面向 UTF-8 文本，不支持二进制文件。
 - `str_replace` 刻意拒绝零匹配或多匹配，且没有 `replace_all` 参数。
 - 每次查看和变更都会解析当前会话的沙箱策略，并交由挂载的文件系统实施约束；变更还会经过 `fs/write-intent` 或 `fs/edit-intent`。
+- 当解析出的策略设置了 `workspaceViewRoot` 时（本地 Linux 组合使用 `/workspace`），必需的绝对 `path` 会先用 `fromWorkspaceView` 映射到真实工作区根目录再解析，而查看表头、目录列表行、确认消息或错误中的每个路径都会用 `toWorkspaceView` 映射回去。施加限制仍以真实根目录为准。

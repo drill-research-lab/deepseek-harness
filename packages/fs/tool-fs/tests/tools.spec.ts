@@ -997,3 +997,86 @@ describe('sandbox policy API', () => {
     expect(text(result)).toContain('not available in this composition')
   })
 })
+
+describe('workspaceViewRoot translation', () => {
+  /** A confining fake whose `resolve` is identity, so `displayPath` is the real resolved path the fence would see. */
+  class RealPathFakeFs extends FakeFs {
+    override get sandboxMode(): SandboxMode {
+      return 'workspace-write'
+    }
+    override async resolve(path: string): Promise<FsTarget> {
+      return { targetKey: FsTargetKey(path), displayPath: path }
+    }
+  }
+
+  async function setupViewRoot() {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(SandboxPolicyService, { mode: 'workspace-write', workspaceViewRoot: '/workspace' })
+    await ctx.plugin(RealPathFakeFs)
+    await ctx.plugin(FsPolicy)
+    await ctx.plugin(ToolFs)
+    return { ctx, fs: ctx.fs as RealPathFakeFs }
+  }
+
+  const viewAgent = () => ({
+    id: 'agent-view',
+    session: {
+      header: { version: 0, id: 'sess-view', createdAt: 0, cwd: '/home/u/.dsh/owner-roots/abc/proj' },
+      events: [{ type: 'turn/start' }],
+      append: () => {},
+    },
+  })
+
+  it('read resolves a /workspace path against the real root and echoes it back as /workspace', async () => {
+    const { ctx, fs } = await setupViewRoot()
+    fs.files.set('/home/u/.dsh/owner-roots/abc/proj/src/a.txt', 'alpha\nbeta')
+    const result = await call(ctx, 'read', { file_path: '/workspace/src/a.txt' }, viewAgent())
+    expect(result.isError).toBeFalsy()
+    expect(text(result)).toContain('<path>/workspace/src/a.txt</path>')
+    expect(text(result)).not.toContain('/home/u/.dsh/owner-roots')
+  })
+
+  it('read of a missing /workspace path names it as /workspace in the error', async () => {
+    const { ctx } = await setupViewRoot()
+    const result = await call(ctx, 'read', { file_path: '/workspace/missing.txt' }, viewAgent())
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('cannot read "/workspace/missing.txt": not found')
+  })
+
+  it('write creates the file under the real root and reports the /workspace path', async () => {
+    const { ctx, fs } = await setupViewRoot()
+    const result = await call(ctx, 'write', { file_path: '/workspace/out/b.txt', content: 'hi' }, viewAgent())
+    expect(result.isError).toBeFalsy()
+    expect(text(result)).toContain('<path>/workspace/out/b.txt</path>')
+    expect(fs.files.get('/home/u/.dsh/owner-roots/abc/proj/out/b.txt')).toBe('hi')
+  })
+
+  it('edit rewrites the real file and confirms with the /workspace path', async () => {
+    const { ctx, fs } = await setupViewRoot()
+    fs.files.set('/home/u/.dsh/owner-roots/abc/proj/c.txt', 'one two')
+    const agent = viewAgent()
+    // The observation policy requires a prior read in the same session; the
+    // read also proves the inbound translation feeds the observation key.
+    await call(ctx, 'read', { file_path: '/workspace/c.txt' }, agent)
+    const result = await call(
+      ctx,
+      'edit',
+      { file_path: '/workspace/c.txt', old_string: 'two', new_string: 'three' },
+      agent,
+    )
+    expect(result.isError).toBeFalsy()
+    expect(text(result)).toContain('/workspace/c.txt')
+    expect(text(result)).not.toContain('/home/u/.dsh/owner-roots')
+    expect(fs.files.get('/home/u/.dsh/owner-roots/abc/proj/c.txt')).toBe('one three')
+  })
+
+  it('a relative path is neither rewritten inbound nor to /workspace outbound', async () => {
+    const { ctx, fs } = await setupViewRoot()
+    fs.files.set('rel.txt', 'x')
+    const result = await call(ctx, 'read', { file_path: 'rel.txt' }, viewAgent())
+    expect(result.isError).toBeFalsy()
+    expect(text(result)).toContain('<path>rel.txt</path>')
+  })
+})

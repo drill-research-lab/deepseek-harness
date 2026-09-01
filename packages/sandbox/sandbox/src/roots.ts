@@ -14,6 +14,7 @@
 
 import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import type { SandboxExecutionPolicy } from './index.ts'
 
 /**
@@ -64,4 +65,45 @@ export function readableRoots(policy: SandboxExecutionPolicy): string[] {
 export function writableRoots(policy: SandboxExecutionPolicy): string[] {
   if (policy.mode !== 'workspace-write') return []
   return [...new Set([policy.workspaceRoot, '/tmp', tmpdir()].map(canonicalPath))]
+}
+
+/** Whether a `path.relative` result points outside its base (a `..` step or an absolute drift). */
+function escapesBase(rel: string): boolean {
+  return rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)
+}
+
+/**
+ * Translate a model-supplied path from {@link SandboxExecutionPolicy.workspaceViewRoot}
+ * onto the real {@link SandboxExecutionPolicy.workspaceRoot} the enforcement
+ * layer contains. Identity when the policy carries no `workspaceViewRoot`, when
+ * `path` is relative (it already resolves against the real workspace cwd), or
+ * when an absolute `path` is not under the view root. In-process filesystem
+ * Consumers call this on a model path before resolving it; enforcement itself
+ * always keys on the real `workspaceRoot`.
+ * @param path - the path as the model supplied it.
+ * @param policy - the resolved per-call policy, or `undefined` for an unconfined backend.
+ * @returns the real path to resolve, or `path` unchanged.
+ */
+export function fromWorkspaceView(path: string, policy: SandboxExecutionPolicy | undefined): string {
+  if (policy?.workspaceViewRoot === undefined || !isAbsolute(path)) return path
+  const rel = relative(policy.workspaceViewRoot, resolve(path))
+  if (rel === '') return policy.workspaceRoot
+  return escapesBase(rel) ? path : resolve(policy.workspaceRoot, rel)
+}
+
+/**
+ * Translate a real resolved path under {@link SandboxExecutionPolicy.workspaceRoot}
+ * back to {@link SandboxExecutionPolicy.workspaceViewRoot}, for a path a Consumer
+ * echoes to the model (a read envelope, an edit confirmation, a directory
+ * listing, a path in a denial message). Identity when the policy carries no
+ * `workspaceViewRoot` or when `path` is outside the real workspace root.
+ * @param path - a real resolved path, typically an `FsTarget.displayPath`.
+ * @param policy - the resolved per-call policy, or `undefined` for an unconfined backend.
+ * @returns the model-facing path, or `path` unchanged.
+ */
+export function toWorkspaceView(path: string, policy: SandboxExecutionPolicy | undefined): string {
+  if (policy?.workspaceViewRoot === undefined) return path
+  const rel = relative(policy.workspaceRoot, path)
+  if (rel === '') return policy.workspaceViewRoot
+  return escapesBase(rel) ? path : resolve(policy.workspaceViewRoot, rel)
 }

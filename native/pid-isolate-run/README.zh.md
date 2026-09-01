@@ -32,7 +32,7 @@ if (probe(launcher)) {
 }
 ```
 
-CLI 是 `pid-isolate-run -- <argv>...`；`pid-isolate-run --probe` 会完成整套初始化，但不执行调用方命令。launcher 失败时以 `125` 退出，且不会执行命令。
+CLI 是 `pid-isolate-run [--bind <src> <dst>] [--mask <path>] [--chdir <path>] -- <argv>...`；绝对 bind 目标与遮蔽目录必须已经存在。bind、空 tmpfs 遮蔽与目录切换只会在新的私有 mount namespace 内、移除初始化 capabilities 之前发生。`pid-isolate-run --probe` 会完成整套初始化，但不执行调用方命令。launcher 失败时以 `125` 退出，且不会执行命令。
 
 ## 包与支持范围
 

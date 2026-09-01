@@ -50,3 +50,4 @@ Append-only tool results follow the reusable request prefix.
 - Operations target UTF-8 text; binary files are unsupported.
 - `str_replace` intentionally rejects zero or multiple matches and has no `replace_all` argument.
 - Every view and mutation resolves the current session sandbox policy and delegates enforcement to the mounted filesystem; mutations additionally pass through `fs/write-intent` or `fs/edit-intent`.
+- When the resolved policy sets `workspaceViewRoot` (the local Linux composition uses `/workspace`), the required absolute `path` is mapped onto the real workspace root with `fromWorkspaceView` before resolution, and every path in a view header, directory listing row, confirmation, or error is mapped back with `toWorkspaceView`. Enforcement still keys on the real root.

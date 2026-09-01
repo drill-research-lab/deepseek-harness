@@ -10,6 +10,7 @@
  * CLI:
  *
  *   pid-isolate-run -- <argv>...
+ *   pid-isolate-run --bind <src> <dst> --mask <path> --chdir <path> -- <argv>...
  *   pid-isolate-run --probe
  *
  * Plain C11 over libc and stable Linux syscalls. The capability UAPI layouts
@@ -52,6 +53,10 @@ struct user_cap_data {
 
 struct cli {
   int probe;
+  const char *bind_source;
+  const char *bind_destination;
+  const char *masked_path;
+  const char *working_directory;
   char **command;
 };
 
@@ -74,14 +79,46 @@ static int parse(int argc, char **argv, struct cli *cli) {
     cli->probe = 1;
     return 0;
   }
-  if (argc >= 3 && strcmp(argv[1], "--") == 0) {
-    cli->command = &argv[2];
-    return 0;
-  }
   if (argc > 1 && strcmp(argv[1], "--probe") == 0) {
     return fail_usage("--probe takes no other arguments");
   }
-  return fail_usage("expected `--probe` or `-- <argv>...`");
+  int index = 1;
+  while (index < argc && strcmp(argv[index], "--") != 0) {
+    if (strcmp(argv[index], "--bind") == 0) {
+      if (cli->bind_source != NULL) return fail_usage("--bind may occur only once");
+      if (index + 2 >= argc) return fail_usage("--bind requires source and destination paths");
+      cli->bind_source = argv[index + 1];
+      cli->bind_destination = argv[index + 2];
+      index += 3;
+      continue;
+    }
+    if (strcmp(argv[index], "--chdir") == 0) {
+      if (cli->working_directory != NULL) return fail_usage("--chdir may occur only once");
+      if (index + 1 >= argc) return fail_usage("--chdir requires a path");
+      cli->working_directory = argv[index + 1];
+      index += 2;
+      continue;
+    }
+    if (strcmp(argv[index], "--mask") == 0) {
+      if (cli->masked_path != NULL) return fail_usage("--mask may occur only once");
+      if (index + 1 >= argc) return fail_usage("--mask requires a path");
+      cli->masked_path = argv[index + 1];
+      index += 2;
+      continue;
+    }
+    return fail_usage("expected `--bind <src> <dst>`, `--mask <path>`, `--chdir <path>`, or `--`");
+  }
+  if (index >= argc || index + 1 >= argc) {
+    return fail_usage("expected `--probe` or `[--bind <src> <dst>] [--mask <path>] [--chdir <path>] -- <argv>...`");
+  }
+  if ((cli->bind_source != NULL && cli->bind_source[0] != '/')
+      || (cli->bind_destination != NULL && cli->bind_destination[0] != '/')
+      || (cli->masked_path != NULL && cli->masked_path[0] != '/')
+      || (cli->working_directory != NULL && cli->working_directory[0] != '/')) {
+    return fail_usage("--bind, --mask, and --chdir paths must be absolute");
+  }
+  cli->command = &argv[index + 1];
+  return 0;
 }
 
 #ifndef DROP_NOOP
@@ -210,7 +247,7 @@ static int lock_privilege_state(void) {
   return 0;
 }
 
-static int prepare_child(void) {
+static int prepare_child(const struct cli *cli) {
   /* A copied mount namespace can retain shared propagation. Make it private
    * before replacing /proc so no mount event can escape this namespace. */
   if (mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL) != 0) {
@@ -218,6 +255,17 @@ static int prepare_child(void) {
   }
   if (mount("proc", "/proc", "proc", MS_NOSUID | MS_NODEV | MS_NOEXEC, NULL) != 0) {
     return fail("proc mount failed", strerror(errno));
+  }
+  if (cli->bind_source != NULL
+      && mount(cli->bind_source, cli->bind_destination, NULL, MS_BIND | MS_REC, NULL) != 0) {
+    return fail("bind mount failed", strerror(errno));
+  }
+  if (cli->masked_path != NULL
+      && mount("tmpfs", cli->masked_path, "tmpfs", MS_NOSUID | MS_NODEV | MS_NOEXEC, "mode=000") != 0) {
+    return fail("mask mount failed", strerror(errno));
+  }
+  if (cli->working_directory != NULL && chdir(cli->working_directory) != 0) {
+    return fail("working directory change failed", strerror(errno));
   }
   return lock_privilege_state();
 }
@@ -302,7 +350,7 @@ int main(int argc, char **argv) {
   }
 
   close(authorization[1]);
-  code = prepare_child();
+  code = prepare_child(&cli);
   if (code != 0) _exit(code);
   code = await_parent_authorization(authorization[0]);
   if (code != 0) _exit(code);

@@ -16,7 +16,7 @@ Why spawn-backed: local workspace discovery is naturally a process-backed `rg` w
 
 ## Deployment requirement: no host rg, co-located workdir/filesystem
 
-The binary ships with the package on every supported platform (macOS/Linux/Windows, x64/arm64), so no host `rg` install is required and the tools register on every deployment. Returned paths are displayed relative to the resolved workdir (the calling agent's session cwd when present, else `process.cwd()`). A confined call requires its explicit search path, after canonical symlink resolution, to remain under the resolved workspace root. Remote or virtual filesystem search still requires a provider-specific search backend because this package runs a co-located process.
+The binary ships with the package on every supported platform (macOS/Linux/Windows, x64/arm64), so no host `rg` install is required and the tools register on every deployment. Returned paths are displayed relative to the resolved workdir (the calling agent's session cwd when present, else `process.cwd()`). A confined call requires its explicit search path, after canonical symlink resolution, to remain under the resolved workspace root. When the resolved policy sets `workspaceViewRoot` (the local Linux composition uses `/workspace`), the containment check maps an explicit search path under that alias onto the real workspace root first (`fromWorkspaceView`); the ripgrep argv keeps the alias because the confined child's mount namespace exposes exactly that path. Remote or virtual filesystem search still requires a provider-specific search backend because this package runs a co-located process.
 
 ## Config
 
