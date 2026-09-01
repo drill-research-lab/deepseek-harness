@@ -13,6 +13,7 @@ import { scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
 import type { Message } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-ownership'
+import type {} from '@deepseek-ai/dsh-auth'
 import { SESSION_FORMAT_VERSION, SessionId } from './types.ts'
 import type { TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
 import type { CreateSessionOptions, EpochHeader, PrepareSessionOptions, RequestContext, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SurfaceIntent, SurfaceEventType } from './types.ts'
@@ -113,6 +114,10 @@ function validateSessionHeader(id: SessionId, input: unknown): SessionHeader {
   if (record.ownerUserId !== undefined
     && (typeof record.ownerUserId !== 'string' || record.ownerUserId.trim().length === 0)) {
     throw new Error('session header ownerUserId must be a non-empty string')
+  }
+  if (record.ownerUsername !== undefined
+    && (typeof record.ownerUsername !== 'string' || record.ownerUsername.trim().length === 0)) {
+    throw new Error('session header ownerUsername must be a non-empty string')
   }
   if (record.cwd !== undefined) {
     if (typeof record.cwd !== 'string') throw new Error('session header cwd must be a string')
@@ -890,11 +895,17 @@ export class SessionStore extends Service {
       throw new Error('session owner does not match the authenticated request')
     }
     const ownerUserId = (requestOwner ?? options?.owner)?.userId
+    // Presentation-only login name, captured while the request scope is still
+    // live (a background-created session has no scope and stores no name).
+    const ownerUsername = requestOwner === undefined
+      ? undefined
+      : this.ctx.root.get('auth')?.currentUser()?.username
     const header: SessionHeader = {
       version: SESSION_FORMAT_VERSION,
       id: sessionId,
       createdAt: meta?.createdAt ?? Date.now(),
       ...ownerUserId === undefined ? {} : { ownerUserId },
+      ...ownerUsername === undefined || ownerUsername.trim().length === 0 ? {} : { ownerUsername },
       ...meta?.cwd === undefined ? {} : { cwd: meta.cwd },
       ...meta?.parentSession === undefined ? {} : { parentSession: meta.parentSession },
       ...meta?.seedLength === undefined ? {} : { seedLength: meta.seedLength },

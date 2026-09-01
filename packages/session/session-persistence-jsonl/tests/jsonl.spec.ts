@@ -158,6 +158,7 @@ describe('JsonlSessionPersistence owner namespaces', () => {
       await ctx.auth.runAs(user, async () => {
         const session = ctx.sessions.prepare(id, { meta: { cwd: '/project' } })
         expect(session.header.ownerUserId).toBe(user.userId)
+        expect(session.header.ownerUsername).toBe(user.username)
         const detach = ctx.sessions.enter(session)
         ctx.sessions.announce(session)
         session.append('turn/start', { turn: 1 })
@@ -183,7 +184,10 @@ describe('JsonlSessionPersistence owner namespaces', () => {
     await persist(bob, bobId, 'bob marker')
 
     await ctx.auth.runAs(alice, async () => {
-      expect((await ctx.sessionPersistence.list()).map(header => header.ownerUserId)).toEqual([alice.userId])
+      const listed = await ctx.sessionPersistence.list()
+      expect(listed.map(header => header.ownerUserId)).toEqual([alice.userId])
+      // The login name round-trips through the persisted header line.
+      expect(listed.map(header => header.ownerUsername)).toEqual(['alice'])
       expect(JSON.stringify((await ctx.sessionPersistence.inspect(aliceId)).events)).toContain('alice marker')
     })
     await ctx.auth.runAs(bob, async () => {
