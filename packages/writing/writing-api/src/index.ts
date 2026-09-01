@@ -269,10 +269,13 @@ function versionView(reportId: string, version: GitVersion): ReportVersionView {
   }
 }
 
-/** Trim and cap the raw compiler console output for forwarding to the agent. */
+/** The compiled report source file the compiler reports errors against. */
+const COMPILE_SOURCE_FILE = 'main.tex'
+
+/** Trim, cap, and prefix the raw compiler console output with the source file name. */
 function compilerMessageOf(output: CompileOutput): string | undefined {
   const raw = output.stdout.trim() || output.stderr.trim()
-  return raw.length === 0 ? undefined : raw.slice(0, 4000)
+  return raw.length === 0 ? undefined : `${COMPILE_SOURCE_FILE}\n${raw.slice(0, 4000)}`
 }
 
 /** Project a template entity to its wire view. */

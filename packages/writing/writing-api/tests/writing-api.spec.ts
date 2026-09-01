@@ -69,6 +69,18 @@ describe('WritingGateway public contract', () => {
     expect(root).toBeTruthy()
   })
 
+  it('prefixes the compiler message with the source file name', async () => {
+    const { ctx, subprocess } = await harness({
+      onRun: async (workdir) => { await writeArtifacts(workdir, { log: '! Undefined control sequence.\nl.5 \\foo', pdf: true }) },
+    })
+    subprocess.compilerStdout = '! Undefined control sequence.\nl.5 \\foo'
+    const created = await ctx.writing.create({ title: 'A', source: '\\foo' })
+    const result = await ctx.writing.compile({ reportId: created.reportId })
+    expect(result.ok).toBe(false)
+    expect(result.compilerMessage).toMatch(/^main\.tex\n/)
+    expect(result.compilerMessage).toContain('Undefined control sequence')
+  })
+
   it('compiles successfully, snapshots a version, and yields a pdfUrl', async () => {
     const { ctx } = await harness({
       onRun: async (workdir) => { await writeArtifacts(workdir, { log: '', pdf: true }) },

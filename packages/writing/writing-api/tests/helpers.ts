@@ -25,6 +25,7 @@ import { createGitState, runGit, type GitState } from '../../writing-compile/tes
 export interface TestHarness {
   readonly ctx: Context
   readonly root: string
+  readonly subprocess: FakeSubprocessRuntime
   dispose(): Promise<void>
 }
 
@@ -47,6 +48,7 @@ export class FakeSubprocessRuntime extends SubprocessRuntime {
   spawned: SubprocessSpawnSpec[] = []
   outcomes: SubprocessOutcome[] = []
   onSpawn: ((spec: SubprocessSpawnSpec) => void | Promise<void>) | undefined
+  compilerStdout = ''
   private readonly gitState: GitState = createGitState()
 
   resolveExecutable(command: string): Promise<string> {
@@ -84,7 +86,7 @@ export class FakeSubprocessRuntime extends SubprocessRuntime {
       stdin: undefined,
       stdout: undefined,
       stderr: undefined,
-      collected: { stdout: reader(''), stderr: reader('') },
+      collected: { stdout: reader(this.compilerStdout), stderr: reader('') },
       done,
       terminate() {},
       waitForExit: () => Promise.resolve(true),
@@ -155,6 +157,7 @@ export async function setupHarness(
   return {
     ctx,
     root,
+    subprocess: ctx.subprocess as unknown as FakeSubprocessRuntime,
     async dispose() {
       await ctx.fiber.dispose()
       await rm(root, { recursive: true, force: true })
