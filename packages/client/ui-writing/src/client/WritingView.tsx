@@ -31,7 +31,7 @@ interface Toast {
 
 /** The Writing editor surface. Report selection arrives from the shared source via `useReportSelection`. */
 export function WritingView(props: WritingViewProps): JSX.Element {
-  const { rename, getSource, updateSource, compile, versions, restore, select, renameReport, t, useReportSelection } = props
+  const { rename, getSource, updateSource, compile, versions, restore, select, renameReport, forwardToAgent, t, useReportSelection } = props
   const selectedReportId = useReportSelection(state => state.selectedReportId)
   const reports = useReportSelection(state => state.reports)
   const [selectedTitle, setSelectedTitle] = useState('')
@@ -78,11 +78,12 @@ export function WritingView(props: WritingViewProps): JSX.Element {
         const messages = errors.map(diagnostic =>
           `${diagnostic.line === undefined ? '' : `@ ${diagnostic.line} `}: ${diagnostic.message}`).join('；')
         pushToast('error', `${errors.length} ${t('errorSummary')}：${messages}`)
+        forwardToAgent(`${t('forwardError')}\n${messages}`)
       }
     } finally {
       setCompiling(false)
     }
-  }, [compile, versions, pushToast, t])
+  }, [compile, versions, pushToast, t, forwardToAgent])
 
   // When the sidebar selects a report, load its source and versions, compiling
   // only when the report has never compiled.

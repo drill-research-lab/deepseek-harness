@@ -40,6 +40,13 @@ export interface IConversation {
    */
   send(text: string): Promise<void>
   /**
+   * Send a prompt into a named session (not the caller's scope), e.g. to hand a
+   * compile error to the agent. Business failures reject.
+   * @param sessionId - the target session.
+   * @param text - prompt text, sent verbatim as one text block.
+   */
+  sendPrompt(sessionId: SessionId, text: string): Promise<void>
+  /**
    * Apply one edit, remove, or strict steer operation to a pending queue occurrence.
    * @param itemId - agent-owned inbox occurrence identity.
    * @param action - requested queue operation.
@@ -138,6 +145,14 @@ export class ConversationController extends Service implements IConversation {
     const session = this.scopedSession('send')
     const result = await session.prompt([{ type: 'text', text }], 'queue')
     if (!result.ok) throw new Error(`conversation.send failed: ${result.error.code}: ${result.error.message}`)
+  }
+
+  /** Send a prompt into a named session. */
+  async sendPrompt(sessionId: SessionId, text: string): Promise<void> {
+    const binding = this.requireSessions().binding(sessionId)
+    if (binding === undefined) throw new Error(`conversation.sendPrompt: unknown session "${sessionId}"`)
+    const result = await binding.session.prompt([{ type: 'text', text }], 'queue')
+    if (!result.ok) throw new Error(`conversation.sendPrompt failed: ${result.error.code}: ${result.error.message}`)
   }
 
   /**

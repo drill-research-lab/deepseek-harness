@@ -51,6 +51,7 @@ function view(over: Partial<WritingViewInjected> = {}): WritingViewInjected {
     restore: vi.fn().mockResolvedValue('\\documentclass{article}'),
     select,
     renameReport,
+    forwardToAgent: vi.fn(),
     hooks: { reportSelection: { getSnapshot, subscribe } },
     ...over,
   }
@@ -180,6 +181,22 @@ describe('WritingView', () => {
     await waitFor(() => expect(actions.restore).toHaveBeenCalledWith('r1', 'g1', 'restore-v1'))
     await waitFor(() => expect(actions.compile).toHaveBeenCalledWith('r1', { snapshot: false }))
     prompt.mockRestore()
+  })
+
+  it('forwards compile errors to the agent after a failed compile', async () => {
+    const actions = view({
+      compile: vi.fn().mockResolvedValue({
+        ok: false,
+        diagnostics: [{ severity: 'error', line: 3, message: 'Undefined control sequence.' }],
+        versionCreated: false,
+      }),
+    })
+    render(<WritingView {...props(actions)} />)
+    await waitFor(() => expect(actions.getSource).toHaveBeenCalledWith('r1'))
+    openToolbar()
+    fireEvent.click(screen.getByText('compile'))
+    await waitFor(() => expect(actions.forwardToAgent).toHaveBeenCalled())
+    expect(actions.forwardToAgent).toHaveBeenCalledWith(expect.stringContaining('Undefined control sequence.'))
   })
 
   it('covers the composer by default and reveals it via the chat bubble', async () => {

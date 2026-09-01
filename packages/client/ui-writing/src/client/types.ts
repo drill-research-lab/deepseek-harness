@@ -40,6 +40,8 @@ export interface WritingViewInjected {
   select(reportId: string | undefined): void
   /** Rename one report in the shared list in place. */
   renameReport(reportId: string, title: string): void
+  /** Forward a message to the session's agent (e.g. a compile error to fix). */
+  forwardToAgent(text: string): void
   /** Report list + selection observable, bound to `useReportSelection`. */
   hooks: { readonly reportSelection: HostObservable<WritingReportsState> }
 }

@@ -52,6 +52,14 @@ describe('ConversationController', () => {
     await b.runtime.dispose()
   })
 
+  it('sends a prompt into a named session', async () => {
+    const b = await bench()
+    await b.root.sendPrompt('s1' as never, 'fix the LaTeX')
+    expect(b.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'fix the LaTeX' }], 'queue')
+    await expect(b.root.sendPrompt('unknown' as never, 'x')).rejects.toThrow(/unknown session/)
+    await b.runtime.dispose()
+  })
+
   it('folds Session business failures into callback rejections', async () => {
     const b = await bench()
     b.prompt.mockResolvedValueOnce({ ok: false, error: { code: 'agent-busy', message: 'busy', details: {} } } as never)

@@ -56,6 +56,7 @@ export function apply(ctx: ClientContext): void {
         const result = await ctx.remote.writing.rename({ reportId, title })
         if (!result.ok) throw new Error(result.error.message)
       },
+      forwardToAgent: (text: string) => { void ctx.conversation.sendPrompt(_sessionId, text) },
       getSource: async (reportId) => {
         const result = await ctx.remote.writing.get({ reportId })
         if (!result.ok) throw new Error(result.error.message)
