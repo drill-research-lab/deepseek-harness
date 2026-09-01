@@ -48,12 +48,12 @@ function resolveWorkspaceRoot(path: string): string {
 }
 
 /** Render the policy without claiming which capabilities are mounted. */
-function renderPolicyContext(policy: SandboxExecutionPolicy, workspaceViewRoot?: string): string {
+function renderPolicyContext(policy: SandboxExecutionPolicy): string {
   switch (policy.mode) {
     case 'read-only':
       return 'Current DSH file policy: read-only. Any available operation enforced by the DSH file sandbox cannot modify files in the standing mode. Do not refuse a required modification from this policy alone: try an available tool normally and follow any denial and escalation guidance it returns.'
     case 'workspace-write':
-      return `Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(workspaceViewRoot ?? policy.workspaceRoot)}. Some platform temporary areas may also be writable.`
+      return `Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(policy.workspaceViewRoot ?? policy.workspaceRoot)}. Some platform temporary areas may also be writable.`
     case 'danger-full-access':
       return 'Current DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations.'
     /* v8 ignore next 4 -- SandboxMode is a typed same-process closed union; this branch is only the static exhaustiveness guard. */
@@ -152,7 +152,7 @@ export class SandboxPolicyService extends Service {
           const session = context.agent?.session
           return session === undefined
             ? ''
-            : renderPolicyContext(this.resolve({ session }), this.workspaceViewRoot)
+            : renderPolicyContext(this.resolve({ session }))
         },
       })
     })
@@ -165,7 +165,8 @@ export class SandboxPolicyService extends Service {
    * maximum. A session cwd is its workspace-write boundary; the configured
    * root is the fallback for agentless calls and sessions without a cwd.
    * @param request - optional session and approved mode override.
-   * @returns the fully resolved per-call mode and absolute workspace root.
+   * @returns the fully resolved per-call mode, absolute workspace root, and
+   *   the configured model-facing `workspaceViewRoot` when the deployment sets one.
    */
   resolve(request: SandboxPolicyRequest = {}): SandboxExecutionPolicy {
     const { session } = request
@@ -179,6 +180,7 @@ export class SandboxPolicyService extends Service {
     return {
       mode,
       workspaceRoot: resolveWorkspaceRoot(session?.header.cwd ?? this.workspaceRoot),
+      ...this.workspaceViewRoot === undefined ? {} : { workspaceViewRoot: this.workspaceViewRoot },
       ...session === undefined ? {} : { sessionId: session.id },
     }
   }

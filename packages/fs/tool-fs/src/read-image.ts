@@ -180,7 +180,7 @@ export function applyReadImageTool(ctx: Context, sandbox: FsSandboxController): 
       }
       await assertImageCapableRoute(ctx, exec, args.file_path)
 
-      const { target, info, policy } = await resolveRegularReadTarget(ctx, sandbox, exec, args.file_path)
+      const { target, info, policy, displayPath } = await resolveRegularReadTarget(ctx, sandbox, exec, args.file_path)
 
       // The tool result is one message carrying one image, so the per-message
       // aggregate bound applies beside the per-image bound.
@@ -193,15 +193,15 @@ export function applyReadImageTool(ctx: Context, sandbox: FsSandboxController): 
         ref = await attachments.saveImage({ data, mediaType, name: basename(target.displayPath) })
       } catch (error: unknown) {
         if (!(error instanceof AttachmentError) || error.code !== 'IMAGE_TYPE_MISMATCH') throw error
-        const extension = extname(target.displayPath).toLowerCase()
+        const extension = extname(displayPath).toLowerCase()
         throw new Error(
-          `cannot read "${target.displayPath}": the ${extension} extension declares ${mediaType}, but the bytes use a different image format; rename the file to match its actual format if it is PNG/JPEG/WebP/GIF, or convert it to one of those formats`,
+          `cannot read "${displayPath}": the ${extension} extension declares ${mediaType}, but the bytes use a different image format; rename the file to match its actual format if it is PNG/JPEG/WebP/GIF, or convert it to one of those formats`,
           { cause: error },
         )
       }
       ctx.emit('fs/observed', target, { kind: 'present', version: info.version }, exec)
       const value: ImageReadValue = {
-        path: target.displayPath,
+        path: displayPath,
         image: {
           attachmentId: ref.attachmentId,
           mediaType: ref.mediaType,

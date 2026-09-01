@@ -9,6 +9,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { DiffCallView, DiffResultView, ToolResult } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-fs'
+import { fromWorkspaceView, toWorkspaceView } from '@deepseek-ai/dsh-sandbox'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { computeHunkDiffs, diffsFromMeta } from './diff.ts'
 import { remediateFsError } from './error.ts'
@@ -114,7 +115,8 @@ export function applyEditTool(ctx: Context, sandbox: FsSandboxController): void 
       // Resolve the per-call sandbox policy (approved mode > session override
       // > backend default, plus the session cwd root) BEFORE anything executes.
       const sandboxPolicy = await sandbox.resolvePolicy('edit', args, exec)
-      const target = await ctx.fs.resolve(input.filePath, sessionResolveOptions(exec, input.filePath, sandboxPolicy?.workspaceRoot))
+      const realPath = fromWorkspaceView(input.filePath, sandboxPolicy)
+      const target = await ctx.fs.resolve(realPath, sessionResolveOptions(exec, realPath, sandboxPolicy?.workspaceRoot))
       // Single-slot decision: the policy plugin returns { version: vObserved } or
       // throws FS_NOT_OBSERVED; the bare default is undefined (unconditional edit).
       // No stat — the bare default never manufactures a version basis. The intent
@@ -140,7 +142,7 @@ export function applyEditTool(ctx: Context, sandbox: FsSandboxController): void 
       // Record the present observation (a no-op when no policy plugin listens).
       ctx.emit('fs/observed', target, { kind: 'present', version: outcome.version }, exec)
       return {
-        path: target.displayPath,
+        path: toWorkspaceView(target.displayPath, sandboxPolicy),
         before: outcome.before,
         after: outcome.after,
       }

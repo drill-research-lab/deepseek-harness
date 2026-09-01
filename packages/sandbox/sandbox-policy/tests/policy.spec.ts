@@ -18,6 +18,7 @@ async function mounted(config: {
   mode?: 'read-only' | 'workspace-write' | 'danger-full-access'
   maximumMode?: 'read-only' | 'workspace-write' | 'danger-full-access'
   workspaceRoot?: string
+  workspaceViewRoot?: string
 } = {}) {
   const ctx = new Context()
   await ctx.plugin(SandboxPolicyService, config)
@@ -84,6 +85,22 @@ describe('SandboxPolicyService', () => {
     expect(ctx.sandboxPolicy.resolve()).toEqual({
       mode: 'workspace-write',
       workspaceRoot: resolve('/fallback'),
+    })
+  })
+
+  it('carries the configured workspaceViewRoot on every resolved policy', async () => {
+    const ctx = await mounted({ mode: 'workspace-write', workspaceRoot: '/fallback', workspaceViewRoot: '/workspace' })
+    expect(ctx.sandboxPolicy.workspaceViewRoot).toBe(resolve('/workspace'))
+    expect(ctx.sandboxPolicy.resolve()).toEqual({
+      mode: 'workspace-write',
+      workspaceRoot: resolve('/fallback'),
+      workspaceViewRoot: resolve('/workspace'),
+    })
+    expect(ctx.sandboxPolicy.resolve({ session: session('sess-view', '/projects/first') })).toEqual({
+      mode: 'workspace-write',
+      workspaceRoot: resolve('/projects/first'),
+      workspaceViewRoot: resolve('/workspace'),
+      sessionId: 'sess-view',
     })
   })
 
