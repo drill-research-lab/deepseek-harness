@@ -31,14 +31,15 @@ export function SidebarReports(props: SidebarReportsProps): JSX.Element {
   heightRef.current = height
 
   useEffect(() => {
+    if (cwd === undefined) return
     let active = true
     void (async () => {
-      const listed = await listReports()
+      const listed = await listReports(cwd)
       if (!active) return
       setReports(listed)
     })()
     return () => { active = false }
-  }, [listReports, setReports])
+  }, [listReports, setReports, cwd])
 
   const onResizeStart = (event: React.PointerEvent<HTMLDivElement>): void => {
     event.preventDefault()
@@ -60,7 +61,7 @@ export function SidebarReports(props: SidebarReportsProps): JSX.Element {
     if (title.length === 0) return
     await createReport(title, cwd ?? '')
     setNewTitle('')
-    const listed = await listReports()
+    const listed = await listReports(cwd ?? '')
     setReports(listed)
     const created = listed[0]
     if (created !== undefined) {

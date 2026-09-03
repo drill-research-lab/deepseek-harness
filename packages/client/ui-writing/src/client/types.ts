@@ -58,7 +58,8 @@ export type WritingReportsHooks = {
 /** The sidebar-facing face the report panel calls: listing, creation, and selection writes. */
 export interface SidebarReportsInjected {
   /** All reports, newest first. */
-  listReports(): Promise<ReportSummaryView[]>
+  /** All reports in the given session workspace directory, newest first. */
+  listReports(workspaceDir: string): Promise<ReportSummaryView[]>
   /** Create a report from a title. */
   /** Create a report from a title, in the given session workspace directory. */
   createReport(title: string, workspaceDir: string): Promise<void>

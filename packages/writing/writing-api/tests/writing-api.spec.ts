@@ -39,7 +39,7 @@ describe('WritingGateway public contract', () => {
     const created = await ctx.writing.create({ title: 'My Paper' })
     expect(created.reportId).toBeTruthy()
     expect(created.source).toContain('\\documentclass')
-    expect(ctx.writing.list().length).toBe(1)
+    expect(ctx.writing.list({ workspaceDir: '' }).length).toBe(1)
     const fetched = await ctx.writing.get({ reportId: created.reportId })
     expect(fetched?.title).toBe('My Paper')
   })
@@ -125,7 +125,7 @@ describe('WritingGateway public contract', () => {
     const { ctx } = await harness()
     const created = await ctx.writing.create({ title: 'A' })
     expect(await ctx.writing.deleteReport({ reportId: created.reportId })).toBe(true)
-    expect(ctx.writing.list().length).toBe(0)
+    expect(ctx.writing.list({ workspaceDir: '' }).length).toBe(0)
   })
 })
 

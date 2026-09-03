@@ -24,6 +24,7 @@ import type {
   CreateReportRequest,
   DeleteRequest,
   GetReportRequest,
+  ListRequest,
   RenameRequest,
   ReportTemplateView,
   ReportVersionView,
@@ -72,8 +73,10 @@ export class WritingGateway extends TypertRemoteService {
    * @returns projected report views.
    */
   @Remote('list')
-  list(): ReportView[] {
-    return this.ctx.reports.list().map(reportView)
+  list(request: ListRequest): ReportView[] {
+    return this.ctx.reports.list()
+      .filter(report => report.workspaceDir === request.workspaceDir)
+      .map(reportView)
   }
 
   /**

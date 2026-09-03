@@ -15,6 +15,11 @@ export interface ReportView {
   readonly updatedAt: string
 }
 
+/** Request payload for a report list (scoped to a session workspace directory). */
+export interface ListRequest {
+  readonly workspaceDir: string
+}
+
 /**
  * One git-backed version snapshot, projected for the browser. `versionId` is
  * the commit hash; `command` is the compile command recorded on the commit.

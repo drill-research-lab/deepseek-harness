@@ -123,8 +123,8 @@ export function apply(ctx: ClientContext): void {
     name: 'sidebar.reports',
     locale: NS,
     inject: (): SidebarReportsInjected => ({
-      listReports: async () => {
-        const result = await ctx.remote.writing.list()
+      listReports: async (workspaceDir) => {
+        const result = await ctx.remote.writing.list({ workspaceDir })
         if (!result.ok) throw new Error(result.error.message)
         return result.value.map(view => ({
           reportId: view.reportId,
