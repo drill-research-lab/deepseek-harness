@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import { join } from 'node:path'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import type { AuthenticatedUser } from '@deepseek-ai/dsh-auth'
 import { setupHarness, writeArtifacts, testUser, type TestHarness } from './helpers.ts'
@@ -163,14 +164,18 @@ describe('WritingGateway edge cases', () => {
 })
 
 describe('WritingGateway PDF route', () => {
-  it('serves the compiled PDF when a webserver is composed', async () => {
-    const { ctx } = await harness({
+  it('serves the compiled PDF from the report repo when a webserver is composed', async () => {
+    const { ctx, root } = await harness({
       withWebServer: true,
       onRun: async (workdir) => { await writeArtifacts(workdir, { log: '', pdf: true }) },
     })
-    const created = await ctx.writing.create({ title: 'A', source: 'v1' })
+    const created = await ctx.writing.create({ title: 'A', source: 'v1', workspaceDir: join(root, 'ws') })
     const result = await ctx.writing.compile({ reportId: created.reportId })
     expect(result.ok).toBe(true)
+
+    // The PDF lives in the report's own repo directory under the workspace.
+    expect(await ctx.latexCompile.pdfPath(join(root, 'ws', 'writing', 'A', 'main.tex')))
+      .toContain(join('ws', 'writing', 'A', 'main.pdf'))
 
     const url = `http://127.0.0.1:${ctx.webServer.port}/writing/${created.reportId}/pdf`
     const response = await fetch(url)
