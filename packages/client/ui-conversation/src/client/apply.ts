@@ -439,6 +439,20 @@ const viewSwitchers = new Map<SessionId, (viewId: string) => void>()
   // this service remains only where conversation actions are required.
   ctx.plugin(ConversationController, { input: inputHub, blocks: composerBlocks, switchView: (sessionId, viewId) => viewSwitchers.get(sessionId)?.(viewId) })
 
+  // Switching to a session should land on the conversation, not on a persisted
+  // writing view whose report may recompile and bounce back to the fix session.
+  let lastCurrentSession: SessionId | undefined
+  ctx.effect(
+    () => ctx.sessions.list.subscribe(() => {
+      const current = ctx.sessions.list.getSnapshot().current
+      if (current !== undefined && current !== lastCurrentSession) {
+        lastCurrentSession = current
+        viewSwitchers.get(current)?.('chat')
+      }
+    }),
+    'ui-conversation: session switch resets the active view to chat',
+  )
+
   // The plan strip rides the input dock above the queue rows (same posture).
   ctx.plugin(todoDockEntry)
 

@@ -64,7 +64,7 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     }, TOAST_MS)
   }, [])
 
-  const compileSelected = useCallback(async (noSnapshot = false): Promise<void> => {
+  const compileSelected = useCallback(async (noSnapshot = false, forward = false): Promise<void> => {
     const id = selectedRef.current
     if (id === undefined) return
     setCompiling(true)
@@ -78,8 +78,12 @@ export function WritingView(props: WritingViewProps): JSX.Element {
         const messages = errors.map(diagnostic =>
           `${diagnostic.line === undefined ? '' : `@ ${diagnostic.line} `}: ${diagnostic.message}`).join('；')
         pushToast('error', `${errors.length} ${t('errorSummary')}：${messages}`)
-        const title = reports.find(report => report.reportId === id)?.title ?? ''
-        await forwardToAgent(id, title, result.compilerMessage ?? messages)
+        // Only a user-initiated compile forwards to the agent; the automatic
+        // compile on open must not bounce toward a fix session (loop safety).
+        if (forward) {
+          const title = reports.find(report => report.reportId === id)?.title ?? ''
+          await forwardToAgent(id, title, result.compilerMessage ?? messages)
+        }
       }
     } finally {
       setCompiling(false)
@@ -145,7 +149,7 @@ export function WritingView(props: WritingViewProps): JSX.Element {
   }, [scheduleAutosave])
 
   const onCompile = useCallback((): void => {
-    void compileSelected()
+    void compileSelected(false, true)
   }, [compileSelected])
 
   const onSave = useCallback(async (): Promise<void> => {
@@ -153,7 +157,7 @@ export function WritingView(props: WritingViewProps): JSX.Element {
     const id = selectedRef.current
     if (id === undefined) return
     await updateSource(id, sourceRef.current)
-    await compileSelected()
+    await compileSelected(false, true)
   }, [updateSource, compileSelected])
 
   useEffect(() => {
