@@ -91,8 +91,10 @@
 
 .outlineList {
   display: flex;
-  gap: 6px;
-  overflow-x: auto;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 160px;
+  overflow-y: auto;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -103,13 +105,21 @@
 }
 
 .outlineItem {
-  flex: 0 0 auto;
+  display: block;
+  width: 100%;
+  text-align: left;
   background: none;
   border: none;
   cursor: pointer;
-  padding: 2px 8px;
+  padding: 3px 8px;
   font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.outlineItem:hover {
+  background: var(--dsw-bg-subtle, rgba(128, 128, 128, 0.08));
 }
 
 .editor {
@@ -129,9 +139,9 @@
 
 .outlineBar {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
   border-top: 1px solid var(--dsw-border-subtle, rgba(128, 128, 128, 0.3));
   padding: 6px 8px 0;
 }
