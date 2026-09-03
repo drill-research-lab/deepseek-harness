@@ -26,8 +26,8 @@ const useReportSelection = <S,>(selector: (current: WritingReportsState) => S): 
 const setReports = (reports: ReportSummaryView[]): void => setState(current => ({ ...current, reports }))
 const select = (reportId: string): void => setState(current => ({ ...current, selectedReportId: reportId }))
 
-const useSessions = <S,>(selector: (state: { current?: string }) => S): S => selector(sessionState)
-let sessionState: { current?: string } = { current: 's1' }
+const useSessions = <S,>(selector: (state: { current?: string; byId?: Record<string, { cwd?: string }> }) => S): S => selector(sessionState)
+let sessionState: { current?: string; byId?: Record<string, { cwd?: string }> } = { current: 's1', byId: { s1: { cwd: '/workspace' } } }
 
 function inject(over: Partial<SidebarReportsInjected> = {}): SidebarReportsInjected {
   return {
@@ -72,7 +72,7 @@ describe('SidebarReports', () => {
     await screen.findByText('New report')
     fireEvent.input(screen.getByPlaceholderText('newPlaceholder'), { target: { value: '  New report  ' } })
     fireEvent.click(screen.getByText('create'))
-    await waitFor(() => expect(face.createReport).toHaveBeenCalledWith('New report'))
+    await waitFor(() => expect(face.createReport).toHaveBeenCalledWith('New report', '/workspace'))
     expect(state.selectedReportId).toBe('r9')
     expect(face.openWriting).toHaveBeenCalledWith('s1')
   })

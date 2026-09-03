@@ -45,6 +45,24 @@ export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
   const reportsSource = createWritingReportsSource()
 
+  const writerSessionKey = (reportId: string): string => `dsh-writer-session:${reportId}`
+
+  /** Resolve (create-or-reuse) the session dedicated to a report for its AI agent. */
+  const resolveWriterSession = async (currentSessionId: SessionId, reportId: string, title: string): Promise<SessionId | undefined> => {
+    const stored = localStorage.getItem(writerSessionKey(reportId))
+    const list = ctx.sessions.list.getSnapshot()
+    if (stored !== null && stored in list.byId) return stored as SessionId
+    try {
+      const forked = await ctx.sessions.fork({ sessionId: currentSessionId })
+      const binding = ctx.sessions.binding(forked)
+      if (binding !== undefined) await binding.session.rename(`修正 ${title}`)
+      localStorage.setItem(writerSessionKey(reportId), forked)
+      return forked
+    } catch {
+      return undefined
+    }
+  }
+
   ctx.slots.inject('conversation.view', () => ctx.slots.register({
     name: 'conversation.view',
     id: 'writing',
@@ -56,7 +74,11 @@ export function apply(ctx: ClientContext): void {
         const result = await ctx.remote.writing.rename({ reportId, title })
         if (!result.ok) throw new Error(result.error.message)
       },
-      forwardToAgent: (text: string) => { void ctx.conversation.sendPrompt(_sessionId, text) },
+      forwardToAgent: async (reportId: string, title: string, text: string) => {
+        const target = await resolveWriterSession(_sessionId, reportId, title) ?? _sessionId
+        ctx.sessions.open(target)
+        await ctx.conversation.sendPrompt(target, text)
+      },
       getSource: async (reportId) => {
         const result = await ctx.remote.writing.get({ reportId })
         if (!result.ok) throw new Error(result.error.message)
@@ -110,8 +132,8 @@ export function apply(ctx: ClientContext): void {
           updatedAt: view.updatedAt,
         }))
       },
-      createReport: async (title) => {
-        const result = await ctx.remote.writing.create({ title })
+      createReport: async (title, workspaceDir) => {
+        const result = await ctx.remote.writing.create({ title, workspaceDir })
         if (!result.ok) throw new Error(result.error.message)
       },
       setReports: reports => reportsSource.setReports(reports),

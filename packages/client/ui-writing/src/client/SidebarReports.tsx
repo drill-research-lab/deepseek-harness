@@ -23,6 +23,7 @@ export function SidebarReports(props: SidebarReportsProps): JSX.Element {
   const reports = useReportSelection(state => state.reports)
   const selected = useReportSelection(state => state.selectedReportId)
   const currentSessionId = useSessions(state => state.current)
+  const cwd = useSessions(state => state.current === undefined ? undefined : state.byId[state.current]?.cwd)
   const [newTitle, setNewTitle] = useState('')
   const [collapsed, setCollapsed] = useState(false)
   const [height, setHeight] = useState(DEFAULT_HEIGHT)
@@ -57,7 +58,7 @@ export function SidebarReports(props: SidebarReportsProps): JSX.Element {
   const onCreate = async (): Promise<void> => {
     const title = newTitle.trim()
     if (title.length === 0) return
-    await createReport(title)
+    await createReport(title, cwd ?? '')
     setNewTitle('')
     const listed = await listReports()
     setReports(listed)

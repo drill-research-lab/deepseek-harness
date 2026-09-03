@@ -40,8 +40,11 @@ export interface WritingViewInjected {
   select(reportId: string | undefined): void
   /** Rename one report in the shared list in place. */
   renameReport(reportId: string, title: string): void
-  /** Forward a message to the session's agent (e.g. a compile error to fix). */
-  forwardToAgent(text: string): void
+  /**
+   * Forward a message to a session dedicated to a report's AI agent, opening
+   * (or reusing) that session and jumping to its conversation.
+   */
+  forwardToAgent(reportId: string, title: string, text: string): Promise<void>
   /** Report list + selection observable, bound to `useReportSelection`. */
   hooks: { readonly reportSelection: HostObservable<WritingReportsState> }
 }
@@ -57,7 +60,8 @@ export interface SidebarReportsInjected {
   /** All reports, newest first. */
   listReports(): Promise<ReportSummaryView[]>
   /** Create a report from a title. */
-  createReport(title: string): Promise<void>
+  /** Create a report from a title, in the given session workspace directory. */
+  createReport(title: string, workspaceDir: string): Promise<void>
   /** Write the report list into the shared source. */
   setReports(reports: ReportSummaryView[]): void
   /** Write the selected report id into the shared source. */

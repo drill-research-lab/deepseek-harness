@@ -78,12 +78,13 @@ export function WritingView(props: WritingViewProps): JSX.Element {
         const messages = errors.map(diagnostic =>
           `${diagnostic.line === undefined ? '' : `@ ${diagnostic.line} `}: ${diagnostic.message}`).join('；')
         pushToast('error', `${errors.length} ${t('errorSummary')}：${messages}`)
-        forwardToAgent(result.compilerMessage ?? messages)
+        const title = reports.find(report => report.reportId === id)?.title ?? ''
+        await forwardToAgent(id, title, result.compilerMessage ?? messages)
       }
     } finally {
       setCompiling(false)
     }
-  }, [compile, versions, pushToast, t, forwardToAgent])
+  }, [compile, versions, pushToast, t, forwardToAgent, reports])
 
   // When the sidebar selects a report, load its source and versions, compiling
   // only when the report has never compiled.

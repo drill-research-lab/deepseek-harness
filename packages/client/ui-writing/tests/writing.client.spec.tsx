@@ -51,7 +51,7 @@ function view(over: Partial<WritingViewInjected> = {}): WritingViewInjected {
     restore: vi.fn().mockResolvedValue('\\documentclass{article}'),
     select,
     renameReport,
-    forwardToAgent: vi.fn(),
+    forwardToAgent: vi.fn().mockResolvedValue(undefined),
     hooks: { reportSelection: { getSnapshot, subscribe } },
     ...over,
   }
@@ -197,7 +197,7 @@ describe('WritingView', () => {
     openToolbar()
     fireEvent.click(screen.getByText('compile'))
     await waitFor(() => expect(actions.forwardToAgent).toHaveBeenCalled())
-    expect(actions.forwardToAgent).toHaveBeenCalledWith('! Undefined control sequence.\nl.5 \\foo')
+    expect(actions.forwardToAgent).toHaveBeenCalledWith('r1', 'Paper', '! Undefined control sequence.\nl.5 \\foo')
   })
 
   it('covers the composer by default and reveals it via the chat bubble', async () => {
