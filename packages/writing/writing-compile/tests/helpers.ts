@@ -25,6 +25,7 @@ class FakeSubprocessRuntime extends SubprocessRuntime {
   spawned: SubprocessSpawnSpec[] = []
   outcomes: SubprocessOutcome[] = []
   onSpawn: ((spec: SubprocessSpawnSpec) => void | Promise<void>) | undefined
+  gitLogError: Error | undefined
   private readonly gitState: GitState = createGitState()
 
   resolveExecutable(command: string): Promise<string> {
@@ -34,7 +35,19 @@ class FakeSubprocessRuntime extends SubprocessRuntime {
   spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
     this.spawned.push(spec)
     if (spec.argv[0] === 'git') {
-      return makeHandle(spec, { exitCode: 0, signal: null }, this.onSpawn, runGit(this.gitState, spec.cwd, spec.argv.slice(1)))
+      const argv = spec.argv.slice(1)
+      if (argv.includes('log') && this.gitLogError !== undefined) {
+        const message = this.gitLogError.message
+        const outcome = { exitCode: 1, signal: null }
+        const done = (async () => {
+          if (this.onSpawn !== undefined) await this.onSpawn(spec)
+          return outcome
+        })()
+        return { pid: 1, stdin: undefined, stdout: undefined, stderr: undefined,
+          collected: { stdout: reader(''), stderr: reader(message) }, done,
+          terminate() {}, waitForExit: () => Promise.resolve(true) }
+      }
+      return makeHandle(spec, { exitCode: 0, signal: null }, this.onSpawn, runGit(this.gitState, spec.cwd, argv))
     }
     const outcome = this.outcomes.shift() ?? { exitCode: 0, signal: null }
     return makeHandle(spec, outcome, this.onSpawn, '')

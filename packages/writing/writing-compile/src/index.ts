@@ -184,7 +184,14 @@ export class LatexCompileService extends Service {
   async listVersions(sourcePath: string): Promise<GitVersion[]> {
     const dir = dirname(sourcePath)
     if (!(await this.isDirectory(join(dir, '.git')))) return []
-    const result = await this.git(dir, ['log', '-z', '--format=%H%x1f%ct%x1f%B'])
+    let result: string
+    try {
+      result = await this.git(dir, ['log', '-z', '--format=%H%x1f%ct%x1f%B'])
+    } catch (error) {
+      // A repository with no commits yet has no history to list.
+      if (error instanceof Error && /has no commits yet|does not have any commits/.test(error.message)) return []
+      throw error
+    }
     return result.split('\0').filter(Boolean).map(raw => {
       const [versionId, epoch, body] = raw.split('\x1f') as [string, string, string]
       const [label, ...rest] = body.split('\n')

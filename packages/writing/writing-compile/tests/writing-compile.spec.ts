@@ -121,6 +121,13 @@ describe('delivery PDF path', () => {
     expect(subprocess.spawned[0]?.signal).toBe(signal)
   })
 
+  it('lists an empty history for a repo with no commits yet', async () => {
+    const { ctx, subprocess, root } = await harness()
+    subprocess.gitLogError = new Error("latex-compile: git log failed: fatal: your current branch 'master' does not have any commits yet")
+    await ctx.latexCompile.writeSource(src(root, 'repo'), 'x')
+    expect(await ctx.latexCompile.listVersions(src(root, 'repo'))).toEqual([])
+  })
+
   it('ignores a bare position line that follows no error', () => {
     expect(parseLatexLog('l.5 \\foo')).toEqual([])
   })
