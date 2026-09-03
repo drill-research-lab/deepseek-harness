@@ -16,11 +16,13 @@ export interface CompileDiagnostic {
 
 /** A compile request for one report's current source. */
 export interface CompileRequest {
-  /**
-   * Report id, used for the artifact directory name. Only a safe segment
-   * (no separators or traversal) is accepted.
-   */
+  /** Report id, used only as an identity in the returned outcome. */
   readonly reportId: string
+  /**
+   * Absolute path of the report's source file to write and compile. The parent
+   * directory is the report's git repository (one repo per report).
+   */
+  readonly sourcePath: string
   /** LaTeX source to compile. */
   readonly source: string
   /** Cooperative cancellation passed to the compiler process. */
@@ -35,7 +37,7 @@ export interface CompileOutput {
   readonly diagnostics: readonly CompileDiagnostic[]
   /** Absolute path to the generated PDF, when it was produced. */
   readonly pdfPath?: string
-  /** Directory holding the artifact set (main.tex, main.log, main.pdf). */
+  /** Directory holding the report's source, log, pdf, and git repository. */
   readonly artifactDir: string
   /** Captured compiler stdout. */
   readonly stdout: string

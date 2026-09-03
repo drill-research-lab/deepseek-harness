@@ -1,14 +1,13 @@
 /**
  * LaTeX compile service (`ctx.latexCompile`): write a report's source into a
- * per-report artifact directory, run a configurable engine through the
- * subprocess seam, parse the compiler log into diagnostics, and report the
- * produced PDF.
+ * per-report source file (inside its own git repository under the session
+ * workspace), run a configurable engine through the subprocess seam, parse the
+ * compiler log into diagnostics, and report the produced PDF.
  * @module @deepseek-ai/dsh-writing-compile
  */
 
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
-import { tmpdir } from 'node:os'
+import { basename, dirname, join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import s from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-subprocess'
@@ -18,12 +17,10 @@ export type { CompileDiagnostic, CompileOutput, CompileRequest, GitVersion } fro
 
 /** Deployment-varying compiler behavior, all changeable from cordis.yml. */
 export interface Config {
-  /** Engine command line run in the artifact directory; `main.tex` is appended. */
+  /** Engine command line run in the source directory; the report's .tex is appended. */
   readonly command: string
   /** Foreground compiler timeout in milliseconds. */
   readonly timeoutMs: number
-  /** Root directory holding one `main.tex`/`main.log`/`main.pdf` set per report. */
-  readonly artifactRoot: string
   /** Git author name recorded on every version commit. */
   readonly authorName: string
   /** Git author email recorded on every version commit. */
@@ -43,18 +40,25 @@ const DEFAULT_AUTHOR_EMAIL = 'dsh-writing@deepseek.ai'
 const GRACE_MS = 3000
 const COMMAND_MARKER = 'command: '
 
-/** A report id is used as a directory segment, so only separators and traversal are rejected. */
-function assertSafeSegment(reportId: string): string {
-  if (reportId.length === 0 || /[\\/]|\.\.|[\0]/.test(reportId)) {
-    throw new Error(`latex-compile: report id '${reportId}' is not a safe path segment`)
-  }
-  return reportId
+/** Replace characters that are unsafe in a file/segment name. */
+export function safeSegmentName(value: string): string {
+  const cleaned = value.trim().replace(/[\\/:*?"<>|]/g, '_')
+  return cleaned.length === 0 ? 'report' : cleaned
+}
+
+/** Resolve a report's source file layout inside a session workspace. */
+export function reportSourcePath(workspaceDir: string, title: string): { dir: string; file: string; sourcePath: string } {
+  const name = safeSegmentName(title)
+  const dir = join(workspaceDir, 'writing', name)
+  const file = 'main.tex'
+  return { dir, file, sourcePath: join(dir, file) }
 }
 
 /**
  * Compiles one report's LaTeX source. The engine is configuration; the
- * subprocess seam owns process launch. The service writes `main.tex`, runs the
- * engine, parses `main.log`, and leaves the artifact directory for later serving.
+ * subprocess seam owns process launch. The service writes the report's source
+ * file (`sourcePath`, one per report inside a per-report git repository), runs
+ * the engine, parses the `.log`, and leaves the source directory for serving.
  */
 export class LatexCompileService extends Service {
   static inject = ['subprocess']
@@ -62,18 +66,16 @@ export class LatexCompileService extends Service {
   static Config: s<Config> = s.object({
     command: s.string().default(DEFAULT_COMMAND),
     timeoutMs: s.number().step(1).min(1).default(DEFAULT_TIMEOUT_MS),
-    artifactRoot: s.string().default(join(tmpdir(), 'dsh-writing')),
     authorName: s.string().default(DEFAULT_AUTHOR_NAME),
     authorEmail: s.string().default(DEFAULT_AUTHOR_EMAIL),
   })
 
   /**
    * @param ctx - Host context carrying the subprocess seam.
-   * @param config - Validated engine command, timeout, artifact root, and git author.
+   * @param config - Validated engine command, timeout, and git author.
    */
   constructor(ctx: Context, config: Config) {
     super(ctx, 'latexCompile')
-    this.artifactRoot = resolve(config.artifactRoot)
     const [engine, ...args] = config.command.split(' ').filter(Boolean)
     this.engine = engine ?? 'pdflatex'
     this.args = args
@@ -84,26 +86,25 @@ export class LatexCompileService extends Service {
 
   private readonly engine: string
   private readonly args: readonly string[]
-  private readonly artifactRoot: string
   private readonly command: string
   private readonly authorName: string
   private readonly authorEmail: string
 
   /**
    * Compile a report's source and return diagnostics plus the produced PDF.
-   * @param request - Report id, source, and optional cancellation.
+   * @param request - Report identity, the absolute source path, and the source.
    * @returns the compile outcome; a missing compiler surfaces as a run failure
    * (nonzero exit), it does not reject here.
    */
   async compile(request: CompileRequest): Promise<CompileOutput> {
-    const segment = assertSafeSegment(request.reportId)
-    const dir = join(this.artifactRoot, segment)
+    const dir = dirname(request.sourcePath)
+    const file = basename(request.sourcePath)
     await mkdir(dir, { recursive: true })
-    await writeFile(join(dir, 'main.tex'), request.source, 'utf8')
+    await writeFile(request.sourcePath, request.source, 'utf8')
 
     const executable = await this.ctx.subprocess.resolveExecutable(this.engine, undefined, request.signal)
     const handle = this.ctx.subprocess.spawn({
-      argv: [executable, ...this.args, 'main.tex'],
+      argv: [executable, ...this.args, file],
       cwd: dir,
       stdio: {
         stdin: 'ignore',
@@ -117,9 +118,10 @@ export class LatexCompileService extends Service {
     const stdout = handle.collected.stdout?.readFrom(0)?.text ?? ''
     const stderr = handle.collected.stderr?.readFrom(0)?.text ?? ''
 
-    const log = await this.readLog(join(dir, 'main.log'))
+    const stem = file.endsWith('.tex') ? file.slice(0, -4) : file
+    const log = await this.readLog(join(dir, `${stem}.log`))
     const diagnostics = parseLatexLog(log)
-    const pdfPath = join(dir, 'main.pdf')
+    const pdfPath = join(dir, `${stem}.pdf`)
     const pdfExists = await this.exists(pdfPath)
     const hasErrors = diagnostics.some(diagnostic => diagnostic.severity === 'error')
 
@@ -134,27 +136,41 @@ export class LatexCompileService extends Service {
   }
 
   /**
-   * Resolve the artifact PDF path for a report, when one exists.
-   * @param reportId - the report's safe id.
+   * Write a report's current source to its source file, initialising the report
+   * repository on first use. Does not run the engine.
+   * @param sourcePath - the report's absolute source file path; its directory is the repository.
+   * @param source - the LaTeX source to write.
+   */
+  async writeSource(sourcePath: string, source: string): Promise<void> {
+    const dir = dirname(sourcePath)
+    await mkdir(dir, { recursive: true })
+    await this.ensureVersionStore(dir)
+    await writeFile(sourcePath, source, 'utf8')
+  }
+
+  /**
+   * Resolve the report's produced PDF path, when one exists.
+   * @param sourcePath - the report's absolute source file path.
    * @returns the absolute PDF path, or `undefined` when it has not been compiled.
    */
-  async pdfPath(reportId: string): Promise<string | undefined> {
-    const path = join(this.artifactRoot, assertSafeSegment(reportId), 'main.pdf')
+  async pdfPath(sourcePath: string): Promise<string | undefined> {
+    const stem = sourcePath.endsWith('.tex') ? sourcePath.slice(0, -4) : sourcePath
+    const path = `${stem}.pdf`
     return await this.exists(path) ? path : undefined
   }
 
   /**
-   * Record one version snapshot of a report's compiled source as a git commit.
-   * The artifact directory is initialised as a repository on first use, and the
-   * commit message carries the configured compile command in its body.
-   * @param reportId - the report's safe id.
+   * Record one version snapshot of a report's compiled source as a git commit
+   * in the report's repository. The commit message carries the configured
+   * compile command in its body.
+   * @param sourcePath - the report's absolute source file path; its directory is the repository.
    * @param label - human-readable commit subject.
    * @returns the commit hash that identifies the version.
    */
-  async commitVersion(reportId: string, label: string): Promise<string> {
-    const dir = this.requireDir(reportId)
+  async commitVersion(sourcePath: string, label: string): Promise<string> {
+    const dir = dirname(sourcePath)
     await this.ensureVersionStore(dir)
-    await this.git(dir, ['add', 'main.tex'])
+    await this.git(dir, ['add', basename(sourcePath)])
     await this.gitWithAuthor(dir, ['commit', '-m', label, '-m', `${COMMAND_MARKER}${this.command}`])
     const result = await this.git(dir, ['rev-parse', 'HEAD'])
     return result.trim()
@@ -162,11 +178,11 @@ export class LatexCompileService extends Service {
 
   /**
    * List a report's version snapshots, newest first, from the git history.
-   * @param reportId - the report's safe id.
+   * @param sourcePath - the report's absolute source file path; its directory is the repository.
    * @returns ordered git-backed versions; empty when never compiled.
    */
-  async listVersions(reportId: string): Promise<GitVersion[]> {
-    const dir = this.requireDir(reportId)
+  async listVersions(sourcePath: string): Promise<GitVersion[]> {
+    const dir = dirname(sourcePath)
     if (!(await this.isDirectory(join(dir, '.git')))) return []
     const result = await this.git(dir, ['log', '-z', '--format=%H%x1f%ct%x1f%B'])
     return result.split('\0').filter(Boolean).map(raw => {
@@ -185,15 +201,15 @@ export class LatexCompileService extends Service {
   /**
    * Branch from an earlier version, keep the original branch, and switch the
    * working source to that version's content.
-   * @param reportId - the report's safe id.
+   * @param sourcePath - the report's absolute source file path; its directory is the repository.
    * @param versionId - the commit hash to branch from.
    * @param branchName - new branch name; must not already exist.
-   * @returns the version's source (`main.tex`) now checked out on the branch.
+   * @returns the version's source now checked out on the branch.
    */
-  async restoreVersion(reportId: string, versionId: string, branchName: string): Promise<string> {
-    const dir = this.requireDir(reportId)
+  async restoreVersion(sourcePath: string, versionId: string, branchName: string): Promise<string> {
+    const dir = dirname(sourcePath)
     if (!(await this.isDirectory(join(dir, '.git')))) {
-      throw new Error(`latex-compile: report '${reportId}' has no version history`)
+      throw new Error(`latex-compile: source '${sourcePath}' has no version history`)
     }
     const existing = await this.git(dir, ['branch', '--list', branchName])
     if (existing.trim().length > 0) {
@@ -201,28 +217,24 @@ export class LatexCompileService extends Service {
     }
     await this.git(dir, ['branch', branchName, versionId])
     await this.git(dir, ['checkout', '-q', branchName])
-    return await this.readSourceIn(dir)
+    return await this.readSourceIn(sourcePath)
   }
 
   /**
    * Read a report's current working source.
-   * @param reportId - the report's safe id.
-   * @returns the `main.tex` contents, or an empty string when absent.
+   * @param sourcePath - the report's absolute source file path.
+   * @returns the file contents, or an empty string when absent.
    */
-  async readSource(reportId: string): Promise<string> {
-    return await this.readSourceIn(this.requireDir(reportId))
+  async readSource(sourcePath: string): Promise<string> {
+    return await this.readSourceIn(sourcePath)
   }
 
-  private async readSourceIn(dir: string): Promise<string> {
+  private async readSourceIn(sourcePath: string): Promise<string> {
     try {
-      return await readFile(join(dir, 'main.tex'), 'utf8')
+      return await readFile(sourcePath, 'utf8')
     } catch {
       return ''
     }
-  }
-
-  private requireDir(reportId: string): string {
-    return join(this.artifactRoot, assertSafeSegment(reportId))
   }
 
   private async ensureVersionStore(dir: string): Promise<void> {

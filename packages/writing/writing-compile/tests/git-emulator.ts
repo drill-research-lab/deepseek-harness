@@ -8,6 +8,7 @@ export const COMMAND_MARKER = 'command: '
 export interface GitState {
   readonly commits: GitCommit[]
   readonly branches: GitBranch[]
+  readonly added: Map<string, string>
 }
 
 export interface GitCommit {
@@ -26,7 +27,7 @@ export interface GitBranch {
 }
 
 export function createGitState(): GitState {
-  return { commits: [], branches: [] }
+  return { commits: [], branches: [], added: new Map() }
 }
 
 /**
@@ -48,18 +49,23 @@ export function runGit(state: GitState, cwd: string, argv: string[]): string {
     case 'init':
       mkdirSync(join(cwd, '.git'), { recursive: true })
       return ''
-    case 'add': return ''
+    case 'add': {
+      const file = rest[0]
+      if (file !== undefined) state.added.set(cwd, file)
+      return ''
+    }
     case 'commit': {
       const marker = rest.indexOf('-m')
       const label = rest[marker + 1] ?? ''
       const body = rest[marker + 3] ?? ''
       const command = body.startsWith(COMMAND_MARKER) ? body.slice(COMMAND_MARKER.length) : ''
+      const sourceFile = state.added.get(cwd) ?? 'main.tex'
       state.commits.push({
         dir: cwd,
         hash: `g${state.commits.length + 1}`,
         label,
         command,
-        source: readFileSync(join(cwd, 'main.tex'), 'utf8'),
+        source: readFileSync(join(cwd, sourceFile), 'utf8'),
         epoch: Math.floor(Date.now() / 1000),
       })
       return ''
@@ -82,7 +88,10 @@ export function runGit(state: GitState, cwd: string, argv: string[]): string {
       const branchName = rest[rest.length - 1]
       const branch = state.branches.find(candidate => candidate.dir === cwd && candidate.name === branchName)
       const commit = branch === undefined ? undefined : state.commits.find(candidate => candidate.dir === cwd && candidate.hash === branch.hash)
-      if (commit !== undefined) writeFileSync(join(cwd, 'main.tex'), commit.source, 'utf8')
+      if (commit !== undefined) {
+        const sourceFile = state.added.get(cwd) ?? 'main.tex'
+        writeFileSync(join(cwd, sourceFile), commit.source, 'utf8')
+      }
       return ''
     }
     default: return ''

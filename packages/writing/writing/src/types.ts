@@ -29,8 +29,10 @@ export interface Report {
   readonly title: string
   /** Template that seeded the initial source, never rewritten afterwards. */
   readonly templateId: TemplateId
-  /** Current LaTeX source text. */
+  /** Current LaTeX source text (UI snapshot; the file under `workspaceDir` is authoritative). */
   readonly source: string
+  /** Session workspace directory holding the report's source file + git repository. */
+  readonly workspaceDir: string
   /** ISO-8601 creation instant. */
   readonly createdAt: string
   /** ISO-8601 instant of the last durable mutation. */
@@ -86,6 +88,8 @@ export interface CreateReportRequest {
   readonly templateId?: TemplateId
   /** Explicit initial source; wins over the template source. */
   readonly source?: string
+  /** Session workspace directory holding the report's source file + git repository. */
+  readonly workspaceDir?: string
 }
 
 /** An add-template request: a display name and the LaTeX template source. */

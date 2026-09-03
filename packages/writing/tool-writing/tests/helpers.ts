@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+﻿import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -100,8 +100,7 @@ export async function setupHarness(
     await ctx.plugin(LatexCompileService, {
       command: 'pdflatex -interaction=nonstopmode -halt-on-error',
       timeoutMs: 1000,
-      artifactRoot: join(root, 'artifacts'),
-      authorName: 'test',
+            authorName: 'test',
       authorEmail: 'test@deepseek.ai',
     })
     await ctx.plugin(SystemPrompt)

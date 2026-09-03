@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { parseLatexLog } from '../src/index.ts'
 import { setupHarness, writeArtifacts, outputRun, type TestHarness } from './helpers.ts'
@@ -16,22 +17,19 @@ afterEach(async () => {
   await Promise.all(harnesses.splice(0).map(value => value.dispose()))
 })
 
-describe('LatexCompileService', () => {
-  it('rejects a report id that is not a safe path segment', async () => {
-    const { ctx } = await harness()
-    await expect(ctx.latexCompile.compile({ reportId: '../escape', source: 'x' }))
-      .rejects.toThrow(/safe path segment/)
-    await expect(ctx.latexCompile.compile({ reportId: 'a/b', source: 'x' }))
-      .rejects.toThrow(/safe path segment/)
-  })
+/** Build a report's absolute source path (a `main.tex` in a per-report dir). */
+function src(root: string, name: string): string {
+  return join(root, 'artifacts', name, 'main.tex')
+}
 
+describe('LatexCompileService', () => {
   it('compiles cleanly and reports the produced PDF', async () => {
-    const { ctx, subprocess } = await harness({
+    const { ctx, subprocess, root } = await harness({
       onRun: async (workdir) => {
         await writeArtifacts(workdir, { log: '', pdf: true })
       },
     })
-    const output = await ctx.latexCompile.compile({ reportId: 'report-a', source: '\\documentclass{article}' })
+    const output = await ctx.latexCompile.compile({ reportId: 'report-a', sourcePath: src(root, 'report-a'), source: '\\documentclass{article}' })
     expect(output.ok).toBe(true)
     expect(output.diagnostics).toEqual([])
     expect(output.pdfPath).toBeDefined()
@@ -39,36 +37,36 @@ describe('LatexCompileService', () => {
   })
 
   it('returns exit-code failures with a nonzero os as not ok', async () => {
-    const { ctx, subprocess } = await harness()
+    const { ctx, subprocess, root } = await harness()
     subprocess.outcomes = [outputRun({ exitCode: 1 })]
-    const output = await ctx.latexCompile.compile({ reportId: 'report-b', source: 'x' })
+    const output = await ctx.latexCompile.compile({ reportId: 'report-b', sourcePath: src(root, 'report-b'), source: 'x' })
     expect(output.ok).toBe(false)
     expect(output.pdfPath).toBeUndefined()
   })
 
   it('flags an error diagnostic even when the engine exits 0', async () => {
-    const { ctx } = await harness({
+    const { ctx, root } = await harness({
       onRun: async (workdir) => {
         await writeArtifacts(workdir, {
           log: '! Package babel Error: language not defined.\nl.7 \\usepackage[english]{babel}',
         })
       },
     })
-    const output = await ctx.latexCompile.compile({ reportId: 'report-c', source: 'x' })
+    const output = await ctx.latexCompile.compile({ reportId: 'report-c', sourcePath: src(root, 'report-c'), source: 'x' })
     expect(output.ok).toBe(false)
     expect(output.diagnostics[0]?.severity).toBe('error')
     expect(output.diagnostics[0]?.line).toBe(7)
   })
 
   it('reports warnings alongside an otherwise clean build', async () => {
-    const { ctx } = await harness({
+    const { ctx, root } = await harness({
       onRun: async (workdir) => {
         await writeArtifacts(workdir, {
           log: 'LaTeX Warning: Reference `x\' on page 1 undefined on input line 9.\nOverfull \\hbox (10.0pt too wide) in paragraph at lines 12--13',
         })
       },
     })
-    const output = await ctx.latexCompile.compile({ reportId: 'report-d', source: 'x' })
+    const output = await ctx.latexCompile.compile({ reportId: 'report-d', sourcePath: src(root, 'report-d'), source: 'x' })
     expect(output.diagnostics.length).toBe(2)
     expect(output.diagnostics.every(diagnostic => diagnostic.severity === 'warning')).toBe(true)
   })
@@ -105,21 +103,21 @@ describe('parseLatexLog', () => {
 
 describe('delivery PDF path', () => {
   it('is undefined before compile and resolves after a successful one', async () => {
-    const { ctx } = await harness()
-    expect(await ctx.latexCompile.pdfPath('report-e')).toBeUndefined()
+    const { ctx, root } = await harness()
+    expect(await ctx.latexCompile.pdfPath(src(root, 'report-e'))).toBeUndefined()
 
     const another = await harness({
       onRun: async (workdir) => { await writeArtifacts(workdir, { log: '', pdf: true }) },
     })
-    const output = await another.ctx.latexCompile.compile({ reportId: 'report-e', source: 'x' })
+    const output = await another.ctx.latexCompile.compile({ reportId: 'report-e', sourcePath: src(another.root, 'report-e'), source: 'x' })
     expect(output.ok).toBe(true)
-    expect(await another.ctx.latexCompile.pdfPath('report-e')).toBe(output.pdfPath)
+    expect(await another.ctx.latexCompile.pdfPath(src(another.root, 'report-e'))).toBe(output.pdfPath)
   })
 
   it('forwards an abort signal to the subprocess request', async () => {
-    const { ctx, subprocess } = await harness()
+    const { ctx, subprocess, root } = await harness()
     const signal = new AbortController().signal
-    await ctx.latexCompile.compile({ reportId: 'report-sig', source: 'x', signal })
+    await ctx.latexCompile.compile({ reportId: 'report-sig', sourcePath: src(root, 'report-sig'), source: 'x', signal })
     expect(subprocess.spawned[0]?.signal).toBe(signal)
   })
 

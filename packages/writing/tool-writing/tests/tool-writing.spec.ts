@@ -4,11 +4,19 @@ import { CallId } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { ReportId } from '@deepseek-ai/dsh-writing'
+import { reportSourcePath } from '@deepseek-ai/dsh-writing-compile'
 import { setupHarness, writeArtifacts, outputRun, type TestHarness } from './helpers.ts'
 
 const harnesses: TestHarness[] = []
 const testSignal = new AbortController().signal
 let callCounter = 0
+
+/** Resolve a report's source file path from its durable record. */
+function sourcePathOf(ctx: Context, reportId: string): string {
+  const report = ctx.reports.get(ReportId(reportId))
+  if (report === undefined) throw new Error(`missing report ${reportId}`)
+  return reportSourcePath(report.workspaceDir, report.title).sourcePath
+}
 
 async function harness(
   options: { readonly maxReadChars?: number; readonly onRun?: (workdir: string) => void | Promise<void> } = {},
@@ -102,7 +110,7 @@ describe('dsh-tool-writing', () => {
     expect(value.ok).toBe(false)
     expect(value.diagnostics.length).toBe(1)
     expect(value.versionCreated).toBe(false)
-    expect(await ctx.latexCompile.listVersions(reportId)).toHaveLength(0)
+    expect(await ctx.latexCompile.listVersions(sourcePathOf(ctx, reportId))).toHaveLength(0)
     expect(text(result)).toContain('failed to compile')
   })
 
@@ -118,7 +126,7 @@ describe('dsh-tool-writing', () => {
     expect(value.ok).toBe(true)
     expect(value.versionCreated).toBe(true)
     expect(text(compiled)).toContain('compiled successfully')
-    expect(await ctx.latexCompile.listVersions(reportId)).toHaveLength(1)
+    expect(await ctx.latexCompile.listVersions(sourcePathOf(ctx, reportId))).toHaveLength(1)
 
     const listed = await okValue(ctx, 'report_versions', { reportId })
     const versions = listed.versions as { id: string; label: string }[]

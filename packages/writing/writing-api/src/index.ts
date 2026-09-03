@@ -13,6 +13,7 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { ReportId, TemplateId } from '@deepseek-ai/dsh-writing'
 import type { Report, ReportTemplate } from '@deepseek-ai/dsh-writing'
 import type { CompileOutput, GitVersion } from '@deepseek-ai/dsh-writing-compile'
+import { reportSourcePath } from '@deepseek-ai/dsh-writing-compile'
 import type {} from '@deepseek-ai/dsh-writing-compile'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-auth'
@@ -81,9 +82,12 @@ export class WritingGateway extends TypertRemoteService {
    * @returns the projected report, or `undefined` when unknown.
    */
   @Remote('get')
-  get(request: GetReportRequest): ReportView | undefined {
+  async get(request: GetReportRequest): Promise<ReportView | undefined> {
     const report = this.ctx.reports.get(ReportId(request.reportId))
-    return report === undefined ? undefined : reportView(report)
+    if (report === undefined) return undefined
+    const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
+    const source = await this.ctx.latexCompile.readSource(sourcePath)
+    return reportView({ ...report, source })
   }
 
   /**
@@ -97,7 +101,10 @@ export class WritingGateway extends TypertRemoteService {
       title: request.title,
       ...(request.templateId === undefined ? {} : { templateId: TemplateId(request.templateId) }),
       ...(request.source === undefined ? {} : { source: request.source }),
+      workspaceDir: request.workspaceDir ?? '',
     })
+    const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
+    await this.ctx.latexCompile.writeSource(sourcePath, report.source)
     return reportView(report)
   }
 
@@ -108,6 +115,10 @@ export class WritingGateway extends TypertRemoteService {
    */
   @Remote('updateContent')
   async updateContent(request: UpdateContentRequest): Promise<ReportView> {
+    const report = this.ctx.reports.get(ReportId(request.reportId))
+    if (report === undefined) throw new Error(`unknown report '${request.reportId}'`)
+    const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
+    await this.ctx.latexCompile.writeSource(sourcePath, request.source)
     return reportView(await this.ctx.reports.updateContent(ReportId(request.reportId), request.source))
   }
 
@@ -140,14 +151,19 @@ export class WritingGateway extends TypertRemoteService {
   async compile(request: CompileRequest): Promise<CompileResultView> {
     const report = this.ctx.reports.get(ReportId(request.reportId))
     if (report === undefined) throw new Error(`unknown report '${request.reportId}'`)
-    const output = await this.ctx.latexCompile.compile({ reportId: request.reportId, source: report.source })
+    const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
+    const output = await this.ctx.latexCompile.compile({
+      reportId: request.reportId,
+      sourcePath,
+      source: report.source,
+    })
     let versionCreated = false
     if (output.ok && request.snapshot !== false) {
-      const count = (await this.ctx.latexCompile.listVersions(request.reportId)).length + 1
-      await this.ctx.latexCompile.commitVersion(request.reportId, `successful compile #${count}`)
+      const count = (await this.ctx.latexCompile.listVersions(sourcePath)).length + 1
+      await this.ctx.latexCompile.commitVersion(sourcePath, `successful compile #${count}`)
       versionCreated = true
     }
-    const compilerMessage = output.ok ? undefined : compilerMessageOf(output)
+    const compilerMessage = output.ok ? undefined : compilerMessageOf(sourcePath, output)
     return {
       ok: output.ok,
       diagnostics: output.diagnostics.map(diagnostic => ({
@@ -168,7 +184,10 @@ export class WritingGateway extends TypertRemoteService {
    */
   @Remote('versions')
   async versions(request: VersionsRequest): Promise<ReportVersionView[]> {
-    return (await this.ctx.latexCompile.listVersions(request.reportId)).map(version => versionView(request.reportId, version))
+    const report = this.ctx.reports.get(ReportId(request.reportId))
+    if (report === undefined) return []
+    const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
+    return (await this.ctx.latexCompile.listVersions(sourcePath)).map(version => versionView(request.reportId, version))
   }
 
   /**
@@ -179,7 +198,10 @@ export class WritingGateway extends TypertRemoteService {
    */
   @Remote('restore')
   async restore(request: RestoreRequest): Promise<ReportView> {
-    const source = await this.ctx.latexCompile.restoreVersion(request.reportId, request.versionId, request.branch)
+    const report = this.ctx.reports.get(ReportId(request.reportId))
+    if (report === undefined) throw new Error(`unknown report '${request.reportId}'`)
+    const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
+    const source = await this.ctx.latexCompile.restoreVersion(sourcePath, request.versionId, request.branch)
     return reportView(await this.ctx.reports.updateContent(ReportId(request.reportId), source))
   }
 
@@ -220,7 +242,14 @@ export class WritingGateway extends TypertRemoteService {
       return
     }
     try {
-      const pdfPath = await this.ctx.latexCompile.pdfPath(segments[1] as string)
+      const report = this.ctx.reports.get(ReportId(segments[1] as string))
+      if (report === undefined) {
+        res.writeHead(404)
+        res.end('not found')
+        return
+      }
+      const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
+      const pdfPath = await this.ctx.latexCompile.pdfPath(sourcePath)
       if (pdfPath === undefined) {
         res.writeHead(404)
         res.end('not found')
@@ -269,13 +298,11 @@ function versionView(reportId: string, version: GitVersion): ReportVersionView {
   }
 }
 
-/** The compiled report source file the compiler reports errors against. */
-const COMPILE_SOURCE_FILE = 'main.tex'
-
-/** Trim, cap, and prefix the raw compiler console output with the source file name. */
-function compilerMessageOf(output: CompileOutput): string | undefined {
+/** Trim, cap, and prefix the raw compiler console output with the absolute source path. */
+function compilerMessageOf(sourcePath: string, output: CompileOutput): string | undefined {
   const raw = output.stdout.trim() || output.stderr.trim()
-  return raw.length === 0 ? undefined : `${COMPILE_SOURCE_FILE}\n${raw.slice(0, 4000)}`
+  if (raw.length === 0) return undefined
+  return `${sourcePath}\n${raw.slice(0, 4000)}`
 }
 
 /** Project a template entity to its wire view. */

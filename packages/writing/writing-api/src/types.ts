@@ -63,6 +63,8 @@ export interface CreateReportRequest {
   readonly title: string
   readonly templateId?: string
   readonly source?: string
+  /** Session workspace directory holding the report's source file + git repository. */
+  readonly workspaceDir?: string
 }
 
 /** Request payload for a content write. */

@@ -40,7 +40,8 @@ describe('WritingGateway public contract', () => {
     expect(created.reportId).toBeTruthy()
     expect(created.source).toContain('\\documentclass')
     expect(ctx.writing.list().length).toBe(1)
-    expect(ctx.writing.get({ reportId: created.reportId })?.title).toBe('My Paper')
+    const fetched = await ctx.writing.get({ reportId: created.reportId })
+    expect(fetched?.title).toBe('My Paper')
   })
 
   it('updates content and renames', async () => {
@@ -69,7 +70,7 @@ describe('WritingGateway public contract', () => {
     expect(root).toBeTruthy()
   })
 
-  it('prefixes the compiler message with the source file name', async () => {
+  it('prefixes the compiler message with the absolute source file path', async () => {
     const { ctx, subprocess } = await harness({
       onRun: async (workdir) => { await writeArtifacts(workdir, { log: '! Undefined control sequence.\nl.5 \\foo', pdf: true }) },
     })
@@ -77,7 +78,8 @@ describe('WritingGateway public contract', () => {
     const created = await ctx.writing.create({ title: 'A', source: '\\foo' })
     const result = await ctx.writing.compile({ reportId: created.reportId })
     expect(result.ok).toBe(false)
-    expect(result.compilerMessage).toMatch(/^main\.tex\n/)
+    const firstLine = result.compilerMessage?.split('\n')[0]
+    expect(firstLine).toMatch(/main\.tex$/)
     expect(result.compilerMessage).toContain('Undefined control sequence')
   })
 
@@ -130,7 +132,7 @@ describe('WritingGateway public contract', () => {
 describe('WritingGateway edge cases', () => {
   it('returns undefined for an unknown report', async () => {
     const { ctx } = await harness()
-    expect(ctx.writing.get({ reportId: 'missing' })).toBeUndefined()
+    expect(await ctx.writing.get({ reportId: 'missing' })).toBeUndefined()
   })
 
   it('creates a report from a named template', async () => {

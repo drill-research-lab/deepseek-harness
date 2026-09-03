@@ -85,7 +85,6 @@ export async function setupHarness(
 ): Promise<TestHarness> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-writing-compile-test-'))
   const ctx = new Context()
-  const artifactRoot = join(root, 'artifacts')
   try {
     await ctx.plugin(FakeSubprocessRuntime)
     const subprocess = ctx.subprocess as unknown as FakeSubprocessRuntime
@@ -95,7 +94,6 @@ export async function setupHarness(
     await ctx.plugin(LatexCompileService, {
       command: 'pdflatex -interaction=nonstopmode -halt-on-error',
       timeoutMs: 1000,
-      artifactRoot,
       authorName: 'test',
       authorEmail: 'test@deepseek.ai',
     })

@@ -9,6 +9,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { ReportId as reportId, TemplateId as templateId } from '@deepseek-ai/dsh-writing'
+import { reportSourcePath } from '@deepseek-ai/dsh-writing-compile'
 
 export type {} from '@deepseek-ai/dsh-writing'
 export type {} from '@deepseek-ai/dsh-writing-compile'
@@ -103,15 +104,17 @@ export function apply(ctx: Context, config: Config): void {
     },
     execute: async (args, exec) => {
       const report = await ctx.reports.updateContent(reportId(args.reportId), args.source)
+      const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
       const output = await ctx.latexCompile.compile({
         reportId: args.reportId,
+        sourcePath,
         source: report.source,
         ...(exec.signal === undefined ? {} : { signal: exec.signal }),
       })
       let compiled = false
       if (output.ok) {
-        const count = (await ctx.latexCompile.listVersions(args.reportId)).length + 1
-        await ctx.latexCompile.commitVersion(args.reportId, `successful compile #${count}`)
+        const count = (await ctx.latexCompile.listVersions(sourcePath)).length + 1
+        await ctx.latexCompile.commitVersion(sourcePath, `successful compile #${count}`)
         compiled = true
       }
       return { reportId: String(report.id), chars: report.source.length, updatedAt: report.updatedAt, compiled }
@@ -148,11 +151,12 @@ export function apply(ctx: Context, config: Config): void {
       const source = report.source
       const truncated = source.length > config.maxReadChars
       const clipped = truncated ? source.slice(0, config.maxReadChars) : source
+      const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
       return {
         reportId: String(report.id),
         source: clipped,
         truncated,
-        versionCount: (await ctx.latexCompile.listVersions(args.reportId)).length,
+        versionCount: (await ctx.latexCompile.listVersions(sourcePath)).length,
       }
     },
     presentCall: args => ({ card: 'generic', title: 'Read report source', kind: 'read', rawInput: args.reportId }),
@@ -195,8 +199,10 @@ export function apply(ctx: Context, config: Config): void {
     },
     execute: async (args, exec) => {
       const report = requireReport(ctx, reportId(args.reportId))
+      const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
       const output = await ctx.latexCompile.compile({
         reportId: args.reportId,
+        sourcePath,
         source: report.source,
         ...(exec.signal === undefined ? {} : { signal: exec.signal }),
       })
@@ -207,8 +213,8 @@ export function apply(ctx: Context, config: Config): void {
       }))
       let versionCreated = false
       if (output.ok) {
-        const count = (await ctx.latexCompile.listVersions(args.reportId)).length + 1
-        await ctx.latexCompile.commitVersion(args.reportId, `successful compile #${count}`)
+        const count = (await ctx.latexCompile.listVersions(sourcePath)).length + 1
+        await ctx.latexCompile.commitVersion(sourcePath, `successful compile #${count}`)
         versionCreated = true
       }
       return { reportId: String(report.id), ok: output.ok, diagnostics, versionCreated }
@@ -248,7 +254,9 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [text(versionsText(value.versions))],
     },
     execute: async (args) => {
-      const versions = await ctx.latexCompile.listVersions(args.reportId)
+      const report = requireReport(ctx, reportId(args.reportId))
+      const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
+      const versions = await ctx.latexCompile.listVersions(sourcePath)
       return {
         versions: versions.map(version => ({
           id: version.versionId,
@@ -286,9 +294,11 @@ export function apply(ctx: Context, config: Config): void {
     },
     execute: async (args) => {
       const id = reportId(args.reportId)
-      const source = await ctx.latexCompile.restoreVersion(args.reportId, args.versionId, args.branch)
-      const report = await ctx.reports.updateContent(id, source)
-      return { reportId: String(report.id), branch: args.branch, source: report.source }
+      const report = requireReport(ctx, id)
+      const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
+      const source = await ctx.latexCompile.restoreVersion(sourcePath, args.versionId, args.branch)
+      const updated = await ctx.reports.updateContent(id, source)
+      return { reportId: String(updated.id), branch: args.branch, source: updated.source }
     },
     presentCall: args => ({ card: 'generic', title: `Restore report ${args.reportId}`, kind: 'edit', rawInput: args.versionId }),
   }))

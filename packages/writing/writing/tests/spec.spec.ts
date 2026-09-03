@@ -12,6 +12,7 @@ describe('writing domain spec schemas', () => {
       title: 'My Paper',
       templateId: 'builtin:article',
       source: '\\documentclass{article}',
+      workspaceDir: '/workspace',
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
     })
@@ -46,6 +47,7 @@ describe('writing domain spec schemas', () => {
       title: 't',
       templateId: '',
       source: 'x',
+      workspaceDir: '',
       createdAt: 'x',
       updatedAt: 'x',
     })).toThrow()

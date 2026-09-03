@@ -141,7 +141,6 @@ export async function setupHarness(
     await ctx.plugin(LatexCompileService, {
       command: 'pdflatex -interaction=nonstopmode -halt-on-error',
       timeoutMs: 1000,
-      artifactRoot: join(root, 'artifacts'),
       authorName: 'test',
       authorEmail: 'test@deepseek.ai',
     })
