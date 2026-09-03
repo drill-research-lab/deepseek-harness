@@ -65,8 +65,8 @@ export interface SidebarReportsInjected {
   createReport(title: string, workspaceDir: string): Promise<void>
   /** Write the report list into the shared source. */
   setReports(reports: ReportSummaryView[]): void
-  /** Write the selected report id into the shared source. */
-  select(reportId: string): void
+  /** Write the selected report id into the shared source; `undefined` clears it. */
+  select(reportId: string | undefined): void
   /** Open the writing view for a session (switches its active conversation view). */
   openWriting(sessionId: SessionId): void
   /** Report list + selection observable, bound to `useReportSelection`. */

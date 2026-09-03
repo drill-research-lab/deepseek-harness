@@ -30,8 +30,15 @@ export function SidebarReports(props: SidebarReportsProps): JSX.Element {
   const heightRef = useRef(DEFAULT_HEIGHT)
   heightRef.current = height
 
+  const prevCwd = useRef<string | undefined>(undefined)
   useEffect(() => {
     if (cwd === undefined) return
+    if (cwd !== prevCwd.current) {
+      prevCwd.current = cwd
+      // A workspace change must not keep the previous workspace's loaded report.
+      select(undefined)
+      setReports([])
+    }
     let active = true
     void (async () => {
       const listed = await listReports(cwd)
@@ -39,7 +46,7 @@ export function SidebarReports(props: SidebarReportsProps): JSX.Element {
       setReports(listed)
     })()
     return () => { active = false }
-  }, [listReports, setReports, cwd])
+  }, [listReports, setReports, select, cwd])
 
   const onResizeStart = (event: React.PointerEvent<HTMLDivElement>): void => {
     event.preventDefault()
