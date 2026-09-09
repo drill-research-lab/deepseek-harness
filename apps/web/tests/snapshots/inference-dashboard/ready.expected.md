@@ -1,0 +1,101 @@
+- dialog "设置":
+  - navigation:
+    - text: 设置
+    - button "通用设置":
+      - img
+      - text: 通用设置
+    - button "模型":
+      - img
+      - text: 模型
+    - button "插件":
+      - img
+      - text: 插件
+    - button "推理状态":
+      - img
+      - text: 推理状态
+    - button "Agent 预设":
+      - img
+      - text: Agent 预设
+  - button "打开配置文件"
+  - button "关闭":
+    - img
+    - text: 关闭
+  - region "模型运行状态":
+    - heading "模型运行状态" [level=2]
+    - paragraph: 按 SparkDash LLM 面板呈现当前 vLLM 服务状态。
+    - text: 在线 · 更新时间 {{clock}}
+    - article "LLM 运行指标":
+      - text: vLLM
+      - strong: test-model
+      - text: Generation tok/s
+      - strong: "0.0"
+      - text: Prefill tok/s
+      - strong: "0.0"
+      - text: Slots
+      - strong: 2 运行中
+      - text: Context
+      - strong: 128,000
+      - text: Engine
+      - text: "Engine: Active 表示引擎可处理请求；Sleeping 表示权重已卸载；Discarded 表示引擎缓存已清除。"
+      - strong: Active
+      - text: Total Generated
+      - strong: "345"
+      - text: KV Cache
+      - text: "KV Cache: 当前 KV cache 使用比例；达到 80% 通常表示新请求或长上下文的空间不足。"
+      - strong: 42.0%
+      - text: Requests
+      - text: "Requests: run 是正在 GPU 上生成的请求，wait 是已接受但尚未排程的请求。"
+      - strong: 2 run / 7 wait
+      - text: TTFT p95
+      - text: "TTFT p95: 历史请求首个输出 token 延迟的第 95 百分位。"
+      - strong: 0.875s
+      - text: Preempts
+      - text: "Preempts: 为了释放 KV cache 而暂停运行中请求的累计次数。"
+      - strong: "6"
+      - text: Prefix Cache
+      - text: "Prefix Cache: prefix-cache 查询的累计命中率。"
+      - strong: 75.0%
+      - text: E2E p95
+      - text: "E2E p95: 从请求抵达到完成的端到端延迟第 95 百分位。"
+      - strong: —
+      - text: ITL p95
+      - text: "ITL p95: 连续输出 token 之间延迟的第 95 百分位。"
+      - strong: —
+      - text: MTP Accept
+      - text: "MTP Accept: speculative/MTP draft token 的累计接受率。"
+      - strong: 60.0%
+      - paragraph: Requests 是整个 vLLM 部署的总量，不代表当前 DSH 任务的排队位置。
+  - region "资源":
+    - heading "资源" [level=2]
+    - text: 更新时间 {{clock}}
+    - article "GPU 资源":
+      - heading "⌁ GPU" [level=3]
+      - text: Usage
+      - strong: 12%
+      - text: Temperature
+      - strong: 47°C
+      - text: GPU Power
+      - strong: 9.94W / 120W
+      - text: Throttle
+      - strong: OK
+      - text: SM Clock
+      - strong: 2,190 / 3,003 MHz
+      - text: VRAM
+      - strong: 109.6 / 119.7 GB
+      - text: Available
+      - strong: 2.3 GB
+      - text: Processes VLLM::EngineCore 40781
+      - strong: 109.6 GB
+    - article "存储资源":
+      - heading "▣ Storage" [level=3]
+      - strong: /
+      - text: nvme0n1p2
+      - strong: 10%
+      - text: 378.8 GB / 3,755.0 GB 3,185.4 GB free ↑ 7.2 KB/s ↓ 0 B/s
+    - article "网络资源":
+      - heading "⌁ Network" [level=3]
+      - text: Primary
+      - strong: enP7s7
+      - strong: 1,000 Mbps
+      - strong: 192.168.101.70
+      - text: enP7s7 ↑ 2.7 KB/s　↓ 38.0 KB/s

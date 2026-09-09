@@ -63,7 +63,10 @@ import {
 import {
   credentialsDescribeRequestSchema, credentialsSetRequestSchema, credentialsUnsetRequestSchema,
 } from '../api/credentials.schema.ts'
-import { llmDiscoverModelsRequestSchema, llmModelsRequestSchema, llmProvidersRequestSchema } from '../api/llm.schema.ts'
+import {
+  llmDiscoverModelsRequestSchema, llmMetricsRequestSchema, llmModelsRequestSchema, llmProvidersRequestSchema,
+  llmResourcesRequestSchema,
+} from '../api/llm.schema.ts'
 import {
   subagentHistoryRequestSchema,
   subagentInterruptRequestSchema,
@@ -141,6 +144,8 @@ const UNARY_ROUTES: UnaryRoutes = {
   'credentials.unset': { schema: credentialsUnsetRequestSchema, invoke: (api, r) => api.credentials.unset(r) },
   'llm.providers': { schema: llmProvidersRequestSchema, invoke: (api, r) => api.llm.providers(r) },
   'llm.models': { schema: llmModelsRequestSchema, invoke: (api, r) => api.llm.models(r) },
+  'llm.metrics': { schema: llmMetricsRequestSchema, invoke: (api, r, signal) => api.llm.metrics(r, signal) },
+  'llm.resources': { schema: llmResourcesRequestSchema, invoke: (api, r, signal) => api.llm.resources(r, signal) },
   'llm.discoverModels': { schema: llmDiscoverModelsRequestSchema, invoke: (api, r, signal) => api.llm.discoverModels(r, signal) },
 }
 
@@ -169,15 +174,16 @@ function fullResponse(narrow: RpcResponse<unknown>): Response {
 }
 
 /**
- * Parse the payload and invoke one unary route. Generic over the map key so
- * the row's schema/invoke pairing typechecks; the only cast collapses the
- * Wire<> widening back to the exact payload (undefined-valued properties and
- * absent ones are indistinguishable after JSON transport).
+ * Parse the payload and invoke one unary route. The route table seals each
+ * schema/invoker pairing; its invoke face accepts the map-wide request union
+ * after JSON parsing.
  */
+// The method key must remain generic so the mapped route retains its request/response correlation.
+// oxlint-disable-next-line typescript/no-unnecessary-type-parameters
 async function handleUnary<K extends keyof RpcMethodMap>(
   api: ApiProxy, method: K, message: ClientRequest, signal: AbortSignal,
 ): Promise<Response> {
-  const route = UNARY_ROUTES[method]
+  const route: UnaryRoutes[K] = UNARY_ROUTES[method]
   const payload = route.schema.safeParse(message.payload)
   if (!payload.success) {
     return errorResponse(message.rpcId, { code: 'bad-request', message: `invalid payload for ${method}`, details: { issues: payload.error.issues } })

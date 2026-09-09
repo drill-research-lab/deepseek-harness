@@ -91,7 +91,7 @@ Source: [`packages/identity/auth/src/index.ts:26`](../../packages/identity/auth/
 
 Owns credential routes and identity-cookie signing in the authentication gateway process.
 
-Source: [`packages/identity/auth-gateway-ldap/src/index.ts:173`](../../packages/identity/auth-gateway-ldap/src/index.ts)
+Source: [`packages/identity/auth-gateway-ldap/src/index.ts:202`](../../packages/identity/auth-gateway-ldap/src/index.ts)
 
 <a id="ctxldapdirectory--ldapdirectory"></a>
 
