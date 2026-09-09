@@ -32,7 +32,7 @@ if (probe(launcher)) {
 }
 ```
 
-The CLI is `pid-isolate-run -- <argv>...`; `pid-isolate-run --probe` performs the full setup without executing a caller command. Launcher failures exit `125` and do not execute the command.
+The CLI is `pid-isolate-run [--bind <src> <dst>] [--mask <path>] [--chdir <path>] -- <argv>...`; the absolute bind destination and masked directory must already exist. The bind, empty tmpfs mask, and directory change occur only in the new private mount namespace before setup capabilities are removed. `pid-isolate-run --probe` performs the full setup without executing a caller command. Launcher failures exit `125` and do not execute the command.
 
 ## Packages and support
 

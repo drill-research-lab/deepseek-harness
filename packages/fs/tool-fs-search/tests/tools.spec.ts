@@ -202,6 +202,7 @@ interface SetupOptions {
   config?: Partial<ToolFsSearch.Config>
   spill?: boolean
   sandboxMode?: SandboxMode
+  workspaceViewRoot?: string
 }
 
 const DEFAULT_CONFIG = { sampleOverCapGlobResults: true } satisfies ToolFsSearch.Config
@@ -212,7 +213,10 @@ async function setup(options: SetupOptions = {}) {
   ctx.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof ctx.logger.warn
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
-  await ctx.plugin(SandboxPolicyService, { mode: options.sandboxMode ?? 'danger-full-access' })
+  await ctx.plugin(SandboxPolicyService, {
+    mode: options.sandboxMode ?? 'danger-full-access',
+    ...options.workspaceViewRoot === undefined ? {} : { workspaceViewRoot: options.workspaceViewRoot },
+  })
   await ctx.plugin(FakeSandbox)
   await ctx.plugin(FakeSubprocess)
   const subprocess = ctx.subprocess as FakeSubprocess
@@ -459,6 +463,33 @@ describe('workdir derivation and signal forwarding', () => {
     expect(subprocess.spawns[0]?.argv).toEqual([
       'fake-sandbox', '--', ...confinement!.argv,
     ])
+  })
+
+  it('accepts an explicit search root under workspaceViewRoot (maps it onto the real workspace root for containment)', async () => {
+    const { ctx, subprocess, sandbox } = await setup({ sandboxMode: 'workspace-write', workspaceViewRoot: '/workspace' })
+    subprocess.handler = () => runResult('a.ts\n')
+    const result = await call(
+      ctx,
+      'glob',
+      { pattern: '*', path: `${sep}workspace${sep}sub` },
+      { agent: agent(join(sep, 'sessions', 's1')) },
+    )
+    expect(result.isError).toBe(false)
+    // The confined ripgrep child keeps the view path in its argv (its mount
+    // namespace exposes exactly that path); only the in-process check translated.
+    expect(sandbox.calls[0]?.argv).toEqual(expect.arrayContaining(['--', `${sep}workspace${sep}sub`]))
+  })
+
+  it('still rejects an explicit search root outside both the view root and the real workspace', async () => {
+    const { ctx } = await setup({ sandboxMode: 'workspace-write', workspaceViewRoot: '/workspace' })
+    const result = await call(
+      ctx,
+      'glob',
+      { pattern: '*', path: join(sep, 'etc') },
+      { agent: agent(join(sep, 'sessions', 's1')) },
+    )
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('outside the active workspace')
   })
 
   it('defaults the stderr tail budget and grace period when the config omits them', async () => {

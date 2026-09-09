@@ -23,7 +23,7 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   LAUNCHER_BIN,
@@ -40,11 +40,12 @@ import {
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { assertNever } from '@deepseek-ai/dsh-llm'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { SandboxProvider, SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, ConfinedSandboxMode, RunnerFailureRule, SandboxEnforcement, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { AclWriteGrant, assertTempRootOutsideWorkspace, tempWriteSid, workspaceWriteSid } from '@deepseek-ai/dsh-sandbox-windows-acl'
-import { bwrapProfileArgs, landlockProfileArgs, seatbeltProfileArgs } from './profiles.ts'
+import { bwrapProfileArgs, landlockProfileArgs, LINUX_WORKSPACE_ROOT, seatbeltProfileArgs } from './profiles.ts'
 import {
   probeResourceLimits as defaultProbeResourceLimits,
   resolveResourceLimits,
@@ -74,6 +75,11 @@ export interface Config extends ResourceLimitConfig {
   runnerFailureSignatures?: string[]
   /** Positive timeout for each functional probe; zero would mean unbounded to Node. */
   probeTimeoutMs?: number
+  /**
+   * Deployment-owned root whose per-owner children are hidden after the workspace bind.
+   * An omitted or blank value uses `resolveDshHome()/owner-roots`.
+   */
+  workspaceStorageRoot?: string
 }
 
 /** Probe whether `bwrap` can create the profile; the provider caches the bounded result. */
@@ -282,6 +288,7 @@ export class LocalSandboxProvider extends SandboxProvider {
     runnerCommand: z.array(z.string()).default([]),
     runnerFailureSignatures: z.array(z.string()).default([]),
     probeTimeoutMs: z.natural().default(5_000),
+    workspaceStorageRoot: z.string().default(''),
     cpuQuotaPercent: z.number().min(Number.MIN_VALUE),
     memoryMaxBytes: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER),
     memorySwapMaxBytes: z.number().step(1).min(0).max(Number.MAX_SAFE_INTEGER),
@@ -296,6 +303,7 @@ export class LocalSandboxProvider extends SandboxProvider {
   private readonly runnerCommand: string[] | undefined
   private readonly configuredRunnerFailureSignatures: string[]
   private readonly probeTimeoutMs: number
+  private readonly workspaceStorageRoot: string | undefined
   private readonly resourceLimits: ResourceLimits | undefined
   /** Cached functional verdict for a configured resource-limit rung. */
   private resourceLimitsAvailable: boolean | undefined
@@ -331,6 +339,13 @@ export class LocalSandboxProvider extends SandboxProvider {
     this.configuredRunnerFailureSignatures = runnerFailureSignatures
     this.probeTimeoutMs = config.probeTimeoutMs as number
     assertPositiveFinite('probeTimeoutMs', this.probeTimeoutMs)
+    const workspaceStorageRoot = (config.workspaceStorageRoot as string).trim()
+    this.workspaceStorageRoot = workspaceStorageRoot.length === 0
+      ? join(resolveDshHome(), 'owner-roots')
+      : resolve(workspaceStorageRoot)
+    if (this.workspaceStorageRoot === '/') {
+      throw new Error('sandbox-local: workspaceStorageRoot must not be the filesystem root')
+    }
     this.resourceLimits = resolveResourceLimits(config)
     // The temp grants are revoked with the provider: a clean server
     // shutdown leaves no temp ACEs behind (workspace ACEs stand by design —
@@ -355,7 +370,7 @@ export class LocalSandboxProvider extends SandboxProvider {
   confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv {
     if (this.runnerCommand !== undefined) {
       return this.withResourceLimits({
-        argv: [...this.runnerCommand, ...bwrapProfileArgs(policy), '--', ...argv],
+        argv: [...this.runnerCommand, ...bwrapProfileArgs(policy, this.maskRoot(policy)), '--', ...argv],
         enforcement: 'full',
         denialSignatures: DENIAL_SIGNATURES.runnerCommand,
         runnerFailureRules: [{ fatalSignatures: this.configuredRunnerFailureSignatures }],
@@ -386,15 +401,31 @@ export class LocalSandboxProvider extends SandboxProvider {
   /** The selected rung's runner invocation (program + profile arguments) for one policy. */
   private runnerArgv(runner: SelectedRunner['runner'], policy: SandboxPolicy, argv: readonly string[]): string[] {
     switch (runner) {
-      case 'bwrap': return ['bwrap', ...bwrapProfileArgs(policy)]
-      case 'landlock-pid': return [
-        this.pidIsolateLauncher(), '--',
-        this.landlockLauncher(), ...landlockProfileArgs(policy, argv[0]),
-      ]
+      case 'bwrap': return ['bwrap', ...bwrapProfileArgs(policy, this.maskRoot(policy))]
+      case 'landlock-pid': {
+        const maskRoot = this.maskRoot(policy)
+        return [
+          this.pidIsolateLauncher(),
+          '--bind', policy.workspaceRoot, LINUX_WORKSPACE_ROOT,
+          ...maskRoot === undefined ? [] : ['--mask', maskRoot],
+          '--chdir', LINUX_WORKSPACE_ROOT,
+          '--',
+          this.landlockLauncher(), ...landlockProfileArgs(policy, argv[0]),
+        ]
+      }
       case 'seatbelt': return [this.seatbeltExec(), ...seatbeltProfileArgs(policy)]
       case 'windows-acl': return this.windowsAclRunnerArgv(policy)
       default: return assertNever(runner)
     }
+  }
+
+  /** Return the configured storage root only for one of its strict descendants. */
+  private maskRoot(policy: SandboxPolicy): string | undefined {
+    if (this.workspaceStorageRoot === undefined) return undefined
+    const child = relative(this.workspaceStorageRoot, resolve(policy.workspaceRoot))
+    return child.length > 0 && !child.startsWith('..') && !isAbsolute(child)
+      ? this.workspaceStorageRoot
+      : undefined
   }
 
   /**

@@ -8,7 +8,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { FsError } from '@deepseek-ai/dsh-fs'
 import type { FsInfo, FsTarget, FsWriteIntent } from '@deepseek-ai/dsh-fs'
-import { sandboxDenialMarker } from '@deepseek-ai/dsh-sandbox'
+import { fromWorkspaceView, sandboxDenialMarker, toWorkspaceView } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -89,12 +89,16 @@ async function resolveTarget(
   ctx: Context,
   path: string,
   signal: AbortSignal,
+  sandboxPolicy: SandboxExecutionPolicy | undefined,
 ): Promise<FsTarget> {
   if (path.trim().length === 0) throw new Error('path must be a non-empty string')
   if (!isAbsolute(path)) {
     throw new Error(`The path ${path} is not an absolute path, it should start with \`/\`. Maybe you meant /${path}?`)
   }
-  return ctx.fs.resolve(path, { signal })
+  // The model is told its workspace is `workspaceViewRoot` (`/workspace` on the
+  // local Linux composition); map that prefix onto the real workspace root the
+  // fence contains. Identity when the deployment sets no view root.
+  return ctx.fs.resolve(fromWorkspaceView(path, sandboxPolicy), { signal })
 }
 
 async function statExisting(
@@ -105,16 +109,17 @@ async function statExisting(
   sandboxPolicy: SandboxExecutionPolicy | undefined,
 ): Promise<FsInfo> {
   const info = await ctx.fs.stat(target, exec.signal, sandboxPolicy)
+  const shownPath = toWorkspaceView(target.displayPath, sandboxPolicy)
   if (info === undefined) {
     ctx.emit('fs/observed', target, { kind: 'absent' }, exec)
     throw new FsError(
-      `The path ${target.displayPath} does not exist. Please provide a valid path.`,
+      `The path ${shownPath} does not exist. Please provide a valid path.`,
       'FS_NOT_FOUND',
     )
   }
   if (info.type === 'directory' && command !== 'view') {
     throw new FsError(
-      `The path ${target.displayPath} is a directory and only the \`view\` command can be used on directories`,
+      `The path ${shownPath} is a directory and only the \`view\` command can be used on directories`,
       'FS_NOT_REGULAR_FILE',
     )
   }
@@ -198,21 +203,22 @@ async function listDirectory(
       && candidate.name !== 'node_modules'
       && candidate.name !== '__pycache__')) {
       const type = entry.type === 'directory' ? 'd' : entry.type === 'file' ? 'f' : '?'
-      rows.push(`${type}\t${entry.target.displayPath}`)
+      rows.push(`${type}\t${toWorkspaceView(entry.target.displayPath, sandboxPolicy)}`)
       if (entry.type === 'directory' && depth < 2) {
         rows.push(...await visit(entry.target, depth + 1))
       }
     }
     return rows
   }
-  const rows = [`d\t${target.displayPath}`, ...await visit(target, 1)]
+  const shownPath = toWorkspaceView(target.displayPath, sandboxPolicy)
+  const rows = [`d\t${shownPath}`, ...await visit(target, 1)]
   rows.sort((left, right) => {
     const leftPath = left.slice(left.indexOf('\t') + 1)
     const rightPath = right.slice(right.indexOf('\t') + 1)
     return codepointCompare(leftPath, rightPath)
   })
   const listing = maybeTruncate(rows.join('\n') + '\n', maxOutputChars)
-  return `Here're the files and directories up to 2 levels deep in ${target.displayPath}, excluding hidden items, node_modules, and Python cache directories:\n${listing}\n`
+  return `Here're the files and directories up to 2 levels deep in ${shownPath}, excluding hidden items, node_modules, and Python cache directories:\n${listing}\n`
 }
 
 async function viewPath(
@@ -224,7 +230,7 @@ async function viewPath(
   exec: ToolRunContext,
 ): Promise<string> {
   const sandboxPolicy = policy.resolve(exec)
-  const target = await resolveTarget(ctx, path, exec.signal)
+  const target = await resolveTarget(ctx, path, exec.signal, sandboxPolicy)
   const info = await statExisting(ctx, target, 'view', exec, sandboxPolicy)
   if (info.type === 'directory') {
     if (viewRange !== undefined) {
@@ -233,11 +239,14 @@ async function viewPath(
     return listDirectory(ctx, target, maxOutputChars, exec, sandboxPolicy)
   }
   if (info.type !== 'file') {
-    throw new FsError(`cannot view "${target.displayPath}": not a regular file or directory`, 'FS_NOT_REGULAR_FILE')
+    throw new FsError(
+      `cannot view "${toWorkspaceView(target.displayPath, sandboxPolicy)}": not a regular file or directory`,
+      'FS_NOT_REGULAR_FILE',
+    )
   }
   const content = await ctx.fs.readText(target, exec.signal, sandboxPolicy)
   ctx.emit('fs/observed', target, { kind: 'present', version: info.version }, exec)
-  return formatFileView(target.displayPath, content, maxOutputChars, viewRange)
+  return formatFileView(toWorkspaceView(target.displayPath, sandboxPolicy), content, maxOutputChars, viewRange)
 }
 
 async function createFile(
@@ -249,9 +258,9 @@ async function createFile(
 ): Promise<string> {
   const content = requiredForCommand(fileText, 'file_text', 'create')
   const sandboxPolicy = policy.resolve(exec)
-  const target = await resolveTarget(ctx, path, exec.signal)
+  const target = await resolveTarget(ctx, path, exec.signal, sandboxPolicy)
   if (await ctx.fs.stat(target, exec.signal, sandboxPolicy) !== undefined) {
-    throw new Error(`File already exists at: ${target.displayPath}. Cannot overwrite files using command \`create\`.`)
+    throw new Error(`File already exists at: ${toWorkspaceView(target.displayPath, sandboxPolicy)}. Cannot overwrite files using command \`create\`.`)
   }
   const intent = await ctx.waterfall(
     'fs/write-intent',
@@ -272,7 +281,7 @@ async function createFile(
     throw policy.mapError(error, sandboxPolicy)
   }
   ctx.emit('fs/observed', target, { kind: 'present', version: outcome.version }, exec)
-  return `New file created successfully at: ${target.displayPath}`
+  return `New file created successfully at: ${toWorkspaceView(target.displayPath, sandboxPolicy)}`
 }
 
 async function replaceInFile(
@@ -284,20 +293,21 @@ async function replaceInFile(
   exec: ToolRunContext,
 ): Promise<string> {
   const sandboxPolicy = policy.resolve(exec)
-  const target = await resolveTarget(ctx, path, exec.signal)
+  const target = await resolveTarget(ctx, path, exec.signal, sandboxPolicy)
+  const shownPath = toWorkspaceView(target.displayPath, sandboxPolicy)
   const intent = await ctx.waterfall('fs/edit-intent', target, exec, () => undefined)
   const oldValue = requiredForCommand(oldStr, 'old_str', 'str_replace', false)
   const newValue = newStr ?? ''
   const info = await statExisting(ctx, target, 'str_replace', exec, sandboxPolicy)
   if (info.type !== 'file') {
-    throw new FsError(`cannot edit "${target.displayPath}": not a regular file`, 'FS_NOT_REGULAR_FILE')
+    throw new FsError(`cannot edit "${shownPath}": not a regular file`, 'FS_NOT_REGULAR_FILE')
   }
   const before = await ctx.fs.readText(target, exec.signal, sandboxPolicy)
   const offsets = matchOffsets(before, oldValue)
   const offset = offsets[0]
   if (offset === undefined) {
     throw new FsError(
-      `No replacement was performed, old_str \`${oldValue}\` did not appear verbatim in ${target.displayPath}.`,
+      `No replacement was performed, old_str \`${oldValue}\` did not appear verbatim in ${shownPath}.`,
       'FS_EDIT_NOT_FOUND',
     )
   }
@@ -323,7 +333,7 @@ async function replaceInFile(
     throw policy.mapError(error, sandboxPolicy)
   }
   ctx.emit('fs/observed', target, { kind: 'present', version: outcome.version }, exec)
-  return `The file ${target.displayPath} has been edited successfully.`
+  return `The file ${shownPath} has been edited successfully.`
 }
 
 async function insertInFile(
@@ -337,11 +347,12 @@ async function insertInFile(
   if (insertLine === undefined) throw new Error('Parameter `insert_line` is required for command: insert')
   const value = requiredForCommand(newStr, 'new_str', 'insert')
   const sandboxPolicy = policy.resolve(exec)
-  const target = await resolveTarget(ctx, path, exec.signal)
+  const target = await resolveTarget(ctx, path, exec.signal, sandboxPolicy)
+  const shownPath = toWorkspaceView(target.displayPath, sandboxPolicy)
   const intent = await ctx.waterfall('fs/edit-intent', target, exec, () => undefined)
   const info = await statExisting(ctx, target, 'insert', exec, sandboxPolicy)
   if (info.type !== 'file') {
-    throw new FsError(`cannot insert into "${target.displayPath}": not a regular file`, 'FS_NOT_REGULAR_FILE')
+    throw new FsError(`cannot insert into "${shownPath}": not a regular file`, 'FS_NOT_REGULAR_FILE')
   }
   const before = await ctx.fs.readText(target, exec.signal, sandboxPolicy)
   const lines = before.split('\n')
@@ -365,7 +376,7 @@ async function insertInFile(
     throw policy.mapError(error, sandboxPolicy)
   }
   ctx.emit('fs/observed', target, { kind: 'present', version: outcome.version }, exec)
-  return `The file ${target.displayPath} has been edited successfully.`
+  return `The file ${shownPath} has been edited successfully.`
 }
 
 interface ResolvedConfig {

@@ -64,7 +64,11 @@ function call(ctx: Context, owner: Agent | undefined, args: unknown) {
 
 async function setup(
   config: ToolStrReplaceEditor.Config = {},
-  options: { fsPolicy?: boolean; sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access' } = {},
+  options: {
+    fsPolicy?: boolean
+    sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access'
+    workspaceViewRoot?: string
+  } = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-tool-str-replace-editor-'))
   roots.push(root)
@@ -76,7 +80,11 @@ async function setup(
   if (options.sandboxMode === undefined) {
     await ctx.plugin(LocalFileSystem, { cwd: root })
   } else {
-    await ctx.plugin(SandboxPolicy, { mode: options.sandboxMode, workspaceRoot: root })
+    await ctx.plugin(SandboxPolicy, {
+      mode: options.sandboxMode,
+      workspaceRoot: root,
+      ...options.workspaceViewRoot === undefined ? {} : { workspaceViewRoot: options.workspaceViewRoot },
+    })
     await ctx.plugin(SandboxedFileSystem, { cwd: root })
   }
   if (options.fsPolicy === true) await ctx.plugin(FsPolicy)
@@ -590,5 +598,60 @@ describe('tool-str-replace-editor', () => {
     expect(() => {
       ToolStrReplaceEditor.apply(new Context(), { description: ' ' })
     }).toThrow('description must be non-empty')
+  })
+
+  describe('workspaceViewRoot translation', () => {
+    it('view resolves a /workspace path onto the real root and shows it back as /workspace', async () => {
+      const { ctx, root, owner } = await setup({}, { sandboxMode: 'workspace-write', workspaceViewRoot: '/workspace' })
+      await mkdir(join(root, 'src'), { recursive: true })
+      await writeFile(join(root, 'src', 'a.txt'), 'alpha\nbeta')
+      const result = await call(ctx, owner, { command: 'view', path: '/workspace/src/a.txt' })
+      expect(result.isError).toBeFalsy()
+      expect(text(result)).toContain('content of /workspace/src/a.txt')
+      expect(text(result)).not.toContain(root)
+    })
+
+    it('create writes under the real root and confirms the /workspace path', async () => {
+      const { ctx, root, owner } = await setup({}, { sandboxMode: 'workspace-write', workspaceViewRoot: '/workspace' })
+      const result = await call(ctx, owner, { command: 'create', path: '/workspace/made.txt', file_text: 'hi' })
+      expect(result.isError).toBeFalsy()
+      expect(text(result)).toBe('New file created successfully at: /workspace/made.txt')
+      expect(await readFile(join(root, 'made.txt'), 'utf8')).toBe('hi')
+    })
+
+    it('str_replace edits the real file and reports the /workspace path', async () => {
+      const { ctx, root, owner } = await setup(
+        {},
+        { sandboxMode: 'workspace-write', workspaceViewRoot: '/workspace', fsPolicy: false },
+      )
+      await writeFile(join(root, 'c.txt'), 'one two')
+      const result = await call(ctx, owner, {
+        command: 'str_replace',
+        path: '/workspace/c.txt',
+        old_str: 'two',
+        new_str: 'three',
+      })
+      expect(result.isError).toBeFalsy()
+      expect(text(result)).toBe('The file /workspace/c.txt has been edited successfully.')
+      expect(await readFile(join(root, 'c.txt'), 'utf8')).toBe('one three')
+    })
+
+    it('a missing /workspace path is named as /workspace in the not-found error', async () => {
+      const { ctx, owner } = await setup({}, { sandboxMode: 'workspace-write', workspaceViewRoot: '/workspace' })
+      const result = await call(ctx, owner, { command: 'view', path: '/workspace/nope.txt' })
+      expect(result.isError).toBe(true)
+      expect(text(result)).toContain('The path /workspace/nope.txt does not exist')
+    })
+
+    it('view lists a directory with /workspace-relative entry paths', async () => {
+      const { ctx, root, owner } = await setup({}, { sandboxMode: 'workspace-write', workspaceViewRoot: '/workspace' })
+      await mkdir(join(root, 'pkg'), { recursive: true })
+      await writeFile(join(root, 'pkg', 'x.txt'), '1')
+      const result = await call(ctx, owner, { command: 'view', path: '/workspace/pkg' })
+      expect(result.isError).toBeFalsy()
+      expect(text(result)).toContain('/workspace/pkg')
+      expect(text(result)).toContain('/workspace/pkg/x.txt')
+      expect(text(result)).not.toContain(root)
+    })
   })
 })

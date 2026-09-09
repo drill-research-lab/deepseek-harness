@@ -8,6 +8,8 @@
 
 策略随调用传递，而不属于提供方：两个消费方可以同时按不同策略施加限制（bash 使用 `read-only`，而受限制的子 agent（智能体）保持其状态目录可写）；获批的升权重试只是使用更宽策略发起的新调用。文件系统消费方在两种受限模式下都会将读取限制在 `workspaceRoot`；`read-only` 还会拒绝所有变更，而 `workspace-write` 允许变更工作区及后端定义的临时根目录。进程后端可以保留执行命令所需的系统读取权限。
 
+`SandboxExecutionPolicy.workspaceViewRoot` 是 `workspaceRoot` 的可选模型可见别名：当 runner 把每个会话工作区改写为同一个固定路径时（本地 Linux 的 mount-namespace runner 会把 `workspaceRoot` bind 到 `/workspace`），它会设置该字段，使两种视图保持一致。施加限制始终以真实的 `workspaceRoot` 为准；`fromWorkspaceView` / `toWorkspaceView`（来自 [`roots.ts`](src/roots.ts)，与 `readableRoots` / `writableRoots` 并列）是进程内文件系统消费方对传入的模型路径、以及对回传路径所应用的纯前缀映射。部署未设置视图根目录时为恒等映射。
+
 **只支持与宿主共享文件系统和内核的限制。** 后端与宿主共享文件系统和内核（`bwrap`、Landlock、Seatbelt）；`workspaceRoot` 指向文件系统规范化后的真实主机目录。系统先解析工作区所指的目录，再做词法规范化，因此包含 `symlink/..` 的有效 cwd 会授权 `chdir` 实际到达的目录，而非无关的词法父目录。容器、microVM 与远程执行器都不是该 seam 的后端：它们会以环境一致的分组替换整个能力 seam 的 Service Provider（`ctx.shell`、`ctx.fs`）。边界及其设计理由见[沙箱 Agent Note](../../../.agents/notes/implemented/feature/2026-07-06-sandbox.md)。
 
 实现：[`@deepseek-ai/dsh-sandbox-local`](../sandbox-local/)（Linux：`bwrap`，否则使用相应平台的 Landlock launcher；macOS：`sandbox-exec`／Seatbelt）。消费方：[`@deepseek-ai/dsh-bash-sandbox`](../../shell/bash-sandbox/)（包装 `['bash', '-c', command]`）。

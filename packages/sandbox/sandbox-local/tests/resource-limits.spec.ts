@@ -102,7 +102,8 @@ describe('resource-limit runner rung', () => {
       '-p', 'MemoryMax=1024',
       '-p', 'MemorySwapMax=0',
       '-p', 'TasksMax=8',
-      '--', 'bwrap', '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--die-with-parent', '--', 'true',
+      '--', 'bwrap', '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--die-with-parent',
+      '--ro-bind', '/ws', '/workspace', '--chdir', '/workspace', '--', 'true',
     ])
     expect(first.runnerFailureRules[0]).toEqual({
       fatalSignatures: ['Failed to connect to bus', 'Failed to start transient scope unit'],

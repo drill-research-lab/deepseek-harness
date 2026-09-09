@@ -5970,6 +5970,9 @@ importers:
 
   packages/sandbox/sandbox-local:
     dependencies:
+      '@deepseek-ai/dsh-home-paths':
+        specifier: workspace:^
+        version: link:../../util/home-paths
       '@deepseek-ai/dsh-sandbox-windows-acl':
         specifier: workspace:^
         version: link:../sandbox-windows-acl

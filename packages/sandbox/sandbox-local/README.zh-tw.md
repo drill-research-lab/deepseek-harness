@@ -16,7 +16,9 @@ Windows 檔為每個工作區保留一個確定性寫入 SID 和常駐 ACE，但
 
 [`@deepseek-ai/node-addon-landlock-run`](https://www.npmjs.com/package/@deepseek-ai/node-addon-landlock-run) 提供平臺 launcher、功能探測和 CLI 參數詞彙。該提供方只負責模式到授權的對映與 runner 選擇。把路徑解析和探測解析保留在帶版本的 binary 中，可防止約定漂移。
 
-Linux Landlock profile 允許讀取工作階段 workspace 以及 `/usr`、`/etc/ld.so.cache`、`/etc/alternatives`；寫入權限仍由模式決定。受信任消費方傳入的絕對外層執行檔會獲得只針對該檔案的讀取授權，使 ripgrep 一類隨附靜態工具可到達 `execve`，但不會授權其上級 runtime 目錄。系統根目錄支援普通執行檔與 merged-usr loader symlink（符號連結）。外層 [`@deepseek-ai/node-addon-pid-isolate-run`](../../../native/pid-isolate-run/) launcher 先建立獨立 PID namespace 與 procfs，內層 Landlock launcher 再施加檔案系統規則。部署必須對已安裝的 binary 執行 `setcap cap_sys_admin,cap_setpcap+ep` 並驗證 `--probe`；否則組合 runner 不可用，且沒有更前面的 runner 時會失敗閉合。Bubblewrap 不使用此特權 helper。
+Linux runner 會把 host 上的規範 workspace root bind 到 `/workspace`，並在執行命令前進入該路徑。當每次呼叫的 workspace 是 `workspaceStorageRoot` 的嚴格後代時，runner 隨後會用空 tmpfs 覆蓋該 storage root，讓每個 owner 的 hash 目錄在命令的 mount 視圖中不存在，同時保留已建立的 bind。每個 bwrap 行程自行建立這兩個 mount；Landlock 鏈則讓 [`@deepseek-ai/node-addon-pid-isolate-run`](../../../native/pid-isolate-run/) 在 mount propagation 私有化之後、移除初始化 capabilities 之前建立它們。Landlock 部署必須提供已存在的 `/workspace` 目錄作為 bind 目的地，對已安裝的 launcher 執行 `setcap cap_sys_admin,cap_setpcap+ep`，並驗證 `--probe`；否則組合 runner 會失敗閉合。這兩個 mount 都不會取代規範 host root 或增加權限，owner 隔離仍以每次呼叫的 source path 為依據。
+
+Linux Landlock profile 允許讀取 `/workspace` 以及 `/usr`、`/etc/ld.so.cache`、`/etc/alternatives`；寫入權限仍由模式決定。受信任消費方傳入的絕對外層執行檔會獲得只針對該檔案的讀取授權，使 ripgrep 一類隨附靜態工具可到達 `execve`，但不會授權其上級 runtime 目錄。系統根目錄支援普通執行檔與 merged-usr loader symlink（符號連結）。Bubblewrap 不使用特權 helper。macOS Seatbelt 與 Windows ACL 執行維持規範 host 工作路徑，因為這些平臺沒有 mount namespace 別名。
 
 可選的 Linux 資源限制會在所選 runner chain 最外層加入 `systemd-run --user --scope`。`cpuQuotaPercent` 對映到 `CPUQuota`；`maxTasks` 對映到 `TasksMax`；`walltimeSeconds` 對映到 `RuntimeMaxSec`，`timeoutStopSeconds` 控制從 SIGTERM 到 SIGKILL 的寬限期，預設 2 秒。`memoryMaxBytes` 始終攜帶 `MemorySwapMax`：省略 `memorySwapMaxBytes` 時會安全地解析為零，而只設定 swap、不設定 memory 會被拒絕。第一次受限呼叫會進行功能探測，證明使用者 manager 能建立 scope，且 cgroup v2 記錄了預期的 CPU、memory、零 swap 與工作限制。缺少使用者 systemd 或 D-Bus 支援時會以 `SANDBOX_UNAVAILABLE` 失敗閉合；所有限制均未設定時則明確省略該層。
 

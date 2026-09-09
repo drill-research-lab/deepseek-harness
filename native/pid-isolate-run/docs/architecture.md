@@ -15,9 +15,10 @@ The launcher performs these security operations in order:
 1. `unshare(CLONE_NEWPID | CLONE_NEWNS)` creates new PID and mount namespaces together.
 2. `fork()` leaves the waiter in the original PID namespace and places the child at PID 1 in the new namespace.
 3. The child changes mount propagation to private and mounts procfs on `/proc` with `MS_NOSUID | MS_NODEV | MS_NOEXEC`.
-4. Both processes drop `CAP_SYS_ADMIN` and `CAP_SETPCAP` from the bounding set, clear effective/permitted/inheritable capability sets, and set `no_new_privs`.
-5. Both processes use `capget()` and `PR_CAPBSET_READ` to verify that both capabilities are absent. A pipe prevents the child from continuing until the parent also passes verification.
-6. The child executes the caller command, or prints the exact probe result for `--probe`.
+4. When requested, the child creates the exact recursive bind mount named by `--bind`, covers the directory named by `--mask` with an empty non-executable tmpfs, and changes directory as named by `--chdir`. Bind precedes masking so a source beneath the masked tree remains reachable through its destination. Every mount exists only inside this invocation's private mount namespace.
+5. Both processes drop `CAP_SYS_ADMIN` and `CAP_SETPCAP` from the bounding set, clear effective/permitted/inheritable capability sets, and set `no_new_privs`.
+6. Both processes use `capget()` and `PR_CAPBSET_READ` to verify that both capabilities are absent. A pipe prevents the child from continuing until the parent also passes verification.
+7. The child executes the caller command, or prints the exact probe result for `--probe`.
 
 The outer process remains only to reap PID-namespace init and propagate its exit status. No process remains with either setup capability after authorization.
 

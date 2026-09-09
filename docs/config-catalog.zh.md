@@ -1633,6 +1633,11 @@ export interface Config extends ResourceLimitConfig {
   runnerFailureSignatures?: string[]
   /** Positive timeout for each functional probe; zero would mean unbounded to Node. */
   probeTimeoutMs?: number
+  /**
+   * Deployment-owned root whose per-owner children are hidden after the workspace bind.
+   * An omitted or blank value uses `resolveDshHome()/owner-roots`.
+   */
+  workspaceStorageRoot?: string
 }
 
 /** User-configurable limits for one local sandbox process tree. */
@@ -1676,6 +1681,8 @@ export interface Config {
    * `process.cwd()`). Normal agent calls use their session cwd instead.
    */
   workspaceRoot?: string
+  /** Fixed path exposed by a sandbox runner instead of the canonical workspace root. */
+  workspaceViewRoot?: string
 }
 ```
 

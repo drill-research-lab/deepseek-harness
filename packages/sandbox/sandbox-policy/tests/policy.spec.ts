@@ -18,6 +18,7 @@ async function mounted(config: {
   mode?: 'read-only' | 'workspace-write' | 'danger-full-access'
   maximumMode?: 'read-only' | 'workspace-write' | 'danger-full-access'
   workspaceRoot?: string
+  workspaceViewRoot?: string
 } = {}) {
   const ctx = new Context()
   await ctx.plugin(SandboxPolicyService, config)
@@ -84,6 +85,22 @@ describe('SandboxPolicyService', () => {
     expect(ctx.sandboxPolicy.resolve()).toEqual({
       mode: 'workspace-write',
       workspaceRoot: resolve('/fallback'),
+    })
+  })
+
+  it('carries the configured workspaceViewRoot on every resolved policy', async () => {
+    const ctx = await mounted({ mode: 'workspace-write', workspaceRoot: '/fallback', workspaceViewRoot: '/workspace' })
+    expect(ctx.sandboxPolicy.workspaceViewRoot).toBe(resolve('/workspace'))
+    expect(ctx.sandboxPolicy.resolve()).toEqual({
+      mode: 'workspace-write',
+      workspaceRoot: resolve('/fallback'),
+      workspaceViewRoot: resolve('/workspace'),
+    })
+    expect(ctx.sandboxPolicy.resolve({ session: session('sess-view', '/projects/first') })).toEqual({
+      mode: 'workspace-write',
+      workspaceRoot: resolve('/projects/first'),
+      workspaceViewRoot: resolve('/workspace'),
+      sessionId: 'sess-view',
     })
   })
 
@@ -173,6 +190,7 @@ describe('sandbox:policy request context', () => {
     mode?: 'read-only' | 'workspace-write' | 'danger-full-access'
     maximumMode?: 'read-only' | 'workspace-write' | 'danger-full-access'
     workspaceRoot?: string
+    workspaceViewRoot?: string
   } = {}): Promise<Context> {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
@@ -180,12 +198,17 @@ describe('sandbox:policy request context', () => {
     return ctx
   }
 
+  it('uses the canonical session root when the deployment has no fixed runner view', async () => {
+    const ctx = await promptMounted({ mode: 'workspace-write' })
+    expect(await policyContext(ctx, session('sess-canonical-view', '/projects/current')))
+      .toContain(JSON.stringify(resolve('/projects/current')))
+  })
+
   it.each(['read-only', 'workspace-write', 'danger-full-access'] as const)('renders the exact %s policy without a capability inventory', async (mode) => {
-    const ctx = await promptMounted({ mode, workspaceRoot: '/fallback' })
-    const workspaceRoot = resolve('/projects/current')
+    const ctx = await promptMounted({ mode, workspaceRoot: '/fallback', workspaceViewRoot: '/workspace' })
     const expected = {
       'read-only': 'Current DSH file policy: read-only. Any available operation enforced by the DSH file sandbox cannot modify files in the standing mode. Do not refuse a required modification from this policy alone: try an available tool normally and follow any denial and escalation guidance it returns.',
-      'workspace-write': `Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(workspaceRoot)}. Some platform temporary areas may also be writable.`,
+      'workspace-write': 'Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: "/workspace". Some platform temporary areas may also be writable.',
       'danger-full-access': 'Current DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations.',
     } as const
 
@@ -193,7 +216,7 @@ describe('sandbox:policy request context', () => {
   })
 
   it('keeps the complete rendered prompt byte-stable across TMPDIR changes', async () => {
-    const ctx = await promptMounted({ mode: 'workspace-write' })
+    const ctx = await promptMounted({ mode: 'workspace-write', workspaceViewRoot: '/workspace' })
     const active = session('sess-tmpdir-stability', '/projects/current')
     const previous = process.env.TMPDIR
     try {
@@ -206,6 +229,7 @@ describe('sandbox:policy request context', () => {
       expect(renderPrompt(secondAssembly)).toBe(firstPrompt)
       expect(renderContextSnapshot(secondAssembly)).toBe(firstContext)
       expect(firstContext).not.toContain('host-temp')
+      expect(firstContext).toContain('"/workspace"')
     } finally {
       if (previous === undefined) delete process.env.TMPDIR
       else process.env.TMPDIR = previous
@@ -213,7 +237,7 @@ describe('sandbox:policy request context', () => {
   })
 
   it('reflects the latest durable switch on the next assembly and stays byte-stable otherwise', async () => {
-    const ctx = await promptMounted()
+    const ctx = await promptMounted({ workspaceViewRoot: '/workspace' })
     const active = session('sess-switch', '/projects/current')
     const first = await policyContext(ctx, active)
     expect(await policyContext(ctx, active)).toBe(first)
@@ -224,7 +248,7 @@ describe('sandbox:policy request context', () => {
     expect(await policyContext(ctx, active)).toBe(danger)
 
     setSandboxMode(active, 'workspace-write')
-    expect(await policyContext(ctx, active)).toBe(`Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(resolve('/projects/current'))}. Some platform temporary areas may also be writable.`)
+    expect(await policyContext(ctx, active)).toBe('Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: "/workspace". Some platform temporary areas may also be writable.')
   })
 
   it('reconstructs resumed policy from the session log and omits diagnostics without an agent', async () => {

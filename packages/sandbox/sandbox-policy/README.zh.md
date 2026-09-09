@@ -13,13 +13,14 @@
 - `mode`：部署默认 `SandboxMode`（`read-only`／`workspace-write`／`danger-full-access`），加载时验证。默认为 `read-only`（故障安全）。
 - `maximumMode`：部署允许其默认值、持久会话覆盖或单次升权达到的最宽模式。默认为 `danger-full-access`。默认模式宽于此上限时，插件会在加载时拒绝。
 - `workspaceRoot`：无 agent（智能体）的调用或没有 cwd 的会话在 `workspace-write` 下可写入的回退目录。默认为 `process.cwd()`；无论显式配置还是采用默认值，都会解析为其绝对文件系统标识。普通 agent 调用改用其会话头中不可变的 `cwd`。
+- `workspaceViewRoot`：可选的固定模型可见路径，适用于已配置 runner 将每个会话工作区映射到同一可见位置的部署。随附的本地 Linux 组合将其设为 `/workspace`；其他组合不设置，并显示规范化的工作区根目录。设置后，`resolve()` 会将其带到每个返回的 `SandboxExecutionPolicy` 上，进程内文件系统工具用 `fromWorkspaceView` / `toWorkspaceView`（[`dsh-sandbox`](../sandbox/README.md)）转换前缀，使模型给出的 `/workspace/...` 路径抵达真实工作区根目录，而回传的每个路径都读作 `/workspace/...`。
 
 ## 接口
 
-- `ctx.sandboxPolicy.resolve({ session?, mode? })`：解析一项完整的逐调用策略。显式批准的模式优先于会话最后一条 `sandbox/mode` 事件，后者又优先于 `defaultMode`；所有来源都必须不宽于 `maximumMode`。会话不可变的 `cwd` 会先按文件系统语义规范化，再成为 `workspaceRoot`，否则使用配置的回退值。规范化先于词法归一化，因此 `symlink/..` 与进程工作目录解析保持一致。
+- `ctx.sandboxPolicy.resolve({ session?, mode? })`：解析一项完整的逐调用策略。显式批准的模式优先于会话最后一条 `sandbox/mode` 事件，后者又优先于 `defaultMode`；所有来源都必须不宽于 `maximumMode`。会话不可变的 `cwd` 会先按文件系统语义规范化，再成为 `workspaceRoot`，否则使用配置的回退值。规范化先于词法归一化，因此 `symlink/..` 与进程工作目录解析保持一致。当部署配置了 `workspaceViewRoot` 时，解析出的策略也会携带它。
 - `ctx.sandboxPolicy.defaultMode`／`maximumMode`／`workspaceRoot`：`resolve()` 使用的部署默认值、部署上限与回退根目录。
 - `ctx.sandboxPolicy.escalationTargets`：按 `maximumMode` 筛选后的封闭升权词汇。负责强制执行的工具会用同一个值进行 schema 展示与执行时授权。
-- `sandbox:policy`：直接派生自 `resolve({ session })` 的请求时缓存安全上下文贡献。它说明该模式中与具体能力无关的文件操作约定，以及 `workspace-write` 下规范化的会话工作区；工具归属方仍负责特定于操作的拒绝与升权引导。
+- `sandbox:policy`：直接派生自 `resolve({ session })` 的请求时缓存安全上下文贡献。在 `workspace-write` 下，它显示配置的 `workspaceViewRoot`，未配置时则显示规范化的会话工作区；工具归属方仍负责特定于操作的拒绝与升权引导。
 - `effectiveSandboxMode(events)`：会话 `sandbox/mode` 事件的纯 fold（最后一次切换胜出，没有则为 `undefined`），在 `resolve()` 内使用。
 - `setSandboxMode(session, mode)`：逐会话覆盖的唯一写入路径：恰好追加一条 `sandbox/mode` 事件。切换本身就是事件；不会在带外修改模式。
 - `SANDBOX_MODES`：所有模式，用于选项展示与运行时验证。
@@ -58,7 +59,7 @@ Current DSH file policy: danger-full-access. The DSH file sandbox does not restr
 
 #### Token 影响
 
-首次请求和有效策略每次变化时增加一条简洁的持久上下文消息；未变化的请求不增加内容。`workspace-write` 只携带规范化的会话工作区路径；平台特定的临时路径会以摘要表述，不会加入依赖主机的字节。
+首次请求和有效策略每次变化时增加一条简洁的持久上下文消息；未变化的请求不增加内容。`workspace-write` 只携带平台可见的工作区路径；平台特定的临时路径会以摘要表述，不会加入依赖主机的字节。会话头另行保留规范化 host 路径，用于 ownership 与审计。
 
 #### KV Cache 影响
 

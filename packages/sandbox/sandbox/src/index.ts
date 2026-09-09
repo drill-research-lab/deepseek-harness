@@ -24,7 +24,7 @@ export type {
   EscalationRequest,
   SandboxEscalationTarget,
 } from './escalation.ts'
-export { canonicalPath, readableRoots, writableRoots } from './roots.ts'
+export { canonicalPath, fromWorkspaceView, readableRoots, toWorkspaceView, writableRoots } from './roots.ts'
 
 /**
  * File-effect policy for confined capability calls. Filesystem consumers limit
@@ -49,6 +49,16 @@ export interface SandboxExecutionPolicy {
   mode: SandboxMode
   /** Absolute root directory confined filesystem reads may access and `workspace-write` may mutate under. */
   workspaceRoot: string
+  /**
+   * Absolute path the model is told its workspace lives at, when the selected
+   * runner rewrites every session workspace to one fixed location (the local
+   * Linux mount-namespace runners bind {@link workspaceRoot} to `/workspace`).
+   * Enforcement always keys on {@link workspaceRoot}; a Consumer that echoes
+   * paths to the model translates this prefix in and out. Absent when the
+   * runner presents the canonical workspace root (macOS, Windows, bwrap-less
+   * hosts, agentless calls).
+   */
+  workspaceViewRoot?: string
   /**
    * Opaque identity of the calling session (the branded `dsh-session`
    * SessionId). Backends key per-session state off it (e.g. windows-acl gives

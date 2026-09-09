@@ -26,7 +26,7 @@ import { HarnessError } from '@deepseek-ai/dsh-llm'
 import { ItemRetainer, TextRetainer } from '@deepseek-ai/dsh-output-retention'
 import type { RetainedItems } from '@deepseek-ai/dsh-output-retention'
 import { isPathUnder } from '@deepseek-ai/dsh-path-containment'
-import { canonicalPath } from '@deepseek-ai/dsh-sandbox'
+import { canonicalPath, fromWorkspaceView } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SubprocessHandle, SubprocessOutcome, SubprocessOutputRead, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
@@ -179,7 +179,11 @@ async function checkSearchRoot(
 ): Promise<void> {
   if (policy.mode === 'danger-full-access') return
   const separatorIndex = argv.lastIndexOf('--')
-  const searchPath = separatorIndex === -1 ? '.' : argv[separatorIndex + 1] ?? '.'
+  // The model is told its workspace is `workspaceViewRoot` (`/workspace` on the
+  // local Linux composition) and searches under it; the confined ripgrep child
+  // sees exactly that path in its mount namespace, so its argv keeps the view
+  // path while this in-process containment check maps it onto the real root.
+  const searchPath = fromWorkspaceView(separatorIndex === -1 ? '.' : argv[separatorIndex + 1] ?? '.', policy)
   const workspaceRoot = canonicalPath(policy.workspaceRoot)
   let resolvedWorkdir = resolve(workdir)
   try {

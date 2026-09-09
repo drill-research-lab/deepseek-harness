@@ -22,7 +22,13 @@ import {
   LocalSandboxProvider,
 } from '@deepseek-ai/dsh-sandbox-local'
 import type { Config } from '@deepseek-ai/dsh-sandbox-local'
-import { bwrapProfileArgs, LANDLOCK_SYSTEM_READ_ROOTS, landlockProfileArgs, seatbeltProfileArgs } from '../src/profiles.ts'
+import {
+  bwrapProfileArgs,
+  LANDLOCK_SYSTEM_READ_ROOTS,
+  landlockProfileArgs,
+  LINUX_WORKSPACE_ROOT,
+  seatbeltProfileArgs,
+} from '../src/profiles.ts'
 
 const RO: SandboxPolicy = { mode: 'read-only', workspaceRoot: '/ws' }
 const WW: SandboxPolicy = { mode: 'workspace-write', workspaceRoot: '/ws' }
@@ -73,14 +79,25 @@ function fakeSeatbeltExec(status: number): string {
 const SEATBELT_RO_PROFILE = '(version 1) (allow default) (deny file-write*) (allow file-write* (literal "/dev/null"))'
 
 describe('profile dialects', () => {
-  it('bwrap read-only: whole tree read-only with fresh /dev and /proc, no writable mounts', () => {
-    expect(bwrapProfileArgs(RO)).toEqual(['--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--die-with-parent'])
+  it('bwrap read-only: aliases the read-only workspace and enters it', () => {
+    expect(bwrapProfileArgs(RO)).toEqual([
+      '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--die-with-parent',
+      '--ro-bind', '/ws', LINUX_WORKSPACE_ROOT, '--chdir', LINUX_WORKSPACE_ROOT,
+    ])
   })
 
   it('bwrap workspace-write: adds an ephemeral /tmp and rebinds the workspace root', () => {
     expect(bwrapProfileArgs(WW)).toEqual([
       '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--die-with-parent',
-      '--tmpfs', '/tmp', '--bind', '/ws', '/ws',
+      '--tmpfs', '/tmp', '--bind', '/ws', LINUX_WORKSPACE_ROOT, '--chdir', LINUX_WORKSPACE_ROOT,
+    ])
+  })
+
+  it('bwrap hides the configured storage root only after preserving the workspace alias', () => {
+    expect(bwrapProfileArgs(WW, '/owners')).toEqual([
+      '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--die-with-parent',
+      '--tmpfs', '/tmp', '--bind', '/ws', LINUX_WORKSPACE_ROOT,
+      '--tmpfs', '/owners', '--chdir', LINUX_WORKSPACE_ROOT,
     ])
   })
 
@@ -89,7 +106,7 @@ describe('profile dialects', () => {
     // commands write real host paths beneath it (/dev/shm) under read-only.
     expect(landlockProfileArgs(RO)).toEqual([
       ...LANDLOCK_SYSTEM_READ_ROOTS.flatMap(root => ['--ro', root]),
-      '--ro', '/ws',
+      '--ro', LINUX_WORKSPACE_ROOT,
       '--rw', '/dev/null',
     ])
   })
@@ -97,16 +114,16 @@ describe('profile dialects', () => {
   it('landlock workspace-write: adds the host /tmp and the workspace root', () => {
     expect(landlockProfileArgs(WW)).toEqual([
       ...LANDLOCK_SYSTEM_READ_ROOTS.flatMap(root => ['--ro', root]),
-      '--ro', '/ws',
-      '--rw', '/dev/null', '--rw', '/tmp', '--rw', '/ws',
+      '--ro', LINUX_WORKSPACE_ROOT,
+      '--rw', '/dev/null', '--rw', '/tmp', '--rw', LINUX_WORKSPACE_ROOT,
     ])
   })
 
   it('landlock grants an absolute packaged executable without granting its parent tree', () => {
     expect(landlockProfileArgs(WW, '/opt/dsh-tools/rg')).toEqual([
       ...LANDLOCK_SYSTEM_READ_ROOTS.flatMap(root => ['--ro', root]),
-      '--ro', '/ws', '--ro', '/opt/dsh-tools/rg',
-      '--rw', '/dev/null', '--rw', '/tmp', '--rw', '/ws',
+      '--ro', LINUX_WORKSPACE_ROOT, '--ro', '/opt/dsh-tools/rg',
+      '--rw', '/dev/null', '--rw', '/tmp', '--rw', LINUX_WORKSPACE_ROOT,
     ])
     expect(landlockProfileArgs(WW, 'bash')).toEqual(landlockProfileArgs(WW))
   })
@@ -220,7 +237,10 @@ describe('the platform chains', () => {
     const confined = sandbox.confine(['/opt/dsh-tools/rg', '--json', 'needle'], WW)
     expect(confined).toEqual({
       argv: [
-        pidLauncher, '--', launcher, ...landlockProfileArgs(WW, '/opt/dsh-tools/rg'),
+        pidLauncher,
+        '--bind', '/ws', LINUX_WORKSPACE_ROOT,
+        '--chdir', LINUX_WORKSPACE_ROOT,
+        '--', launcher, ...landlockProfileArgs(WW, '/opt/dsh-tools/rg'),
         '--', '/opt/dsh-tools/rg', '--json', 'needle',
       ],
       enforcement: 'full',
@@ -239,6 +259,35 @@ describe('the platform chains', () => {
     })
     expect(probePidIsolate).toHaveBeenCalledWith(pidLauncher)
     expect(probeLandlock).toHaveBeenCalledWith(launcher)
+  })
+
+  it('linux masks a configured storage root only for its descendant workspace', async () => {
+    const launcher = fakeLauncher()
+    const pidLauncher = '/fake/pid-isolate-run'
+    const { sandbox } = await setup({ workspaceStorageRoot: '/owners' }, {
+      platform: 'linux',
+      probeBwrap: () => false,
+      probeLandlock: () => 'full',
+      landlockLauncher: launcher,
+      pidIsolateLauncher: pidLauncher,
+    })
+    expect(sandbox.confine(['true'], { mode: 'workspace-write', workspaceRoot: '/owners/alice/project' }).argv)
+      .toEqual([
+        pidLauncher,
+        '--bind', '/owners/alice/project', LINUX_WORKSPACE_ROOT,
+        '--mask', '/owners',
+        '--chdir', LINUX_WORKSPACE_ROOT,
+        '--', launcher, ...landlockProfileArgs({ mode: 'workspace-write', workspaceRoot: '/owners/alice/project' }, 'true'),
+        '--', 'true',
+      ])
+    expect(sandbox.confine(['true'], { mode: 'workspace-write', workspaceRoot: '/other/project' }).argv)
+      .not.toContain('--mask')
+  })
+
+  it('rejects masking the filesystem root', async () => {
+    await expect(setup({ workspaceStorageRoot: '/' })).rejects.toThrow(
+      'workspaceStorageRoot must not be the filesystem root',
+    )
   })
 
   it('fails closed before probing Landlock when PID isolation is unusable', async () => {
