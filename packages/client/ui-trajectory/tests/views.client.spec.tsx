@@ -99,6 +99,7 @@ function historySnapshot(
     runningCalls: trajectory.runningCalls,
     pending: [],
     queue: [],
+    llmQueue: null,
     running: false,
     subagent: null,
     composerPhase: 'active',

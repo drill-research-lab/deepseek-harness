@@ -18,7 +18,7 @@ Settings 分节中的 `reasoningEffort` 在 agent-default-model 插件配置中�
 
 ## 约定层（`/api`）
 
-`auth.me({})` 以 `{ userId, username }` 返回当前已认证请求的身份。Web carrier 会在 dispatch 前验证签名 session cookie 并建立请求 scope；没有有效 session 的请求收到 HTTP 401，且不会进入 RPC 实现。
+`auth.me({})` 以 `{ userId, username, isAdmin }` 返回当前已认证请求的身份（`isAdmin` 是登录时的管理员组快照）。Web carrier 会在 dispatch 前验证签名 session cookie 并建立请求 scope；没有有效 session 的请求收到 HTTP 401，且不会进入 RPC 实现。
 
 协议消息组成一个四象限可辨识联合：发起方 × 请求／响应，与物理通道解耦。四种消息分别是 `ClientRequest`（POST `/api/<method>` 的请求体）、`ServerResponse`（该 POST 的响应体）、`ServerRequest`（SSE（Server-Sent Events）帧）和 `ClientResponse`（POST `/api/respond` 的请求体）。响应始终回显对应请求的 `rpcId`，绝不签发新值。方法的参数与返回值结构只存在于领域接口签名（`SessionsApi`、`HostApi`、`EventsApi`）中；`RpcMethodMap` 注册方法，其他所有位置均通过 `RequestPayload<K>`／`ResponseValue<K>` 派生。Zod schema 以 `satisfies z.ZodType<Wire<T>>` 锚定类型，并分两层解析：先解析信封，再解析业务载荷，随后按方法分发。业务错误由 `RpcResult` 的错误分支承载（`RpcErrorDetailsMap` 封闭错误码集合）；HTTP 状态只表达载体层结果。每个 `/api` POST 都必须声明 `application/json` 媒体类型——否则在分发前即以 415 拒绝，因此跨站「简单请求」（浏览器不经 CORS 预检就会发出）永远无法盲目执行有副作用的方法。
 
@@ -67,6 +67,8 @@ Workspace 列表与 Session 列表是相互独立的重连基线。`workspace.cr
 `llm.metrics` 由宿主获取已配置的 vLLM Prometheus 端点，返回固定的 SparkDash 衍生面板字段：请求汇总值、KV 缓存占用率、token 与抢占计数器、引擎状态、prefix cache 与 speculative acceptance 比率，以及 TTFT、端到端和 token 间延迟的 p95。URL 指向 `/metrics` 时，同源 `/v1/models` 请求会尽力补充模型 id 与上下文上限。原始 Prometheus 标签与非 vLLM 的进程／运行时指标绝不会返回。部署通过 `inferenceMetricsUrl` 提供完整的 HTTP(S) URL；Web 组合包从 `DSH_INFERENCE_METRICS_URL` 读取它。`inferenceMetricsTimeoutMs`、`inferenceMetricsMaxBytes` 与 `inferenceMetricsRefreshMs` 限制单次抓取并控制浏览器成功取得数据后的刷新频率，解析另有 10,000 条样本上限。浏览器不会收到端点 URL。未配置、抓取失败、响应过大或格式错误、必要 gauge 无效都会产生不同的业务错误；整个 `/api` 路由仍受载体的认证与信任防线保护。
 
 `llm.resources` 获取一个已配置的 SparkDash 指标快照，仅返回 GPU 使用率、温度、功耗、时钟、显存与最多五个 GPU 进程，已启用的挂载存储容量与 I/O，以及带地址的活跃网络接口流量、主接口状态和链路速度。格式错误或过大的快照会被拒绝；Spark 身份、源 URL、MAC 地址、停用设备、非活跃接口、CPU/RAM 与其他 SparkDash 字段均被省略。部署提供 `inferenceResourcesUrl`，Web 组合包从 `DSH_INFERENCE_RESOURCES_URL` 读取它。资源调用共用指标调用的截止时间、字节限制与成功刷新间隔，但独立失败，因此一个来源不可用时另一组面板仍可使用。
+
+`queue.*` 域向管理员界面暴露进程内的 LLM 准入队列（`@deepseek-ai/dsh-llm-admission-queue`，`ctx.llmAdmissionQueue`）。`queue.list` 返回每个 entry 的快照（`queueId`、`position`、`state`、`isPriority`、`enqueuedAt`，以及存在时的 `sessionId`——绝不含对话内容）；`queue.promote` 将一个仍在等待的 entry 标记为优先并返回 `{ promoted }`（对未知、运行中或已优先的 entry 为 `false`）。两者都在操作内部强制管理员身份：读取队列之前先检查 `ctx.get('auth')?.currentUser()?.isAdmin === true`，因此非管理员在 `listAll()` 或 `prioritize()` 运行之前就以 `forbidden`（线上为 403 语义）被拒绝，没有认证 scope 的请求则像 `auth.me` 一样 reject。未挂载准入队列插件的组合以 `internal` 回答并指明缺失的插件。成功的 `promote` 会向 `$DSH_HOME/audit/queue-admin.jsonl` 追加一行 JSON，记录操作者、目标队列 id 与会话，以及前后位置。
 
 ## 载体层（`/client` + 根路径）
 

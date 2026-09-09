@@ -37,6 +37,7 @@ export interface HeaderLine {
   id: SessionId
   createdAt: number
   ownerUserId?: string
+  ownerUsername?: string
   cwd?: string
   parentSession?: SessionId
   seedLength?: number
@@ -57,6 +58,7 @@ export function toHeaderLine(header: SessionHeader): HeaderLine {
     id: header.id,
     createdAt: header.createdAt,
     ...header.ownerUserId !== undefined ? { ownerUserId: header.ownerUserId } : {},
+    ...header.ownerUsername !== undefined ? { ownerUsername: header.ownerUsername } : {},
     ...header.cwd !== undefined ? { cwd: header.cwd } : {},
     ...header.parentSession !== undefined ? { parentSession: header.parentSession } : {},
     ...header.seedLength !== undefined ? { seedLength: header.seedLength } : {},
@@ -80,6 +82,7 @@ export function fromHeaderLine(line: HeaderLine): SessionHeader {
     id: line.id,
     createdAt: line.createdAt,
     ...line.ownerUserId !== undefined ? { ownerUserId: authenticatedUserId(line.ownerUserId) } : {},
+    ...line.ownerUsername !== undefined ? { ownerUsername: line.ownerUsername } : {},
     ...line.cwd !== undefined ? { cwd: line.cwd } : {},
     ...line.parentSession !== undefined ? { parentSession: line.parentSession } : {},
     ...line.seedLength !== undefined ? { seedLength: line.seedLength } : {},

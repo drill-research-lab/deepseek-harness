@@ -44,7 +44,7 @@ describe('chrome content', () => {
 describe('GeneralSection', () => {
   function mount(
     loadCurrentUser: GeneralSectionComponentProps['loadCurrentUser'] = () => Promise.resolve({
-      userId: 'ldap:alice', username: 'Alice',
+      userId: 'ldap:alice', username: 'Alice', isAdmin: false,
     }),
     logout: GeneralSectionComponentProps['logout'] = () => Promise.resolve(),
   ) {
@@ -79,7 +79,7 @@ describe('GeneralSection', () => {
 
   it('offers a logout action that invokes the injected callback', async () => {
     const logout = vi.fn(() => Promise.resolve())
-    mount(() => Promise.resolve({ userId: 'ldap:alice', username: 'Alice' }), logout)
+    mount(() => Promise.resolve({ userId: 'ldap:alice', username: 'Alice', isAdmin: false }), logout)
     fireEvent.click(await screen.findByRole('button', { name: 'Log out' }))
     expect(logout).toHaveBeenCalledTimes(1)
   })
@@ -92,7 +92,7 @@ describe('GeneralSection', () => {
   it('shows a failed load and retries successfully', async () => {
     const loadCurrentUser = vi.fn()
       .mockRejectedValueOnce(new Error('offline'))
-      .mockResolvedValueOnce({ userId: 'ldap:alice', username: 'Alice' })
+      .mockResolvedValueOnce({ userId: 'ldap:alice', username: 'Alice', isAdmin: false })
     mount(loadCurrentUser)
 
     expect((await screen.findByRole('alert')).textContent).toContain('Could not load account information')

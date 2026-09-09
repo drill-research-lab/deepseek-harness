@@ -107,6 +107,7 @@ const SHIPPED_PRESET_DIR = join(REPO_ROOT, 'apps/cli/config/agent-presets')
 const SCAFFOLD_USER: AuthenticatedUser = {
   userId: authenticatedUserId('fixture:web-user'),
   username: 'Web fixture user',
+  isAdmin: false,
 }
 
 /** Request-scoped identity for scenarios that do not exercise external cookie verification. */

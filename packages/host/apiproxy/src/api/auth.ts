@@ -8,6 +8,8 @@ export interface CurrentUserView {
   userId: string
   /** Display name verified by the authentication gateway. */
   username: string
+  /** Whether this user is in the deployment's admin group (login-time snapshot). */
+  isAdmin: boolean
 }
 
 /** Authentication-domain unary methods. */

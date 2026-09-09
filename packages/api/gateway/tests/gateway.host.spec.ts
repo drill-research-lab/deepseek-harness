@@ -1103,7 +1103,7 @@ describe('TypertGatewayService', () => {
 
   it('dispatches claimed invocations through /api and leaves unclaimed endpoints to its fallback', async () => {
     const ctx = new Context().extend({ fixtureScope: 'http-caller' })
-    const authenticatedUser = { userId: authenticatedUserId('http-caller'), username: 'http-caller' }
+    const authenticatedUser = { userId: authenticatedUserId('http-caller'), username: 'http-caller', isAdmin: false }
     ctx.provide('auth', {
       authenticateRequest: async () => authenticatedUser,
       currentUser: () => authenticatedUser,

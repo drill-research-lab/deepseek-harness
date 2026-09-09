@@ -72,6 +72,22 @@
     - id: llm-retry
       name: '@deepseek-ai/dsh-llm-retry'
 
+    # FIFO + concurrency admission control in front of the internal vLLM
+    # backend, wrapped around `llm/stream`. Registered before
+    # session-checkpoint-policy so a queued request waits before its durability
+    # flush, not after. Only `gatedProviders` routes are queued; every other
+    # provider (external pay-per-use APIs, and anything added later) passes
+    # straight through. `limit: 1` matches one vLLM backend serving one request
+    # at a time, so the wait shows as a position instead of an opaque hang; a
+    # backend that serves more in parallel raises it. `limit: 0` disables the
+    # ceiling. Both fields hot-reload from a `llm-admission-queue:` section in
+    # settings.yaml.
+    - id: llm-admission-queue
+      name: '@deepseek-ai/dsh-llm-admission-queue'
+      config:
+        limit: 1
+        gatedProviders: ['vllm-local']
+
     # User-settings document (`$DSH_HOME/settings.yaml`, hot-reloaded): a
     # `llm-deepseek:` or `llm-pi-ai:` section there overrides the adapter entries
     # below without a restart, and is what the web Models page writes.

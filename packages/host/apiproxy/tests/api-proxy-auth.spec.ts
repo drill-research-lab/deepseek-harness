@@ -32,14 +32,14 @@ async function harness() {
 describe('auth.me', () => {
   it('returns the identity from the current authenticated request scope', async () => {
     const { ctx, api } = await harness()
-    const alice = { userId: authenticatedUserId('ldap:alice'), username: 'Alice' }
-    const bob = { userId: authenticatedUserId('ldap:bob'), username: 'Bob' }
+    const alice = { userId: authenticatedUserId('ldap:alice'), username: 'Alice', isAdmin: true }
+    const bob = { userId: authenticatedUserId('ldap:bob'), username: 'Bob', isAdmin: false }
 
     await expect(ctx.auth.runAs(alice, () => api.auth.me(request))).resolves.toMatchObject({
-      result: { ok: true, value: { userId: 'ldap:alice', username: 'Alice' } },
+      result: { ok: true, value: { userId: 'ldap:alice', username: 'Alice', isAdmin: true } },
     })
     await expect(ctx.auth.runAs(bob, () => api.auth.me(request))).resolves.toMatchObject({
-      result: { ok: true, value: { userId: 'ldap:bob', username: 'Bob' } },
+      result: { ok: true, value: { userId: 'ldap:bob', username: 'Bob', isAdmin: false } },
     })
   })
 

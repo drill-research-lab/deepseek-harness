@@ -7,6 +7,12 @@ interface StoredSession {
   v: 1
   userId: string
   username: string
+  /**
+   * Login-time admin snapshot. Optional on read: a record written before this
+   * field existed is treated as `false` rather than rejected, so an upgrade
+   * does not invalidate live sessions.
+   */
+  isAdmin?: boolean
   expiresAt: number
 }
 
@@ -37,7 +43,7 @@ export class FileSessionStore {
     const temporary = join(this.directory, `.${sessionName(token)}.${randomBytes(8).toString('hex')}.tmp`)
     const handle = await open(temporary, 'wx', 0o600)
     try {
-      const record: StoredSession = { v: 1, userId: user.userId, username: user.username, expiresAt }
+      const record: StoredSession = { v: 1, userId: user.userId, username: user.username, isAdmin: user.isAdmin, expiresAt }
       await handle.writeFile(`${JSON.stringify(record)}\n`, 'utf8')
       await handle.sync()
     } finally {
@@ -67,7 +73,10 @@ export class FileSessionStore {
         await unlink(path).catch(() => {})
         return undefined
       }
-      return { userId: authenticatedUserId(record.userId), username: record.username }
+      // A record written before isAdmin existed omits the key; anything but a
+      // literal `true` (missing, or a corrupt non-boolean) reads as non-admin
+      // rather than invalidating the session.
+      return { userId: authenticatedUserId(record.userId), username: record.username, isAdmin: record.isAdmin === true }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
       return undefined

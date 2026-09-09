@@ -11,4 +11,5 @@ export const authMeRequestSchema = z.object({}) satisfies z.ZodType<Wire<Request
 export const authMeValueSchema = z.object({
   userId: z.string(),
   username: z.string(),
+  isAdmin: z.boolean(),
 }) satisfies z.ZodType<Wire<ResponseValue<'auth.me'>>>
