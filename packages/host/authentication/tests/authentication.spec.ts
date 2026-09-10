@@ -82,7 +82,7 @@ type Mounted = Awaited<ReturnType<typeof mounted>>
 async function issued(app: Mounted, overrides: Record<string, unknown> = {}): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
   const expiresAt = typeof overrides['exp'] === 'number' ? overrides['exp'] : now + 300
-  const sessionId = await app.sessions.create({ userId: authenticatedUserId('ldap:uuid-alice'), username: 'alice' }, expiresAt)
+  const sessionId = await app.sessions.create({ userId: authenticatedUserId('ldap:uuid-alice'), username: 'alice', isAdmin: false }, expiresAt)
   return token(pair.privateKey, sessionId, overrides)
 }
 
@@ -92,7 +92,7 @@ describe('external identity cookie authentication', () => {
     const valid = await issued(app)
     await expect(app.auth.authenticateRequest({
       headers: { cookie: `dsh_identity=${valid}` },
-    })).resolves.toEqual({ userId: 'ldap:uuid-alice', username: 'alice' })
+    })).resolves.toEqual({ userId: 'ldap:uuid-alice', username: 'alice', isAdmin: false })
     await app.dispose()
   })
 
@@ -167,6 +167,59 @@ describe('external identity cookie authentication', () => {
     expect(wrongMethod.state.status).toBe(405)
     // Neither request revoked the session.
     await expect(app.auth.authenticateRequest({ headers: { cookie: `dsh_identity=${valid}` } })).resolves.toBeDefined()
+    await app.dispose()
+  })
+})
+
+describe('external identity cookie authentication — isAdmin', () => {
+  /** Issue a cookie whose file-session record carries the given admin flag. */
+  async function issuedWithRecord(app: Mounted, recordIsAdmin: boolean, tokenOverrides: Record<string, unknown> = {}): Promise<string> {
+    const now = Math.floor(Date.now() / 1000)
+    const sessionId = await app.sessions.create(
+      { userId: authenticatedUserId('ldap:uuid-alice'), username: 'alice', isAdmin: recordIsAdmin },
+      now + 300,
+    )
+    return token(pair.privateKey, sessionId, tokenOverrides)
+  }
+
+  it('returns isAdmin: true when the record and cookie both mark the user admin', async () => {
+    const app = await mounted()
+    const cookie = await issuedWithRecord(app, true, { isAdmin: true })
+    await expect(app.auth.authenticateRequest({ headers: { cookie: `dsh_identity=${cookie}` } }))
+      .resolves.toEqual({ userId: 'ldap:uuid-alice', username: 'alice', isAdmin: true })
+    await app.dispose()
+  })
+
+  it('takes isAdmin from the file-session record, not the cookie, when they disagree', async () => {
+    const app = await mounted()
+    // Forged/desynchronised cookie: signature verifies, payload says admin, record does not.
+    const cookie = await issuedWithRecord(app, false, { isAdmin: true })
+    await expect(app.auth.authenticateRequest({ headers: { cookie: `dsh_identity=${cookie}` } }))
+      .resolves.toEqual({ userId: 'ldap:uuid-alice', username: 'alice', isAdmin: false })
+    await app.dispose()
+  })
+
+  it('does not grant admin from the cookie when the record has it but the cookie omits it', async () => {
+    const app = await mounted()
+    const cookie = await issuedWithRecord(app, true) // no isAdmin in the token payload
+    await expect(app.auth.authenticateRequest({ headers: { cookie: `dsh_identity=${cookie}` } }))
+      .resolves.toEqual({ userId: 'ldap:uuid-alice', username: 'alice', isAdmin: true })
+    await app.dispose()
+  })
+
+  it('verifies a pre-upgrade cookie that omits isAdmin, reading it as false', async () => {
+    const app = await mounted()
+    const cookie = await issuedWithRecord(app, false) // neither record nor cookie sets isAdmin
+    await expect(app.auth.authenticateRequest({ headers: { cookie: `dsh_identity=${cookie}` } }))
+      .resolves.toEqual({ userId: 'ldap:uuid-alice', username: 'alice', isAdmin: false })
+    await app.dispose()
+  })
+
+  it('rejects a cookie whose isAdmin claim is not a boolean', async () => {
+    const app = await mounted()
+    const cookie = await issuedWithRecord(app, false, { isAdmin: 'yes' })
+    await expect(app.auth.authenticateRequest({ headers: { cookie: `dsh_identity=${cookie}` } }))
+      .resolves.toBeUndefined()
     await app.dispose()
   })
 })

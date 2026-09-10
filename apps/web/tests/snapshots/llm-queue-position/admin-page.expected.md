@@ -1,0 +1,29 @@
+- dialog "设置":
+  - navigation:
+    - text: 设置
+    - button "通用设置":
+      - img
+      - text: 通用设置
+    - button "模型":
+      - img
+      - text: 模型
+    - button "插件":
+      - img
+      - text: 插件
+    - button "推理状态":
+      - img
+      - text: 推理状态
+    - button "Agent 预设":
+      - img
+      - text: Agent 预设
+    - button "排队管理":
+      - img
+      - text: 排队管理
+  - button "打开配置文件"
+  - button "关闭":
+    - img
+    - text: 关闭
+  - region "LLM 排队管理":
+    - heading "LLM 排队管理" [level=2]
+    - paragraph: 内部 vLLM 后端的准入队列。正在运行的排在最上面;拖动等待中的行来调整谁先跑,外部 API 供应商的请求不经过这个队列。
+    - paragraph: 目前没有排队或运行中的请求。

@@ -53,6 +53,39 @@ function firstString(value: unknown): string | undefined {
   return typeof first === 'string' ? first : undefined
 }
 
+/** The group whose membership grants admin, compared case-insensitively by cn only. */
+const ADMIN_GROUP_CN = 'lldap_admin'
+
+/** Normalize an ldapts multi-valued attribute (undefined | string | string[]) to a string array. */
+function asStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((entry): entry is string => typeof entry === 'string')
+  return typeof value === 'string' ? [value] : []
+}
+
+/**
+ * Extract the lowercased cn value from a group DN's first RDN.
+ * @param dn - a group distinguished name such as `cn=lldap_admin,ou=groups,dc=example,dc=com`.
+ * @returns the lowercased cn value, or undefined when the first RDN is not `cn=...`.
+ */
+function groupCn(dn: string): string | undefined {
+  const firstRdn = dn.split(',', 1)[0]?.trim() ?? ''
+  const eq = firstRdn.indexOf('=')
+  if (eq < 0) return undefined
+  if (firstRdn.slice(0, eq).trim().toLowerCase() !== 'cn') return undefined
+  return firstRdn.slice(eq + 1).trim().toLowerCase()
+}
+
+/**
+ * Decide admin membership from a user entry's `memberOf`. Only the cn of each
+ * group DN is compared, case-insensitively, so the check does not bind to a
+ * particular base DN.
+ * @param memberOf - the raw `memberOf` attribute value returned by the search.
+ * @returns whether any group's cn equals {@link ADMIN_GROUP_CN}.
+ */
+function isAdminFromMemberOf(memberOf: unknown): boolean {
+  return asStringArray(memberOf).some(dn => groupCn(dn) === ADMIN_GROUP_CN)
+}
+
 /** LDAP authentication for a separately deployed authentication gateway. */
 export class LdapDirectory extends Service {
   static inject = ['credentials']
@@ -82,7 +115,11 @@ export class LdapDirectory extends Service {
     if (userId === undefined || username === undefined) {
       throw new Error('auth-ldap: matched entry lacks configured identity attributes')
     }
-    return { userId: authenticatedUserId(`ldap:${userId}`), username }
+    return {
+      userId: authenticatedUserId(`ldap:${userId}`),
+      username,
+      isAdmin: isAdminFromMemberOf(entry['memberOf']),
+    }
   }
 
   /**
@@ -106,7 +143,7 @@ export class LdapDirectory extends Service {
       await service.bind(bindDN, bindPassword)
       const result = await service.search(baseDN, {
         scope: 'sub', filter: template.replaceAll('{{username}}', escapeFilter(username)),
-        attributes: [idAttribute, usernameAttribute], sizeLimit: 2,
+        attributes: [idAttribute, usernameAttribute, 'memberOf'], sizeLimit: 2,
       })
       if (result.searchEntries.length !== 1) {
         this.ctx.logger.warn('auth-ldap: login search returned %d entries', result.searchEntries.length)

@@ -183,7 +183,7 @@ describe.runIf(process.platform === 'linux')('ownership service trust source', (
     const ownershipFiber = ctx.plugin(FileOwnershipService, { usersRoot: root })
     await ownershipFiber.await()
     expect(() => ctx.ownership.currentPrincipal()).toThrow(/authenticated request/)
-    const first: AuthenticatedUser = { userId: authenticatedUserId('ldap:stable'), username: 'alice' }
+    const first: AuthenticatedUser = { userId: authenticatedUserId('ldap:stable'), username: 'alice', isAdmin: false }
     const renamed: AuthenticatedUser = { ...first, username: 'alice-renamed' }
     expect(ctx.auth.runAs(first, () => ctx.ownership.currentPrincipal())).toEqual({
       userId: first.userId, source: 'request',

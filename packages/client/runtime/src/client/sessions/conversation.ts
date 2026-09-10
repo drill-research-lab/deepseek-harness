@@ -447,6 +447,14 @@ export interface ConversationSnapshot {
   pending: readonly PendingInteraction[]
   /** Authoritative transient inbox snapshot, including queued and steering placements. */
   queue: readonly QueuedMessage[]
+  /**
+   * This session's place in the internal-vLLM admission queue, from the live
+   * `session/llm-queue` push frame. `null` when the request is not (or no
+   * longer) queued; `{ state: 'waiting' }` carries the 1-based `position`, and
+   * `{ state: 'running' }` (position `0`) means it has been admitted — the
+   * indicator hides then and the ordinary running state takes over.
+   */
+  llmQueue: { position: number; state: 'waiting' | 'running' } | null
   running: boolean
   /**
    * Catalog-discovered continuation address. Its parent availability controls

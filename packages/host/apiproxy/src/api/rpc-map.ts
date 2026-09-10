@@ -13,6 +13,7 @@ import type { GoalsApi } from './goals.ts'
 import type { SettingsApi } from './settings.ts'
 import type { CredentialsApi } from './credentials.ts'
 import type { LlmApi } from './llm.ts'
+import type { QueueApi } from './queue.ts'
 import type { SubagentsApi } from './subagents.ts'
 import type { AuthApi } from './auth.ts'
 import type { RpcResponse } from './rpc.ts'
@@ -78,6 +79,8 @@ export interface RpcMethodMap {
   'llm.metrics': LlmApi['metrics']
   'llm.resources': LlmApi['resources']
   'llm.discoverModels': LlmApi['discoverModels']
+  'queue.list': QueueApi['list']
+  'queue.reorder': QueueApi['reorder']
 }
 
 /** Business request payload of method K (reaches through the RpcRequest narrow form to payload). */

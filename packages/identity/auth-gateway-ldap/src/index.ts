@@ -257,6 +257,7 @@ export class LdapAuthGateway extends Service {
     const payload = Buffer.from(JSON.stringify({
       v: 1, iss: this.issuer, aud: this.audience, sub: user.userId,
       username: user.username, sid: sessionId, iat: now, exp: expiresAt,
+      isAdmin: user.isAdmin,
     })).toString('base64url')
     const signature = sign(null, Buffer.from(`${header}.${payload}`), this.privateKey).toString('base64url')
     return `${header}.${payload}.${signature}`
@@ -296,9 +297,14 @@ export class LdapAuthGateway extends Service {
         || typeof identity['username'] !== 'string' || identity['username'].trim().length === 0
         || typeof identity['sid'] !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(identity['sid'])
         || typeof identity['iat'] !== 'number' || !Number.isInteger(identity['iat']) || identity['iat'] > now
-        || typeof identity['exp'] !== 'number' || !Number.isInteger(identity['exp']) || identity['exp'] <= now) return undefined
+        || typeof identity['exp'] !== 'number' || !Number.isInteger(identity['exp']) || identity['exp'] <= now
+        || (identity['isAdmin'] !== undefined && typeof identity['isAdmin'] !== 'boolean')) return undefined
       return {
-        user: { userId: authenticatedUserId(identity['sub']), username: identity['username'] },
+        user: {
+          userId: authenticatedUserId(identity['sub']),
+          username: identity['username'],
+          isAdmin: identity['isAdmin'] === true,
+        },
         sessionId: identity['sid'],
       }
     } catch {

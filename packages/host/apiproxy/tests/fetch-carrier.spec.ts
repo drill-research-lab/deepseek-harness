@@ -18,7 +18,7 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
   return {
     auth: {
       async me(request) {
-        return { rpcId: request.rpcId, result: { ok: true, value: { userId: 'ldap:alice', username: 'Alice' } } }
+        return { rpcId: request.rpcId, result: { ok: true, value: { userId: 'ldap:alice', username: 'Alice', isAdmin: false } } }
       },
     },
     sessions: {
@@ -306,6 +306,14 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       },
       async discoverModels(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { models: [] } } }
+      },
+    },
+    queue: {
+      async list(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { entries: [] } } }
+      },
+      async reorder(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: {} } }
       },
     },
     events: {

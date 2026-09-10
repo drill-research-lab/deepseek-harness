@@ -1208,3 +1208,44 @@ describe('background-job mirror', () => {
     expect(seen).toHaveBeenCalled()
   })
 })
+
+describe('session/llm-queue frame', () => {
+  const lq = (sessionId: SessionId, position: number, state: 'waiting' | 'running') =>
+    ({ rpcId: `lq-${position}-${state}` as never, payload: { type: 'session/llm-queue' as const, sessionId, position, state } })
+
+  it('defaults to null and reflects the latest frame on an instantiated session', async () => {
+    const manager = new SessionManager(new FakeApiClient(), fakeRemote())
+    const session = manager.get(S1)
+    expect(session.getSnapshot().llmQueue).toBeNull()
+
+    manager.handleMuxEnvelope(lq(S1, 3, 'waiting'))
+    expect(session.getSnapshot().llmQueue).toEqual({ position: 3, state: 'waiting' })
+    manager.handleMuxEnvelope(lq(S1, 1, 'waiting'))
+    expect(session.getSnapshot().llmQueue).toEqual({ position: 1, state: 'waiting' })
+    manager.handleMuxEnvelope(lq(S1, 0, 'running'))
+    expect(session.getSnapshot().llmQueue).toEqual({ position: 0, state: 'running' })
+  })
+
+  it('does not cross sessions', async () => {
+    const manager = new SessionManager(new FakeApiClient(), fakeRemote())
+    manager.handleMuxEnvelope(lq(S2, 2, 'waiting'))
+    expect(manager.get(S1).getSnapshot().llmQueue).toBeNull()
+    expect(manager.get(S2).getSnapshot().llmQueue).toEqual({ position: 2, state: 'waiting' })
+  })
+
+  it('buffers the latest value for an uninstantiated session and replays it on open', async () => {
+    const manager = new SessionManager(new FakeApiClient(), fakeRemote())
+    manager.handleMuxEnvelope(lq(S1, 5, 'waiting'))
+    manager.handleMuxEnvelope(lq(S1, 4, 'waiting')) // latest-value: only this survives
+    expect(manager.get(S1).getSnapshot().llmQueue).toEqual({ position: 4, state: 'waiting' })
+  })
+
+  it('drops the value on a fresh mux generation (session/subscribed)', async () => {
+    const manager = new SessionManager(new FakeApiClient(), fakeRemote())
+    const session = manager.get(S1)
+    manager.handleMuxEnvelope(lq(S1, 2, 'waiting'))
+    expect(session.getSnapshot().llmQueue).toEqual({ position: 2, state: 'waiting' })
+    manager.handleMuxEnvelope({ rpcId: 'sub' as never, payload: { type: 'session/subscribed', sessionId: S1, lastSeq: -1 } })
+    expect(session.getSnapshot().llmQueue).toBeNull()
+  })
+})

@@ -67,6 +67,7 @@ import {
   llmDiscoverModelsRequestSchema, llmMetricsRequestSchema, llmModelsRequestSchema, llmProvidersRequestSchema,
   llmResourcesRequestSchema,
 } from '../api/llm.schema.ts'
+import { queueListRequestSchema, queueReorderRequestSchema } from '../api/queue.schema.ts'
 import {
   subagentHistoryRequestSchema,
   subagentInterruptRequestSchema,
@@ -147,6 +148,8 @@ const UNARY_ROUTES: UnaryRoutes = {
   'llm.metrics': { schema: llmMetricsRequestSchema, invoke: (api, r, signal) => api.llm.metrics(r, signal) },
   'llm.resources': { schema: llmResourcesRequestSchema, invoke: (api, r, signal) => api.llm.resources(r, signal) },
   'llm.discoverModels': { schema: llmDiscoverModelsRequestSchema, invoke: (api, r, signal) => api.llm.discoverModels(r, signal) },
+  'queue.list': { schema: queueListRequestSchema, invoke: (api, r) => api.queue.list(r) },
+  'queue.reorder': { schema: queueReorderRequestSchema, invoke: (api, r) => api.queue.reorder(r) },
 }
 
 /** Route lookup that narrows an arbitrary path segment to a map key (single cast point for the string→key refinement). */

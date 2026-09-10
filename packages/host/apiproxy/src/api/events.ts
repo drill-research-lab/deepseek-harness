@@ -105,6 +105,17 @@ export type MuxFrame =
    * tail page's projections block.
    */
   | { type: 'session/projection'; sessionId: SessionId; key: string; value: unknown; seq: number }
+  /**
+   * This session's current place in the internal-vLLM admission queue
+   * (`@deepseek-ai/dsh-llm-admission-queue`). Live push state, never logged —
+   * the queue is process-local and resets on restart, so it rides a frame like
+   * `session/queue`/`session/jobs` rather than a durable event. `position` is
+   * 1-based while `state` is `'waiting'`, `0` once `'running'`. Sent as a
+   * subscription baseline only for a session currently in the queue; an absent
+   * frame means "not queued" (the client clears its indicator). A composition
+   * without the admission-queue plugin never emits this frame.
+   */
+  | { type: 'session/llm-queue'; sessionId: SessionId; position: number; state: 'waiting' | 'running' }
   | { type: 'stream/error'; error: RpcError }
 
 /**

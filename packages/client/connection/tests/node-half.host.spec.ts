@@ -76,7 +76,7 @@ function fakeResponse(): { response: ServerResponse; state: { status?: number; b
 }
 
 function provideAuthenticated(ctx: Context, authenticated = true): void {
-  const user = { userId: authenticatedUserId('test-user'), username: 'tester' }
+  const user = { userId: authenticatedUserId('test-user'), username: 'tester', isAdmin: false }
   ctx.provide('auth', {
     authenticateRequest: async () => authenticated ? user : undefined,
     currentUser: () => user,
