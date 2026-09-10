@@ -13,7 +13,7 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { ReportId, TemplateId } from '@deepseek-ai/dsh-writing'
 import type { Report, ReportTemplate } from '@deepseek-ai/dsh-writing'
 import type { CompileOutput, GitVersion } from '@deepseek-ai/dsh-writing-compile'
-import { reportSourcePath } from '@deepseek-ai/dsh-writing-compile'
+import { reportSourcePath, safeSegmentName, sourceNameOf } from '@deepseek-ai/dsh-writing-compile'
 import type {} from '@deepseek-ai/dsh-writing-compile'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-auth'
@@ -88,7 +88,7 @@ export class WritingGateway extends TypertRemoteService {
   async get(request: GetReportRequest): Promise<ReportView | undefined> {
     const report = this.ctx.reports.get(ReportId(request.reportId))
     if (report === undefined) return undefined
-    const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
+    const { sourcePath } = reportSourcePath(report.workspaceDir, sourceNameOf(report))
     const source = await this.ctx.latexCompile.readSource(sourcePath)
     return reportView({ ...report, source })
   }
@@ -105,8 +105,9 @@ export class WritingGateway extends TypertRemoteService {
       ...(request.templateId === undefined ? {} : { templateId: TemplateId(request.templateId) }),
       ...(request.source === undefined ? {} : { source: request.source }),
       workspaceDir: request.workspaceDir ?? '',
+      fileName: safeSegmentName(request.title),
     })
-    const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
+    const { sourcePath } = reportSourcePath(report.workspaceDir, sourceNameOf(report))
     await this.ctx.latexCompile.writeSource(sourcePath, report.source)
     return reportView(report)
   }
@@ -120,7 +121,7 @@ export class WritingGateway extends TypertRemoteService {
   async updateContent(request: UpdateContentRequest): Promise<ReportView> {
     const report = this.ctx.reports.get(ReportId(request.reportId))
     if (report === undefined) throw new Error(`unknown report '${request.reportId}'`)
-    const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
+    const { sourcePath } = reportSourcePath(report.workspaceDir, sourceNameOf(report))
     await this.ctx.latexCompile.writeSource(sourcePath, request.source)
     return reportView(await this.ctx.reports.updateContent(ReportId(request.reportId), request.source))
   }
@@ -154,7 +155,7 @@ export class WritingGateway extends TypertRemoteService {
   async compile(request: CompileRequest): Promise<CompileResultView> {
     const report = this.ctx.reports.get(ReportId(request.reportId))
     if (report === undefined) throw new Error(`unknown report '${request.reportId}'`)
-    const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
+    const { sourcePath } = reportSourcePath(report.workspaceDir, sourceNameOf(report))
     const output = await this.ctx.latexCompile.compile({
       reportId: request.reportId,
       sourcePath,
@@ -189,7 +190,7 @@ export class WritingGateway extends TypertRemoteService {
   async versions(request: VersionsRequest): Promise<ReportVersionView[]> {
     const report = this.ctx.reports.get(ReportId(request.reportId))
     if (report === undefined) return []
-    const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
+    const { sourcePath } = reportSourcePath(report.workspaceDir, sourceNameOf(report))
     return (await this.ctx.latexCompile.listVersions(sourcePath)).map(version => versionView(request.reportId, version))
   }
 
@@ -203,7 +204,7 @@ export class WritingGateway extends TypertRemoteService {
   async restore(request: RestoreRequest): Promise<ReportView> {
     const report = this.ctx.reports.get(ReportId(request.reportId))
     if (report === undefined) throw new Error(`unknown report '${request.reportId}'`)
-    const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
+    const { sourcePath } = reportSourcePath(report.workspaceDir, sourceNameOf(report))
     const source = await this.ctx.latexCompile.restoreVersion(sourcePath, request.versionId, request.branch)
     return reportView(await this.ctx.reports.updateContent(ReportId(request.reportId), source))
   }
@@ -251,7 +252,7 @@ export class WritingGateway extends TypertRemoteService {
         res.end('not found')
         return
       }
-      const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
+      const { sourcePath } = reportSourcePath(report.workspaceDir, sourceNameOf(report))
       const pdfPath = await this.ctx.latexCompile.pdfPath(sourcePath)
       if (pdfPath === undefined) {
         res.writeHead(404)

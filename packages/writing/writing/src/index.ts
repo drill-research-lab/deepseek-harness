@@ -216,7 +216,15 @@ export class ReportService extends TypertRemoteService {
     const source = request.source ?? template.source
     const id = ReportId(randomUUID())
     const now = new Date().toISOString()
-    const record = { title: request.title, templateId, source, workspaceDir: request.workspaceDir ?? '', createdAt: now, updatedAt: now }
+    const record = {
+      title: request.title,
+      templateId,
+      source,
+      workspaceDir: request.workspaceDir ?? '',
+      fileName: request.fileName ?? '',
+      createdAt: now,
+      updatedAt: now,
+    }
     await this.requireReports().put(id, record)
     return snapshotReport(id, record)
   }
@@ -446,6 +454,7 @@ function snapshotReport(id: ReportId, record: ReportRecord): Report {
     templateId: record.templateId,
     source: record.source,
     workspaceDir: record.workspaceDir,
+    fileName: record.fileName,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   })

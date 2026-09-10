@@ -26,6 +26,7 @@ export const reportRecord = z.object({
   templateId,
   source: z.string(),
   workspaceDir: z.string().default(''),
+  fileName: z.string().default(''),
   createdAt: isoInstant,
   updatedAt: isoInstant,
 })

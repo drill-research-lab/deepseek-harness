@@ -46,10 +46,22 @@ export function safeSegmentName(value: string): string {
   return cleaned.length === 0 ? 'report' : cleaned
 }
 
+/** A `yyyymmddhhmmss` (Gregorian, local time) file/repo segment for agent-created files. */
+export function timestampSegment(date: Date = new Date()): string {
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`
+    + `${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`
+}
+
+/** The stable file/repo segment of a report: its stored file name, else a sanitized title. */
+export function sourceNameOf(report: { readonly fileName: string; readonly title: string }): string {
+  return report.fileName.length > 0 ? report.fileName : safeSegmentName(report.title)
+}
+
 /** Resolve a report's source file layout inside a session workspace. */
-export function reportSourcePath(workspaceDir: string, title: string): { dir: string; file: string; sourcePath: string } {
-  const name = safeSegmentName(title)
-  const dir = join(workspaceDir, 'writing', name)
+export function reportSourcePath(workspaceDir: string, name: string): { dir: string; file: string; sourcePath: string } {
+  const segment = safeSegmentName(name)
+  const dir = join(workspaceDir, 'writing', segment)
   const file = 'main.tex'
   return { dir, file, sourcePath: join(dir, file) }
 }

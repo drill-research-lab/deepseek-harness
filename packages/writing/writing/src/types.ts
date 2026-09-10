@@ -33,6 +33,8 @@ export interface Report {
   readonly source: string
   /** Session workspace directory holding the report's source file + git repository. */
   readonly workspaceDir: string
+  /** Stable file/repo segment under `<workspaceDir>/writing/`; empty means derive from the title. */
+  readonly fileName: string
   /** ISO-8601 creation instant. */
   readonly createdAt: string
   /** ISO-8601 instant of the last durable mutation. */
@@ -90,6 +92,8 @@ export interface CreateReportRequest {
   readonly source?: string
   /** Session workspace directory holding the report's source file + git repository. */
   readonly workspaceDir?: string
+  /** Stable file/repo segment under `<workspaceDir>/writing/`; omitted derives from the title. */
+  readonly fileName?: string
 }
 
 /** An add-template request: a display name and the LaTeX template source. */

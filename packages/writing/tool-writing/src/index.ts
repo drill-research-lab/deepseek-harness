@@ -9,7 +9,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { ReportId as reportId, TemplateId as templateId } from '@deepseek-ai/dsh-writing'
-import { reportSourcePath } from '@deepseek-ai/dsh-writing-compile'
+import { reportSourcePath, sourceNameOf, timestampSegment } from '@deepseek-ai/dsh-writing-compile'
 
 export type {} from '@deepseek-ai/dsh-writing'
 export type {} from '@deepseek-ai/dsh-writing-compile'
@@ -72,6 +72,7 @@ export function apply(ctx: Context, config: Config): void {
         title: args.title,
         ...(resolvedTemplate === undefined ? {} : { templateId: resolvedTemplate }),
         ...(source === undefined ? {} : { source }),
+        fileName: timestampSegment(),
       })
       return { reportId: String(report.id), title: report.title, source: report.source }
     },
@@ -104,7 +105,7 @@ export function apply(ctx: Context, config: Config): void {
     },
     execute: async (args, exec) => {
       const report = await ctx.reports.updateContent(reportId(args.reportId), args.source)
-      const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
+      const { sourcePath } = reportSourcePath(report.workspaceDir, sourceNameOf(report))
       const output = await ctx.latexCompile.compile({
         reportId: args.reportId,
         sourcePath,
@@ -151,7 +152,7 @@ export function apply(ctx: Context, config: Config): void {
       const source = report.source
       const truncated = source.length > config.maxReadChars
       const clipped = truncated ? source.slice(0, config.maxReadChars) : source
-      const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
+      const { sourcePath } = reportSourcePath(report.workspaceDir, sourceNameOf(report))
       return {
         reportId: String(report.id),
         source: clipped,
@@ -199,7 +200,7 @@ export function apply(ctx: Context, config: Config): void {
     },
     execute: async (args, exec) => {
       const report = requireReport(ctx, reportId(args.reportId))
-      const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
+      const { sourcePath } = reportSourcePath(report.workspaceDir, sourceNameOf(report))
       const output = await ctx.latexCompile.compile({
         reportId: args.reportId,
         sourcePath,
@@ -255,7 +256,7 @@ export function apply(ctx: Context, config: Config): void {
     },
     execute: async (args) => {
       const report = requireReport(ctx, reportId(args.reportId))
-      const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
+      const { sourcePath } = reportSourcePath(report.workspaceDir, sourceNameOf(report))
       const versions = await ctx.latexCompile.listVersions(sourcePath)
       return {
         versions: versions.map(version => ({
@@ -295,7 +296,7 @@ export function apply(ctx: Context, config: Config): void {
     execute: async (args) => {
       const id = reportId(args.reportId)
       const report = requireReport(ctx, id)
-      const { sourcePath } = reportSourcePath(report.workspaceDir, report.title)
+      const { sourcePath } = reportSourcePath(report.workspaceDir, sourceNameOf(report))
       const source = await ctx.latexCompile.restoreVersion(sourcePath, args.versionId, args.branch)
       const updated = await ctx.reports.updateContent(id, source)
       return { reportId: String(updated.id), branch: args.branch, source: updated.source }

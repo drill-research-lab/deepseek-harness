@@ -4,7 +4,7 @@ import { CallId } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { ReportId } from '@deepseek-ai/dsh-writing'
-import { reportSourcePath } from '@deepseek-ai/dsh-writing-compile'
+import { reportSourcePath, sourceNameOf } from '@deepseek-ai/dsh-writing-compile'
 import { setupHarness, writeArtifacts, outputRun, type TestHarness } from './helpers.ts'
 
 const harnesses: TestHarness[] = []
@@ -15,7 +15,7 @@ let callCounter = 0
 function sourcePathOf(ctx: Context, reportId: string): string {
   const report = ctx.reports.get(ReportId(reportId))
   if (report === undefined) throw new Error(`missing report ${reportId}`)
-  return reportSourcePath(report.workspaceDir, report.title).sourcePath
+  return reportSourcePath(report.workspaceDir, sourceNameOf(report)).sourcePath
 }
 
 async function harness(
@@ -71,6 +71,12 @@ describe('dsh-tool-writing', () => {
     expect(reportId).toBeTruthy()
     expect(ctx.reports.get(ReportId(reportId))?.title).toBe('My Paper')
     expect(String(value.source)).toContain('\\documentclass')
+  })
+
+  it('names an agent-created report repo with a yyyymmddhhmmss timestamp', async () => {
+    const { ctx } = await harness()
+    const value = await okValue(ctx, 'report_create', { title: 'My Paper' })
+    expect(ctx.reports.get(ReportId(value.reportId as string))?.fileName).toMatch(/^\d{14}$/)
   })
 
   it('writes and reads the report source', async () => {
