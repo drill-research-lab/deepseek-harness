@@ -178,6 +178,15 @@ export function SidebarRoot({
         })}
       </div>
 
+      {/* Additive feature sections (e.g. the Library) sit between the
+          browsing region and the foot; each renders its own rail form. */}
+      <div className={css.sectionArea}>
+        {renderSlot('sidebar.section', {
+          wide,
+          expandSidebar: () => { if (collapsed) toggleSidebar() },
+        })}
+      </div>
+
       {/* Footer actions stack above Settings in both sidebar widths. */}
       <div className={css.footArea}>
         <div className={css.footerActions}>

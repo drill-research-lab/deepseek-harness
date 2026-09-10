@@ -21,6 +21,7 @@ One page per subsystem of the DeepSeek Harness: what it is, the data structures 
 | [ownership.md](ownership.md) | trusted owner principals, immutable identities, rooted user homes, and single-writer enforcement |
 | [session-query.md](session-query.md) | logical records, bounded exact-event reads, relationship traces, semantic filters/documents, and full-text result pages |
 | [feedback.md](feedback.md) | lifecycle-bound per-message feedback records, optimistic versions, sidecar persistence, and the Host Remote contract |
+| [library.md](library.md) | the Library knowledge base: dual-stored documents (original + Markdown), the conversion seam, the ingest-time index, grounded ask with its durable log, the `library_*` agent face, and the browser gateway |
 | [session-title.md](session-title.md) | durable title snapshots, cited source-message seqs, and the asynchronous provider contract |
 | [session-reference.md](session-reference.md) | structured cross-session references: `SessionReferenceInput`/`Candidate`, prepared message contexts, the stable error taxonomy |
 | [system-prompt.md](system-prompt.md) | per-assembly context, tool-provider results, prompt sections, and cooperative assembly |

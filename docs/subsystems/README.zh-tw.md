@@ -21,6 +21,7 @@
 | [ownership.md](ownership.md) | 可信 owner principal、immutable identity、rooted UserHome 和 single-writer enforcement |
 | [session-query.md](session-query.md) | 邏輯記錄、有界精確事件讀取、關係追蹤、語義篩選器/文件與全文檢索結果頁 |
 | [feedback.md](feedback.md) | 綁定生命週期的逐訊息回饋記錄、樂觀版本、伴隨記錄持久化與 Host Remote 契約 |
+| [library.md](library.md) | Library 知識庫：雙份保存的文件（原始 + Markdown）、轉換接縫、入庫時索引、有據問答與其持久紀錄、`library_*` agent 介面面與瀏覽器閘道 |
 | [session-title.md](session-title.md) | 持久標題快照、被引用的來源訊息 seq 與非同步提供方約定 |
 | [session-reference.md](session-reference.md) | 結構化跨工作階段引用：`SessionReferenceInput`/`Candidate`、prepared 訊息上下文、穩定錯誤分類 |
 | [system-prompt.md](system-prompt.md) | 逐次組裝的上下文、工具提供方結果、提示詞段落與協作式組裝 |

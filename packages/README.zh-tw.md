@@ -48,6 +48,7 @@ npm scope 為 `@deepseek-ai/dsh-*`；Cordis `Service` 子類和函式外掛程�
 | [`credentials/`](credentials/README.md) | 憑據引用 seam + 環境變數優先於 `.env` 的提供方 | 產品：穩定 API |
 | [`storage/`](storage/README.md) | 非工作階段儲存中樞 + 後端 + 領域形式 | 產品：穩定 API |
 | [`workspace/`](workspace/README.md) | Workspace 實體 | 產品：穩定 API |
+| [`library/`](library/README.md) | Library 知識庫：知識庫筆記本、文件轉換、librarian 工具與 subagent | 產品：穩定 API |
 | [`sdk/`](sdk/README.md) | 行程外執行時期 SDK：JSON-RPC 協定、TypeScript 用戶端和伺服器外掛程式 | 產品：穩定 API |
 | [`acp/`](acp/README.md) | 僅面向自動化的 ACP（Agent Client Protocol）伺服器 | 產品：穩定 API |
 | [`interaction/`](interaction/README.md) | 人機協作平面：批准／互動 seam、權限預設、命令、詢問使用者的工具 | 產品：穩定 API |

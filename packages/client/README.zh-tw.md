@@ -26,6 +26,7 @@ dsh web GUI 的瀏覽器側：shell 啟動、瀏覽器與宿主通訊、共享 U
 | [`ui-tool/`](ui-tool/README.md) | 編排工具呼叫樹和按工具鍵控的檢視表。 |
 | [`ui-workflow-run/`](ui-workflow-run/README.md) | 把持久工作流程執行重播為 Chat 巢狀摺疊項，並只為即時子 Session 提供導覽。 |
 | [`ui-goal/`](ui-goal/README.md) | 展示和管理當前目標。 |
+| [`ui-library/`](ui-library/README.md) | Library 介面：側欄知識庫清單加整頁知識庫視圖。 |
 | [`ui-trajectory/`](ui-trajectory/README.md) | 提供 agent（代理）活動的其他檢視表。 |
 | [`ui-commands/`](ui-commands/README.md) | 提供工作階段感知的命令發現與分發。 |
 | [`ui-input-trigger/`](ui-input-trigger/README.md) | 協調內聯命令和引用建議。 |

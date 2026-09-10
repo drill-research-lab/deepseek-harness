@@ -241,6 +241,21 @@
   padding-left: 0;
 }
 
+/* Feature sections between the browsing region and the foot; each occupant
+   owns its own row chrome and rail form. */
+.sectionArea {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 40%;
+  overflow: hidden auto;
+}
+
+.collapsed .sectionArea {
+  align-items: center;
+}
+
 /* Footer seats: additive actions stack above Settings. Each occupant owns its
    button geometry and hover chrome. */
 .footArea {

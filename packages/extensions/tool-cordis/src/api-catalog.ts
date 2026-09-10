@@ -833,6 +833,182 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'librarian',
+    summary: 'Durable notebook/resource registry plus the librarian behaviors on top of it.',
+    description: 'Durable notebook/resource registry plus the librarian behaviors on top of it. Files live under `<home>/library/v1/<notebookId>/{original,markdown}`; records point at them with notebook-relative names. Grounded answering resolves its model at call time (`config.provider`/`model` first, then the agent default selection), so the service composes without an LLM and only `ask` requires one.',
+    methods: [
+      {
+        signature: 'registerConverter(converter: LibraryConverter): () => void',
+        description: 'Register one converter on the conversion seam. Converters are tried in descending priority until one accepts and succeeds.',
+        parameters: [{ name: 'converter', description: 'The converter to add.' }],
+        returns: 'the disposer that removes it.',
+      },
+      {
+        signature: 'listNotebooks(): Notebook[]',
+        description: 'All notebooks, newest first.',
+        parameters: [],
+        returns: 'frozen notebook snapshots.',
+      },
+      {
+        signature: 'notebook(id: NotebookId): Notebook | undefined',
+        description: 'Read one notebook.',
+        parameters: [{ name: 'id', description: 'Notebook id.' }],
+        returns: 'the notebook snapshot, or `undefined` when unknown.',
+      },
+      {
+        signature: 'async createNotebook(title: string): Promise<Notebook>',
+        description: 'Create one notebook.',
+        parameters: [{ name: 'title', description: 'Display title; duplicates are allowed.' }],
+        returns: 'the new notebook snapshot.',
+      },
+      {
+        signature: 'async renameNotebook(id: NotebookId, title: string): Promise<Notebook>',
+        description: 'Replace a notebook\'s display title durably.',
+        parameters: [{ name: 'id', description: 'Notebook id.' }, { name: 'title', description: 'New display title.' }],
+        returns: 'the updated notebook snapshot.',
+      },
+      {
+        signature: 'async deleteNotebook(id: NotebookId): Promise<boolean>',
+        description: 'Delete one notebook, its resource records, and its files.',
+        parameters: [{ name: 'id', description: 'Notebook id.' }],
+        returns: '`true` when the notebook existed, `false` when it was unknown.',
+      },
+      {
+        signature: 'listResources(notebookId: NotebookId): Resource[]',
+        description: 'All resources of one notebook, newest first.',
+        parameters: [{ name: 'notebookId', description: 'Owning notebook.' }],
+        returns: 'frozen resource snapshots.',
+      },
+      {
+        signature: 'resource(id: ResourceId): Resource | undefined',
+        description: 'Read one resource.',
+        parameters: [{ name: 'id', description: 'Resource id.' }],
+        returns: 'the resource snapshot, or `undefined` when unknown.',
+      },
+      {
+        signature: 'async deleteResource(id: ResourceId): Promise<boolean>',
+        description: 'Delete one resource record and its stored files.',
+        parameters: [{ name: 'id', description: 'Resource id.' }],
+        returns: '`true` when the resource existed, `false` when it was unknown.',
+      },
+      {
+        signature: 'async ingest(request: IngestRequest): Promise<Resource>',
+        description: 'Ingest one document: store the original file, then convert it to Markdown through the converter seam. The record passes `converting` and lands on `ready` or `error` before this call resolves; a conversion failure keeps the original file previewable. This method is the programmatic content entry point shared by UI upload, model tools, and future pipeline flows.',
+        parameters: [{ name: 'request', description: 'Target notebook, display name, content class, and content.' }],
+        returns: 'the settled resource snapshot (`ready` or `error`).',
+      },
+      {
+        signature: 'async readMarkdown(id: ResourceId): Promise<string>',
+        description: 'Read the converted Markdown of one resource.',
+        parameters: [{ name: 'id', description: 'Resource id; the resource must be `ready`.' }],
+        returns: 'the Markdown text.',
+      },
+      {
+        signature: 'originalFileOf(id: ResourceId): { path: string; mediaType: string; name: string }',
+        description: 'Absolute path of one resource\'s stored original file, for host-side serving. Never derived from client input beyond the resource id.',
+        parameters: [{ name: 'id', description: 'Resource id.' }],
+        returns: 'the absolute path and the stored media type.',
+      },
+      {
+        signature: 'async structure(notebookId?: NotebookId): Promise<NotebookStructure[]>',
+        description: 'Structure listing across notebooks: every notebook with its resources, their leading Markdown headings, and a leading excerpt — the librarian\'s navigation answer, read from the ingest-time index rather than the documents.',
+        parameters: [{ name: 'notebookId', description: 'Restrict to one notebook; omitted lists all.' }],
+        returns: 'notebook structures, newest notebook first.',
+      },
+      {
+        signature: 'async search(notebookId: NotebookId, query: string, limit: number): Promise<ScoredChunk[]>',
+        description: 'Retrieve the most relevant converted-Markdown chunks of one notebook. Chunks and term counts come from the ingest-time index, so one search costs one index read plus scoring — no document reads or re-tokenizing.',
+        parameters: [{ name: 'notebookId', description: 'Notebook to search.' }, { name: 'query', description: 'Natural-language query.' }, { name: 'limit', description: 'Maximum chunks returned.' }],
+        returns: 'scored chunks, best first; empty when nothing matches.',
+      },
+      {
+        signature: 'async ask(notebookId: NotebookId, question: string, signal?: AbortSignal, origin: AskOrigin = \'ui\'): Promise<AskResult>',
+        description: 'Answer one question grounded in a notebook\'s converted documents: retrieve the best chunks, then ask the configured model to answer from them with inline citations. A question with no keyword match (an overview ask like "introduce this") falls back to each document\'s leading content, so it still answers grounded; only a notebook with no readable content declines (`grounded: false`) without a model call. Every settled exchange is appended to the notebook\'s durable ask log.',
+        parameters: [{ name: 'notebookId', description: 'Notebook to answer from.' }, { name: 'question', description: 'Natural-language question.' }, { name: 'signal', description: 'Optional caller cancellation.' }, { name: 'origin', description: 'Who asked, recorded in the log; defaults to the page (`ui`).' }],
+        returns: 'the grounded answer with its excerpt provenance.',
+      },
+      {
+        signature: 'async askLog(notebookId: NotebookId): Promise<AskLogEntry[]>',
+        description: 'Read one notebook\'s ask history, oldest first.',
+        parameters: [{ name: 'notebookId', description: 'Notebook whose log to read.' }],
+        returns: 'recorded exchanges; empty for a notebook never asked.',
+      },
+      {
+        signature: 'async recordAsk( notebookId: NotebookId, exchange: Omit<AskLogEntry, \'id\' | \'createdAt\'>, ): Promise<AskLogEntry>',
+        description: 'Append one settled exchange to a notebook\'s durable ask log. `ask` calls this for the direct route; the `library_ask` tool calls it for subagent-answered questions so agent asks land in the same history the Library page shows.',
+        parameters: [{ name: 'notebookId', description: 'Notebook the question was asked of.' }, { name: 'exchange', description: 'Origin, question, and the settled answer.' }],
+        returns: 'the recorded entry with its id and instant.',
+      },
+    ],
+  },
+  {
+    key: 'library',
+    summary: 'The browser-facing library contract.',
+    description: 'The browser-facing library contract. `static inject` lists only the service the Remote methods read; the `/library` routes register through an optional `webServer` injection, so a composition without the web server can mount the gateway without serving files.',
+    methods: [
+      {
+        signature: '@Remote(\'listNotebooks\') listNotebooks(): NotebookView[]',
+        description: 'All notebooks with their resource counts, newest first.',
+        parameters: [],
+        returns: 'projected notebook views.',
+      },
+      {
+        signature: '@Remote(\'createNotebook\') async createNotebook(request: CreateNotebookRequest): Promise<NotebookView>',
+        description: 'Create one notebook.',
+        parameters: [{ name: 'request', description: 'display title.' }],
+        returns: 'the new notebook view.',
+      },
+      {
+        signature: '@Remote(\'renameNotebook\') async renameNotebook(request: RenameNotebookRequest): Promise<NotebookView>',
+        description: 'Rename one notebook.',
+        parameters: [{ name: 'request', description: 'notebook id and new title.' }],
+        returns: 'the updated notebook view.',
+      },
+      {
+        signature: '@Remote(\'deleteNotebook\') deleteNotebook(request: NotebookRequest): Promise<boolean>',
+        description: 'Delete one notebook, its resources, and its files.',
+        parameters: [{ name: 'request', description: 'notebook id.' }],
+        returns: 'whether the notebook existed.',
+      },
+      {
+        signature: '@Remote(\'listResources\') listResources(request: NotebookRequest): ResourceView[]',
+        description: 'All resources of one notebook, newest first.',
+        parameters: [{ name: 'request', description: 'notebook id.' }],
+        returns: 'projected resource views.',
+      },
+      {
+        signature: '@Remote(\'deleteResource\') deleteResource(request: ResourceRequest): Promise<boolean>',
+        description: 'Delete one resource and its stored files.',
+        parameters: [{ name: 'request', description: 'resource id.' }],
+        returns: 'whether the resource existed.',
+      },
+      {
+        signature: '@Remote(\'ingestText\') async ingestText(request: IngestTextRequest): Promise<ResourceView>',
+        description: 'Ingest pasted text as a new resource (the NotebookLM paste-source flow).',
+        parameters: [{ name: 'request', description: 'notebook, display name, text, and content class.' }],
+        returns: 'the settled resource view.',
+      },
+      {
+        signature: '@Remote(\'readMarkdown\') async readMarkdown(request: ResourceRequest): Promise<MarkdownView>',
+        description: 'Read the converted Markdown of one resource for the inline preview.',
+        parameters: [{ name: 'request', description: 'resource id.' }],
+        returns: 'the Markdown payload.',
+      },
+      {
+        signature: '@Remote(\'ask\') async ask(request: AskRequest, signal: AbortSignal): Promise<AskView>',
+        description: 'Answer one question grounded in a notebook\'s documents.',
+        parameters: [{ name: 'request', description: 'notebook id and question.' }, { name: 'signal', description: 'cooperative cancellation from the browser.' }],
+        returns: 'the grounded answer view.',
+      },
+      {
+        signature: '@Remote(\'askLog\') async askLog(request: NotebookRequest): Promise<AskLogEntryView[]>',
+        description: 'One notebook\'s durable ask history, oldest first — the Library page\'s persistent thread, including exchanges agents asked from the chat.',
+        parameters: [{ name: 'request', description: 'notebook id.' }],
+        returns: 'recorded exchanges.',
+      },
+    ],
+  },
+  {
     key: 'llm',
     summary: 'The abstract `llm` service: an adapter registry plus a streaming model-call API, interceptable via the `llm/stream` waterfall.',
     description: 'The abstract `llm` service: an adapter registry plus a streaming model-call API, interceptable via the `llm/stream` waterfall.',
@@ -2827,6 +3003,34 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export class ApprovalService extends Service {\n    static Config: z<Config>;\n    constructor(ctx: Context, public config: Config);\n    setPolicy(agent: Agent, policy: ApprovalPolicy): void;\n    async request(req: ApprovalRequest): Promise<ApprovalOutcome>;\n    overrideOf(session: Session): ApprovalPolicy | undefined;\n}',
   },
   {
+    name: 'AskLogEntry',
+    declaration: 'export interface AskLogEntry {\n    readonly id: string;\n    readonly origin: AskOrigin;\n    readonly question: string;\n    readonly answer: string;\n    readonly grounded: boolean;\n    readonly sources: readonly AskSource[];\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'AskLogEntryView',
+    declaration: 'export interface AskLogEntryView {\n    readonly id: string;\n    readonly origin: string;\n    readonly question: string;\n    readonly answer: string;\n    readonly grounded: boolean;\n    readonly sources: readonly AskSourceView[];\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'AskOrigin',
+    declaration: 'export type AskOrigin = (typeof ASK_ORIGINS)[number];',
+  },
+  {
+    name: 'AskRequest',
+    declaration: 'export interface AskRequest {\n    readonly notebookId: string;\n    readonly question: string;\n}',
+  },
+  {
+    name: 'AskResult',
+    declaration: 'export interface AskResult {\n    readonly answer: string;\n    readonly sources: readonly AskSource[];\n    readonly grounded: boolean;\n}',
+  },
+  {
+    name: 'AskSource',
+    declaration: 'export interface AskSource {\n    readonly resourceId: ResourceId;\n    readonly name: string;\n    readonly heading: string;\n}',
+  },
+  {
+    name: 'AskSourceView',
+    declaration: 'export interface AskSourceView {\n    readonly resourceId: string;\n    readonly name: string;\n    readonly heading: string;\n}',
+  },
+  {
     name: 'AskUserQuestionAnswer',
     declaration: 'export interface AskUserQuestionAnswer {\n    answers: AskUserQuestionAnswerItem[];\n}',
   },
@@ -2849,6 +3053,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AskUserQuestionRequest',
     declaration: 'export interface AskUserQuestionRequest {\n    questions: AskUserQuestionItem[];\n    agent?: Agent;\n    signal?: AbortSignal;\n}',
+  },
+  {
+    name: 'AskView',
+    declaration: 'export interface AskView {\n    readonly answer: string;\n    readonly sources: readonly AskSourceView[];\n    readonly grounded: boolean;\n}',
   },
   {
     name: 'AssembleContext',
@@ -2905,6 +3113,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CancelOptions',
     declaration: 'export interface CancelOptions {\n    keepInbox?: boolean | undefined;\n}',
+  },
+  {
+    name: 'Chunk',
+    declaration: 'export interface Chunk {\n    resourceId: string;\n    resourceName: string;\n    heading: string;\n    text: string;\n}',
   },
   {
     name: 'ClientResponse',
@@ -3039,6 +3251,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: \'continuable\';\n    readonly label: string;\n    readonly agentProvider?: string;\n    readonly agentModel?: string;\n    readonly persona?: string;\n    readonly toolFilter?: ToolRestriction;\n}',
   },
   {
+    name: 'ConvertInput',
+    declaration: 'export interface ConvertInput {\n    path: string;\n    name: string;\n    mediaType: string;\n}',
+  },
+  {
     name: 'CordisDynamicPackageId',
     declaration: 'export type CordisDynamicPackageId = Branded<\'CordisDynamicPackageId\'>;',
   },
@@ -3077,6 +3293,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CreateGoalResult',
     declaration: 'export interface CreateGoalResult {\n    readonly ref: GoalRef;\n}',
+  },
+  {
+    name: 'CreateNotebookRequest',
+    declaration: 'export interface CreateNotebookRequest {\n    readonly title: string;\n}',
   },
   {
     name: 'CreateSessionOptions',
@@ -3327,6 +3547,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type InboxTarget = \'next-turn\' | \'next-step\';',
   },
   {
+    name: 'IngestContent',
+    declaration: 'export type IngestContent = {\n    readonly data: Uint8Array;\n} | {\n    readonly text: string;\n} | {\n    readonly path: string;\n};',
+  },
+  {
+    name: 'IngestRequest',
+    declaration: 'export interface IngestRequest {\n    readonly notebookId: NotebookId;\n    readonly name: string;\n    readonly kind?: ResourceKind;\n    readonly content: IngestContent;\n}',
+  },
+  {
+    name: 'IngestTextRequest',
+    declaration: 'export interface IngestTextRequest {\n    readonly notebookId: string;\n    readonly name: string;\n    readonly text: string;\n    readonly kind?: string;\n}',
+  },
+  {
     name: 'InvariantFailure',
     declaration: 'export type InvariantFailure = (message: string) => never;',
   },
@@ -3429,6 +3661,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'KvUnitDescriptor',
     declaration: 'export interface KvUnitDescriptor {\n    readonly name: string;\n    readonly version: number;\n    readonly tables: readonly string[];\n    readonly hasGlobal: boolean;\n}',
+  },
+  {
+    name: 'LibraryConverter',
+    declaration: 'export interface LibraryConverter {\n    id: string;\n    priority: number;\n    accepts(input: ConvertInput): boolean;\n    convert(input: ConvertInput): Promise<string>;\n}',
   },
   {
     name: 'LlmAdapter',
@@ -3535,6 +3771,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ManualCompactAgentContext extends CompactionAgentContext {\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n}',
   },
   {
+    name: 'MarkdownView',
+    declaration: 'export interface MarkdownView {\n    readonly resourceId: string;\n    readonly content: string;\n}',
+  },
+  {
     name: 'Message',
     declaration: 'export interface Message {\n    readonly id: MessageId;\n    readonly role: \'system\' | \'user\' | \'assistant\';\n    readonly content: ContentBlock[];\n    readonly source: MessageSource;\n}',
   },
@@ -3637,6 +3877,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ModelModalityMap',
     declaration: 'export interface ModelModalityMap {\n    text: \'text\';\n    image: \'image\';\n}',
+  },
+  {
+    name: 'Notebook',
+    declaration: 'export interface Notebook {\n    readonly id: NotebookId;\n    readonly title: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'NotebookId',
+    declaration: 'export type NotebookId = Branded<\'LibraryNotebookId\'>;',
+  },
+  {
+    name: 'NotebookRequest',
+    declaration: 'export interface NotebookRequest {\n    readonly notebookId: string;\n}',
+  },
+  {
+    name: 'NotebookStructure',
+    declaration: 'export interface NotebookStructure {\n    readonly notebookId: NotebookId;\n    readonly title: string;\n    readonly resources: readonly ResourceStructure[];\n}',
+  },
+  {
+    name: 'NotebookView',
+    declaration: 'export interface NotebookView {\n    readonly notebookId: string;\n    readonly title: string;\n    readonly resourceCount: number;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'ObjectJsonSchema',
@@ -3763,6 +4023,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface RedactedSecret {\n    path: string[];\n    set: boolean;\n}',
   },
   {
+    name: 'RenameNotebookRequest',
+    declaration: 'export interface RenameNotebookRequest {\n    readonly notebookId: string;\n    readonly title: string;\n}',
+  },
+  {
     name: 'RequestContext',
     declaration: 'export interface RequestContext {\n    provider: string;\n    model: string;\n    contextWindow?: number;\n}',
   },
@@ -3801,6 +4065,34 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ResolvedSubagentStartRequest',
     declaration: 'export interface ResolvedSubagentStartRequest extends SubagentStartRequest {\n    readonly descriptor: SubagentDescriptorData;\n}',
+  },
+  {
+    name: 'Resource',
+    declaration: 'export interface Resource {\n    readonly id: ResourceId;\n    readonly notebookId: NotebookId;\n    readonly name: string;\n    readonly kind: ResourceKind;\n    readonly status: ResourceStatus;\n    readonly mediaType: string;\n    readonly bytes: number;\n    readonly convertedBy?: string;\n    readonly error?: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'ResourceId',
+    declaration: 'export type ResourceId = Branded<\'LibraryResourceId\'>;',
+  },
+  {
+    name: 'ResourceKind',
+    declaration: 'export type ResourceKind = (typeof RESOURCE_KINDS)[number];',
+  },
+  {
+    name: 'ResourceRequest',
+    declaration: 'export interface ResourceRequest {\n    readonly resourceId: string;\n}',
+  },
+  {
+    name: 'ResourceStatus',
+    declaration: 'export type ResourceStatus = (typeof RESOURCE_STATUSES)[number];',
+  },
+  {
+    name: 'ResourceStructure',
+    declaration: 'export interface ResourceStructure {\n    readonly resourceId: ResourceId;\n    readonly name: string;\n    readonly kind: ResourceKind;\n    readonly status: ResourceStatus;\n    readonly outline: readonly string[];\n    readonly summary: string;\n}',
+  },
+  {
+    name: 'ResourceView',
+    declaration: 'export interface ResourceView {\n    readonly resourceId: string;\n    readonly notebookId: string;\n    readonly name: string;\n    readonly kind: string;\n    readonly status: string;\n    readonly mediaType: string;\n    readonly bytes: number;\n    readonly error?: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'RestoredSessionOptions',
@@ -3885,6 +4177,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ScopeKey',
     declaration: 'export type ScopeKey = object;',
+  },
+  {
+    name: 'ScoredChunk',
+    declaration: 'export interface ScoredChunk extends Chunk {\n    score: number;\n}',
   },
   {
     name: 'SearchFileMatches',

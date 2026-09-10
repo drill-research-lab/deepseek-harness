@@ -26,6 +26,7 @@ dsh web GUI 的浏览器侧：shell 启动、浏览器与宿主通信、共享 U
 | [`ui-tool/`](ui-tool/README.md) | 编排工具调用树和按工具键控的视图。 |
 | [`ui-workflow-run/`](ui-workflow-run/README.md) | 把持久工作流运行回放为 Chat 嵌套折叠项，并只为实时子 Session 提供导航。 |
 | [`ui-goal/`](ui-goal/README.md) | 展示和管理当前目标。 |
+| [`ui-library/`](ui-library/README.md) | Library 界面：侧栏知识库列表加整页知识库视图。 |
 | [`ui-trajectory/`](ui-trajectory/README.md) | 提供 agent（智能体）活动的其他视图。 |
 | [`ui-commands/`](ui-commands/README.md) | 提供会话感知的命令发现与分发。 |
 | [`ui-input-trigger/`](ui-input-trigger/README.md) | 协调内联命令和引用建议。 |

@@ -29,6 +29,7 @@
 | `@deepseek-ai/dsh-tool-fs-search` | `glob`、`grep` | `ctx.tools`、`ctx.subprocess`、`ctx.sandbox`、`ctx.sandboxPolicy`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn 随包提供的 ripgrep 二进制文件（`@vscode/ripgrep`），并作为普通前台调用运行，绝不作为后台任务；无需在宿主机安装 `rg`，也不经过 shell 层。本目录使用 `sampleOverCapGlobResults: true`；部署必须显式选择该行为。结果超过上限时，会通过可选的 ctx.spillStore 后端保存完整的格式化列表；在共置部署中，如果后端公开本地路径，返回的定位信息可供后续读取／搜索。 |
 | `@deepseek-ai/dsh-tool-terminal` | `terminal_close`、`terminal_list`、`terminal_open`、`terminal_read`、`terminal_send`、`terminal_signal` | `ctx.tools`、`ctx.terminals`、`ctx.systemPrompt`、`ctx.jobs at call time for run_in_background` | `tool/call`、`tool/result` | - | 这 6 个终端工具需要选择启用，用于补充一次性 bash／文件系统工具。`terminal_send(run_in_background: true)` 会注册到 `ctx.jobs`；schema 不包含 TUI、具名按键序列、BEL、调整尺寸、自动启动和跨 agent 共享。 |
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`、`get_goal`、`update_goal` | `ctx.tools`、`ctx.agents`、`ctx.goals`、`ctx.systemPrompt`、`a calling Agent in an authorized open turn` | `tool/call`、`goal/change for mutations`、`tool/result` | - | create、edit、pause 和 resume 要求直接来自人类的根权限；complete 和 blocked 也接受确切的当前 Goal Round。blocked 的默认下限是 3 个获准的 Round。 |
+| `@deepseek-ai/dsh-tool-library` | `library_ask`、`library_ingest`、`library_read`、`library_structure` | `ctx.tools`、`ctx.librarian` | `tool/call`、`tool/result` | - | library_ask 只根据库内内容回答，没有相关内容时会婉拒；知识库参数接受 id 或精确标题，未知的引用会连同实时知识库清单一起报告错误。 |
 | `@deepseek-ai/dsh-schedule` | `schedule_create`、`schedule_delete`、`schedule_list` | `ctx.tools`、`ctx.sessions`、Session 持久化、未来创建的 live 根 Agent | `tool/call`、`schedule/change create or delete`、`tool/result` | - | 仅在选择启用的 Schedule 插件加载后创建的 live 根 Agent scope 内注册。版本 1 接受 after_seconds、显式绝对 at 和有界固定速率 every_seconds，并披露 session-local 交付；管理读取与变更必须通过共享的 Session 持久化 barrier。 |
 | `@deepseek-ai/dsh-tool-lsp` | `lsp` | `ctx.tools`、`ctx.lsp`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，因此其模型可见 schema 在更换提供方时保持稳定。运行时要求已注册提供方，例如 `@deepseek-ai/dsh-lsp-stdio`；如果没有提供方，查询会返回结构化 `LSP_UNAVAILABLE` 错误，而不会改变 schema。 |
 | `@deepseek-ai/dsh-tool-ralph` | `ralph` | `ctx.tools`、`ctx.workflowEngine`、`ctx.subagents`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents every fresh round)` | `tool/call`、`tool/result`、`workflow and child session events during execution` | - | 固定的前台工作流会在每个 Round 启动一个全新的结构化子级；模型只能选择不可变目标和可选的 Round 上限。 |
@@ -1035,6 +1036,115 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
 来源：[`packages/goal/tool-goal/src/index.ts`](../packages/goal/tool-goal/src/index.ts)
 
 create、edit、pause 和 resume 要求直接来自人类的根权限；complete 和 blocked 也接受确切的当前 Goal Round。blocked 的默认下限是 3 个获准的 Round。
+
+<a id="deepseek-aidsh-tool-library"></a>
+
+## `@deepseek-ai/dsh-tool-library`
+
+### `library_ask`
+
+向 Library（研究知识库）提出一个问题，获取以库内文件为根据、带行内 [来源] 引用的回答。这是使用知识库的主要方式 — 与其逐个翻阅文件，不如问一个好问题。问题由 librarian agent 阅读知识库后回答；只有空的知识库会婉拒。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "notebook": {
+      "type": "string",
+      "description": "A notebook id or its exact title; `library_structure` lists both."
+    },
+    "question": {
+      "type": "string",
+      "description": "The question to answer from the notebook contents."
+    }
+  },
+  "required": [
+    "notebook",
+    "question"
+  ]
+}
+```
+
+来源：[`packages/library/tool-library/src/index.ts`](../packages/library/tool-library/src/index.ts)
+
+### `library_ingest`
+
+把一份文件归档进 Library 知识库：给文字内容或可读的文件路径。文件会转换为 Markdown 并成为知识库的一部分（kind：`source` 原始素材、`result` 综合分析、`deliverable` 完成产出）。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "notebook": {
+      "type": "string",
+      "description": "A notebook id or its exact title; `library_structure` lists both."
+    },
+    "name": {
+      "type": "string",
+      "description": "Display name including an extension, e.g. `notes.md`."
+    },
+    "content": {
+      "type": "string",
+      "description": "Literal document text; exactly one of content and path."
+    },
+    "path": {
+      "type": "string",
+      "description": "Readable file path to ingest; exactly one of content and path."
+    },
+    "kind": {
+      "type": "string",
+      "description": "Content class: source (default), result, or deliverable."
+    }
+  },
+  "required": [
+    "notebook",
+    "name"
+  ]
+}
+```
+
+来源：[`packages/library/tool-library/src/index.ts`](../packages/library/tool-library/src/index.ts)
+
+### `library_read`
+
+完整读取一份库内资源转换后的 Markdown。在 `library_ask` 或 `library_structure` 之后、需要原文字句时使用；过长的文件会被截断，返回的标志会告诉你内容是否被截。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "resourceId": {
+      "type": "string",
+      "description": "A resource id from `library_structure`."
+    }
+  },
+  "required": [
+    "resourceId"
+  ]
+}
+```
+
+来源：[`packages/library/tool-library/src/index.ts`](../packages/library/tool-library/src/index.ts)
+
+### `library_structure`
+
+列出 Library 结构：每本知识库（id 与标题）及其资源、前导 Markdown 标题与前导摘录 — 由入库时索引供应。在提问或阅读前，先用它了解知识库里有什么。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "notebook": {
+      "type": "string",
+      "description": "Restrict to one notebook. A notebook id or its exact title; `library_structure` lists both."
+    }
+  }
+}
+```
+
+来源：[`packages/library/tool-library/src/index.ts`](../packages/library/tool-library/src/index.ts)
+
+library_ask 只根据库内内容回答，没有相关内容时会婉拒；知识库参数接受 id 或精确标题，未知的引用会连同实时知识库清单一起报告错误。
 
 <a id="deepseek-aidsh-schedule"></a>
 
