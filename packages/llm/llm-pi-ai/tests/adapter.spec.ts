@@ -83,6 +83,26 @@ describe('PiAiAdapter provider routing', () => {
     expect(server.headers[0]?.['user-agent']).toBe(userAgent())
   })
 
+  it('sends the request session id as the Harness header, overriding a profile value', async () => {
+    const server = await mockServer([{ events: textEvents }])
+    const ctx = await harness(server.url, {
+      headers: { 'x-deepseek-harness-session-id': 'from-profile' },
+    })
+    await assemble(ctx, {
+      model: 'deepseek-v4-flash',
+      messages: [],
+      sessionId: 'session-for-pi' as never,
+    })
+    expect(server.headers[0]?.['x-deepseek-harness-session-id']).toBe('session-for-pi')
+  })
+
+  it('omits the Harness session header when the request carries no session', async () => {
+    const server = await mockServer([{ events: textEvents }])
+    const ctx = await harness(server.url)
+    await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
+    expect(server.headers[0]).not.toHaveProperty('x-deepseek-harness-session-id')
+  })
+
   it('forwards common stream options and profile reasoning', async () => {
     const server = await mockServer([{ events: textEvents }])
     const ctx = await harness(server.url, {

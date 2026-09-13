@@ -168,12 +168,22 @@ function reasoningInfo(
   }
 }
 
-/** Merge deployment headers while removing case-insensitive attribution collisions. */
-function requestHeaders(headers: Readonly<Record<string, string>> | undefined): Record<string, string> {
+/** Harness-owned request header carrying the conversation's session id. */
+const SESSION_HEADER = 'x-deepseek-harness-session-id'
+
+/**
+ * Merge deployment headers, the Harness session id, and attribution. Attribution
+ * and session names are Harness-owned, so both win collisions case-insensitively.
+ */
+function requestHeaders(
+  headers: Readonly<Record<string, string>> | undefined,
+  sessionId: string | undefined,
+): Record<string, string> {
   const attribution = attributionHeaders()
-  const reserved = new Set(Object.keys(attribution).map(name => name.toLowerCase()))
+  const reserved = new Set([...Object.keys(attribution), SESSION_HEADER].map(name => name.toLowerCase()))
   return {
     ...Object.fromEntries(Object.entries(headers ?? {}).filter(([name]) => !reserved.has(name.toLowerCase()))),
+    ...sessionId === undefined ? {} : { [SESSION_HEADER]: sessionId },
     ...attribution,
   }
 }
@@ -316,9 +326,12 @@ export class PiAiAdapter extends LlmAdapter {
         ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
         ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
         signal: watchdog.signal,
-        // Profile headers are deployment-owned; attribution names are
-        // Harness-owned and therefore win collisions.
-        headers: requestHeaders(profile.headers),
+        // Profile headers are deployment-owned; attribution and the Harness
+        // session id are Harness-owned and therefore win collisions.
+        headers: requestHeaders(
+          profile.headers,
+          options.sessionId === undefined ? undefined : String(options.sessionId),
+        ),
       })
       const iterator = toStreamChunks(events, model.contextWindow)[Symbol.asyncIterator]()
       let exhausted = false

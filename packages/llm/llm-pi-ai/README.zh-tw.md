@@ -114,7 +114,7 @@ profile 的 `models` 清單是*替換*該路由已安裝 catalog，而不是擴�
 
 **沒有**這份中繼資料的模型——條目未聲明 `reasoningEfforts` 的手工聲明模型，以及 pi-ai 標記為不具備推理能力的 catalog 模型——完全不公開 `reasoning`。pi-ai 會把這類模型報告為只支援 `off` 一檔，但 `off` 會被翻譯成*省略* reasoning 選項，而那與「不點名任何檔位」產出的請求逐位元組相同：選它關不掉任何東西，於是自身預設就在思考的提供方，會在介面顯示 `off` 被選中的同時繼續思考。把該能力報告為不可用，介面就只剩提供方預設這一項，不會再出現自相矛盾的控制元件。設定 profile 的 `reasoning` 值（包括 `off`）在存在時是部署預設值；省略它會保留提供方預設值。每次請求的 `GenerateOptions.reasoningEffort` 優先；未出現在確切模型能力中的檔位會讓**請求**在網路 I/O 前以 `UNSUPPORTED_REASONING_EFFORT` 失敗，而不會被自動調整。**描述**一個模型則從不這樣失敗：同一提供方下各模型接受的檔位並不一致，因此 `resolveModel` 對該模型拿不下的 profile 檔位報告為「沒有預設值」，而不是拋錯。在那裡拋錯會讓整個提供方從任何基於它建置的模型目錄中消失——一個配錯的 profile 欄位連支援該檔位的模型也一並藏起來——所以壞設定暴露在被執行處，而不是被描述處。pi-ai 的通用流選項透過省略 `reasoning` 表示 `off`。
 
-受支援的 profile 欄位是 `apiKeyEnv`、`displayName`、`api`、`baseURL`、`models`、`modelOverrides`、`compat`、`defaultContextWindow`、`defaultMaxTokens`、`defaultInput`、`headers`、`reasoning`、`thinkingBudgets`、`cacheRetention`、`transport`、`timeoutMs`、`websocketConnectTimeoutMs`、`streamIdleTimeoutMs` 和 `retryPolicy`。每個 profile 的選填重試策略都會與該提供方路由一同捕獲；省略時使用有界的常規預設值。流空閒間隔必須是正的有限 Node 定時器延遲，預設為五分鐘，且只覆蓋未完成提供方讀取，不包括消費端思考時間。若已設定標頭中有同名項，則以 Harness 應用歸因為準。
+受支援的 profile 欄位是 `apiKeyEnv`、`displayName`、`api`、`baseURL`、`models`、`modelOverrides`、`compat`、`defaultContextWindow`、`defaultMaxTokens`、`defaultInput`、`headers`、`reasoning`、`thinkingBudgets`、`cacheRetention`、`transport`、`timeoutMs`、`websocketConnectTimeoutMs`、`streamIdleTimeoutMs` 和 `retryPolicy`。每個 profile 的選填重試策略都會與該提供方路由一同捕獲；省略時使用有界的常規預設值。流空閒間隔必須是正的有限 Node 定時器延遲，預設為五分鐘，且只覆蓋未完成提供方讀取，不包括消費端思考時間。若已設定標頭中有同名項，則以 Harness 應用歸因和工作階段標頭為準。
 
 配接器強制 pi-ai SDK `maxRetries` 為零，因此一次 `stream()` 呼叫只會發起一次提供方請求。已移除 profile 欄位 `maxRetries` 和 `maxRetryDelayMs` 會使載入失敗，而不是靜默倍增或隱藏單獨組合的 agent（代理）級重試預算。空閒逾時會 abort SDK 的穩定請求訊號，並以 `TIMEOUT` 呈現；較早的呼叫方 abort 仍為 `ABORTED`。
 
@@ -152,7 +152,7 @@ profile 的 `models` 清單是*替換*該路由已安裝 catalog，而不是擴�
 
 ## 應用歸因
 
-每個請求都攜帶 dsh-llm `attributionHeaders()` 的共享歸因標頭，並透過 pi-ai `headers` 流選項合併。不會合成提供方特定應用歸因標頭。詳見 [dsh-llm § 應用歸因](../llm/README.md#app-attribution-attributionts)。
+每個請求都攜帶 dsh-llm `attributionHeaders()` 的共享歸因標頭，並在 `GenerateOptions.sessionId` 存在時攜帶 Harness 工作階段標頭 `x-deepseek-harness-session-id`；兩者都透過 pi-ai `headers` 流選項合併，且都優先於衝突的已設定標頭名。不會合成提供方特定應用歸因標頭。詳見 [dsh-llm § 應用歸因](../llm/README.md#app-attribution-attributionts)。
 
 ## 相依性體量
 
