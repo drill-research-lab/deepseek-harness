@@ -10,7 +10,7 @@ Tool descriptions are consulted after the model has already chosen a tool class,
 
 ## Decision
 
-`tool-writing` registers a `tool:writing` system-prompt section (order 118) instructing the model to route LaTeX document and report requests through `report_create` and the other `report_*` tools instead of the generic `write`/`edit` tools, and naming the timestamp-named source directory `writing/<yyyymmddhhmmss>/main.tex`. The plugin injects `systemPrompt` to register it.
+`tool-writing` registers a `tool:writing` system-prompt section (order 118) instructing the model to route LaTeX file, document, and report requests — including a blank or empty one — through `report_create` and the other `report_*` tools instead of the generic `write`/`edit` tools, and naming the timestamp-named source directory `writing/<yyyymmddhhmmss>/main.tex`. The `report_create` description also names the tool as the way to create a LaTeX file and states that an empty `source` yields a blank document, so a "blank file" request matches the tool the guidance names. The plugin injects `systemPrompt` to register the section.
 
 The section text is a fixed module constant, like the other `tool:*` sections, because it is model guidance rather than a deployment-varying tunable.
 

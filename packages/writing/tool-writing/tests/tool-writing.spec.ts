@@ -86,6 +86,12 @@ describe('dsh-tool-writing', () => {
     expect(ctx.reports.get(ReportId(value.reportId as string))?.fileName).toMatch(/^\d{14}$/)
   })
 
+  it('creates a blank document when the initial source is empty', async () => {
+    const { ctx } = await harness()
+    const value = await okValue(ctx, 'report_create', { title: 'Blank', source: '' })
+    expect(ctx.reports.get(ReportId(value.reportId as string))?.source).toBe('')
+  })
+
   it('writes and reads the report source', async () => {
     const { ctx } = await harness()
     const created = await okValue(ctx, 'report_create', { title: 'A', source: 'v1' })

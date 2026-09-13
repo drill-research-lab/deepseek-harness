@@ -6,7 +6,7 @@ Model-facing writing tools that close the write → compile → fix loop for a w
 
 Tools registered on `ctx.tools`:
 
-- `report_create` — create a report from a title, template, and optional source; its source is stored under a timestamp-named directory (`writing/<yyyymmddhhmmss>/main.tex`) in the session workspace.
+- `report_create` — create a report from a title, template, and optional source; its source is stored under a timestamp-named directory (`writing/<yyyymmddhhmmss>/main.tex`) in the session workspace, and an empty `source` yields a blank document.
 - `report_write` — replace the ENTIRE current source (autosave; no snapshot).
 - `report_read` — read the current source, truncated to `maxReadChars`.
 - `report_compile` — compile the current source, return diagnostics, and auto-snapshot a version on success.
@@ -24,7 +24,7 @@ Tools registered on `ctx.tools`:
 
 The tools are the model-visible surface of the writing capability. Each call is logged by the tool registry, and the report content and compilation diagnostics are what a writer agent sees. The report registry itself (report projects, snapshots, templates) is not model input.
 
-A `tool:writing` system-prompt section steers LaTeX authoring through these tools: a request to create, edit, or compile a LaTeX document or report uses `report_create` and the other `report_*` tools rather than the generic `write`/`edit` tools, and the section names the timestamp-named source directory.
+A `tool:writing` system-prompt section steers LaTeX authoring through these tools: a request to create, edit, or compile a LaTeX file, document, or report — including a blank or empty one — uses `report_create` and the other `report_*` tools rather than the generic `write`/`edit` tools, and the section names the timestamp-named source directory.
 
 #### KV Cache effect
 

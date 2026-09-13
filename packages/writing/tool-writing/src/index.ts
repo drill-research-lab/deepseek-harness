@@ -36,13 +36,14 @@ const TOOL_IDS = 'Report ids are the string id returned by `report_create`.'
 
 /** Model guidance steering LaTeX authoring through the report tools rather than the file tools. */
 const WRITING_PROMPT_TEXT =
-  'When the user asks to create, edit, or compile a LaTeX document or report, use the `report_*` '
-  + 'tools instead of the generic `write`/`edit` tools. `report_create` opens a report whose source '
-  + 'is created under a new timestamp-named directory in the session workspace '
-  + '(`writing/<yyyymmddhhmmss>/main.tex`), its own git repository, and returns the report id. '
-  + 'Then `report_write` sets the source and compiles it automatically, `report_compile` recompiles, '
-  + '`report_read` and `report_versions` inspect it, and `report_restore` branches from an earlier '
-  + 'version. Use the file tools only for files that are not reports.'
+  'When the user asks to create, edit, or compile a LaTeX file, document, or report — including a '
+  + 'blank or empty one — use the `report_*` tools instead of the generic `write`/`edit` tools. '
+  + '`report_create` opens a report whose source is created under a new timestamp-named directory '
+  + 'in the session workspace (`writing/<yyyymmddhhmmss>/main.tex`), its own git repository, and '
+  + 'returns the report id; pass an empty `source` for a blank document. Then `report_write` sets '
+  + 'the source and compiles it automatically, `report_compile` recompiles, `report_read` and '
+  + '`report_versions` inspect it, and `report_restore` branches from an earlier version. Reserve '
+  + 'the file tools for files that are not LaTeX documents.'
 
 const text = (value: string): { type: 'text'; text: string } => ({ type: 'text', text: value })
 
@@ -57,9 +58,11 @@ export function apply(ctx: Context, config: Config): void {
   ctx.tools.register(defineTool({
     name: 'report_create',
     description:
-      'Create a new LaTeX report from a display title, an optional template, and optional '
-      + 'initial source. Use a built-in template name (`article`, `academic-proposal`, '
-      + '`report`) or a template id. Returns the new report id and its source.',
+      'Create a new LaTeX file (report) from a display title, an optional template, and optional '
+      + 'initial source. The source is stored under a timestamp-named directory in the session '
+      + 'workspace and versioned by its own git repository. Use a built-in template name '
+      + '(`article`, `academic-proposal`, `report`) or a template id; pass an empty `source` for a '
+      + 'blank document. Returns the new report id and its source.',
     parameters: {
       title: { type: 'string', required: true, description: 'Display title for the report.' },
       templateId: { type: 'string', description: 'Template id or name; omit for the default article template.' },

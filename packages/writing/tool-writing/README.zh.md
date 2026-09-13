@@ -6,7 +6,7 @@
 
 注册在 `ctx.tools` 上的工具：
 
-- `report_create` — 由标题、模板与可选源码创建报告；其源码存放在会话工作区下以时间戳命名的目录（`writing/<yyyymmddhhmmss>/main.tex`）中。
+- `report_create` — 由标题、模板与可选源码创建报告；其源码存放在会话工作区下以时间戳命名的目录（`writing/<yyyymmddhhmmss>/main.tex`）中，传入空 `source` 会得到空白文档。
 - `report_write` — 替换当前全部源码（自动保存；不生成快照）。
 - `report_read` — 读取当前源码，按 `maxReadChars` 截断。
 - `report_compile` — 编译当前源码，返回诊断，并在成功时自动生成版本快照。
@@ -24,7 +24,7 @@
 
 这些工具是写作能力面向模型的表层。每次调用都由工具注册表记录，报告内容与编译诊断即写作 agent 所见。报告注册表本身（报告项目、快照、模板）不是模型输入。
 
-`tool:writing` 系统提示词分区把这些工具作为 LaTeX 写作的入口：要求创建、编辑或编译 LaTeX 文档或报告的请求会使用 `report_create` 及其他 `report_*` 工具，而不是通用的 `write`/`edit` 工具，该分区也点明了以时间戳命名的源码目录。
+`tool:writing` 系统提示词分区把这些工具作为 LaTeX 写作的入口：要求创建、编辑或编译 LaTeX 文件、文档或报告（包括空白文件）的请求会使用 `report_create` 及其他 `report_*` 工具，而不是通用的 `write`/`edit` 工具，该分区也点明了以时间戳命名的源码目录。
 
 #### KV Cache effect
 
