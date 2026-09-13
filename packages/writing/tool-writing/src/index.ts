@@ -16,7 +16,7 @@ export type {} from '@deepseek-ai/dsh-writing-compile'
 
 export const name = 'tool-writing'
 
-export const inject = ['tools', 'reports', 'latexCompile']
+export const inject = ['tools', 'reports', 'latexCompile', 'systemPrompt']
 
 /** Model-facing output bounds, all changeable from cordis.yml. */
 export interface Config {
@@ -34,6 +34,16 @@ export const Config: z<Config> = z.object({
 
 const TOOL_IDS = 'Report ids are the string id returned by `report_create`.'
 
+/** Model guidance steering LaTeX authoring through the report tools rather than the file tools. */
+const WRITING_PROMPT_TEXT =
+  'When the user asks to create, edit, or compile a LaTeX document or report, use the `report_*` '
+  + 'tools instead of the generic `write`/`edit` tools. `report_create` opens a report whose source '
+  + 'is created under a new timestamp-named directory in the session workspace '
+  + '(`writing/<yyyymmddhhmmss>/main.tex`), its own git repository, and returns the report id. '
+  + 'Then `report_write` sets the source and compiles it automatically, `report_compile` recompiles, '
+  + '`report_read` and `report_versions` inspect it, and `report_restore` branches from an earlier '
+  + 'version. Use the file tools only for files that are not reports.'
+
 const text = (value: string): { type: 'text'; text: string } => ({ type: 'text', text: value })
 
 /**
@@ -42,6 +52,8 @@ const text = (value: string): { type: 'text'; text: string } => ({ type: 'text',
  * @param config - validated output bounds.
  */
 export function apply(ctx: Context, config: Config): void {
+  ctx.systemPrompt.section({ name: 'tool:writing', order: 118, text: WRITING_PROMPT_TEXT })
+
   ctx.tools.register(defineTool({
     name: 'report_create',
     description:

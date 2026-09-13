@@ -64,6 +64,13 @@ describe('dsh-tool-writing', () => {
     ]))
   })
 
+  it('adds system-prompt guidance steering LaTeX authoring through the report tools', async () => {
+    const { ctx } = await harness()
+    const section = (await ctx.systemPrompt.assemble()).sections.find(candidate => candidate.name === 'tool:writing')
+    expect(section?.text).toContain('report_create')
+    expect(section?.text).toContain('timestamp-named directory')
+  })
+
   it('creates a report from the default template', async () => {
     const { ctx } = await harness()
     const value = await okValue(ctx, 'report_create', { title: 'My Paper' })
